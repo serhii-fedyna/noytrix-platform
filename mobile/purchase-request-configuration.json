@@ -1,0 +1,22 @@
+{
+  "google": {
+    "packageName": "com.noytrix.app",
+    "products": [
+      {
+        "productId": "pro_ai_bot",
+        "type": "inapp"
+      },
+      {
+        "productId": "prolifetime",
+        "type": "inapp"
+      },
+      {
+        "productId": "pro_access",
+        "type": "subs"
+      }
+    ]
+  },
+  "apple": {
+    "products": []
+  }
+}

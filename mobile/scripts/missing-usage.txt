@@ -1,0 +1,559 @@
+calculator.attachedImageLabel
+  app/calculator.js:295
+
+calculator.attachedImageRemove
+  app/calculator.js:303
+
+calculator.freeLimit
+  app/calculator.js:213
+
+calculator.inputPlaceholder
+  app/calculator.js:322
+
+calculator.thinking
+  app/calculator.js:276
+
+calendar.errorLoad
+  app/calendar.js:223
+
+calendar.errorTitle
+  app/calendar.js:222
+
+calendar.months
+  app/calendar.js:162
+
+calendar.noEvents
+  app/calendar.js:469
+
+calendar.refreshing
+  app/calendar.js:461
+
+calendar.status.upcoming
+  app/calendar.js:260
+
+calendar.weekdays
+  app/calendar.js:161
+
+explain.binancePair
+  app/explain.js:546
+
+explain.change24hLabel
+  app/explain.js:585
+
+explain.change30dLabel
+  app/explain.js:598
+
+explain.change7dLabel
+  app/explain.js:591
+
+explain.dailyLevelsLabel
+  app/explain.js:682
+
+explain.dailyLevelsValue
+  app/explain.js:683
+
+explain.emaBearish
+  app/explain.js:663
+
+explain.emaBullish
+  app/explain.js:662
+
+explain.errLoad
+  app/explain.js:343
+
+explain.errNoPair
+  app/explain.js:313
+
+explain.errShort
+  app/explain.js:308
+
+explain.glossary
+  app/explain.js:459
+
+explain.hl24Label
+  app/explain.js:604
+
+explain.indicatorLiq
+  app/explain.js:567
+
+explain.indicatorTrend
+  app/explain.js:563
+
+explain.indicatorVol
+  app/explain.js:571
+
+explain.indicatorsTitle
+  app/explain.js:560
+
+explain.mcapLabel
+  app/explain.js:615
+
+explain.metricsTitle
+  app/explain.js:578
+
+explain.priceLabel
+  app/explain.js:581
+
+explain.taSignalsTitle
+  app/explain.js:653
+
+explain.vol24Label
+  app/explain.js:620
+
+explain.volMcapLabel
+  app/explain.js:625
+
+explain.volat24Label
+  app/explain.js:610
+
+futures.errorCandles
+  app/futures.js:357
+
+futures.ideaShortTitle
+  app/futures.js:254
+
+futures.proBtnUpgrade
+  app/futures.js:676
+
+futures.trendDown
+  app/futures.js:191
+  app/futures.js:195
+
+futures.trendFlat
+  app/futures.js:192
+
+futures.trendUp
+  app/futures.js:189
+
+futuresPro.advise.atrHoldLine
+  app/futures-pro.js:457
+
+futuresPro.advise.followTitle
+  app/futures-pro.js:440
+
+futuresPro.advise.positionLine
+  app/futures-pro.js:450
+
+futuresPro.advise.rsiOverbought
+  app/futures-pro.js:435
+
+futuresPro.advise.rsiOversold
+  app/futures-pro.js:433
+
+futuresPro.alert.errorGetEntryPrice
+  app/futures-pro.js:650
+
+futuresPro.alert.errorGetPrice
+  app/futures-pro.js:661
+
+futuresPro.alert.errorTitle
+  app/futures-pro.js:649
+  app/futures-pro.js:660
+
+futuresPro.alert.noPositionBody
+  app/futures-pro.js:669
+
+futuresPro.alert.noPositionTitle
+  app/futures-pro.js:668
+
+futuresPro.alert.noPriceBody
+  app/futures-pro.js:676
+
+futuresPro.alert.noPriceTitle
+  app/futures-pro.js:675
+
+futuresPro.alert.positionClosed.body
+  app/futures-pro.js:720
+
+futuresPro.alert.positionClosed.title
+  app/futures-pro.js:719
+
+futuresPro.alert.positionOpened.body
+  app/futures-pro.js:639
+
+futuresPro.alert.positionOpened.title
+  app/futures-pro.js:638
+
+futuresPro.errorLoadPair
+  app/futures-pro.js:377
+
+futuresPro.hints.eventsLoading
+  app/futures-pro.js:1126
+
+futuresPro.hints.riskExplainHigh
+  app/futures-pro.js:1093
+
+futuresPro.hints.riskExplainVeryConservative
+  app/futures-pro.js:1091
+
+futuresPro.news.error
+  app/futures-pro.js:619
+
+futuresPro.news.noEvents
+  app/futures-pro.js:612
+
+futuresPro.news.withEvents
+  app/futures-pro.js:606
+
+futuresPro.planEmptyHint
+  app/futures-pro.js:1052
+
+futuresPro.planLastPrice
+  app/futures-pro.js:999
+
+futuresPro.risk.summaryMargin
+  app/futures-pro.js:1218
+
+futuresPro.risk.summaryQty
+  app/futures-pro.js:1209
+
+futuresPro.risk.summaryRisk
+  app/futures-pro.js:1202
+
+futuresPro.risk.summaryStop
+  app/futures-pro.js:1226
+
+futuresPro.risk.warningNotEnoughBalance
+  app/futures-pro.js:506
+
+futuresPro.side.long
+  app/futures-pro.js:443
+  app/futures-pro.js:642
+  app/futures-pro.js:949
+
+futuresPro.side.short
+  app/futures-pro.js:444
+  app/futures-pro.js:643
+  app/futures-pro.js:950
+
+home.articleError
+  app/(tabs)/index.js:455
+  app/(tabs)/index.js:467
+  app/(tabs)/index.js:470
+  app/(tabs)/index.js:545
+  app/(tabs)/index.js:552
+
+news:empty
+  app/news/index.js:540
+
+news:headerSubtitle
+  app/news/index.js:536
+
+news:headerTitle
+  app/news/index.js:534
+
+news:loading
+  app/news/index.js:393
+  app/news/index.js:523
+  app/news/index.js:583
+  app/news/index.js:647
+
+news:openError
+  app/news/index.js:401
+  app/news/index.js:408
+
+news:openFullArticle
+  app/news/index.js:491
+
+profile.badge.free
+  app/(tabs)/profile.js:575
+
+profile.badge.roleDefault
+  app/(tabs)/profile.js:549
+
+profile.futures.entry
+  app/(tabs)/profile.js:791
+
+profile.futures.exit
+  app/(tabs)/profile.js:792
+
+profile.futures.pnl
+  app/(tabs)/profile.js:793
+
+profile.futures.riskApprox
+  app/(tabs)/profile.js:799
+
+profile.nick.cancel
+  app/(tabs)/profile.js:947
+
+profile.nick.placeholder
+  app/(tabs)/profile.js:909
+
+profile.nick.save
+  app/(tabs)/profile.js:934
+
+profile.nick.title
+  app/(tabs)/profile.js:904
+
+profile.proCard.button
+  app/(tabs)/profile.js:617
+
+profile.proCard.text
+  app/(tabs)/profile.js:603
+
+profile.proCard.title
+  app/(tabs)/profile.js:600
+
+profile.sections.achievementsEmpty
+  app/(tabs)/profile.js:698
+
+profile.sections.futuresEmpty
+  app/(tabs)/profile.js:745
+
+profile.sections.historyEmpty
+  app/(tabs)/profile.js:672
+
+shield.advices.default
+  app/shield.js:863
+
+shield.advices.title
+  app/shield.js:859
+
+shield.buttons.checking
+  app/shield.js:746
+
+shield.buttons.share
+  app/shield.js:955
+
+shield.compare.rows.userScamTable
+  app/shield.js:1101
+
+shield.kind.address
+  app/shield.js:464
+  app/shield.js:802
+
+shield.kind.text
+  app/shield.js:465
+  app/shield.js:803
+
+shield.kind.url
+  app/shield.js:462
+  app/shield.js:800
+
+shield.online.blacklistWarning
+  app/shield.js:928
+
+shield.online.subtitle
+  app/shield.js:892
+
+shield.online.title
+  app/shield.js:884
+
+shield.reasons.default
+  app/shield.js:833
+
+shield.reasons.title
+  app/shield.js:829
+
+shield.samples.title
+  app/shield.js:1169
+
+shield.share.dateTitle
+  app/shield.js:615
+
+shield.share.dialogTitle
+  app/shield.js:671
+
+shield.share.footer
+  app/shield.js:649
+
+shield.share.objectPlaceholder
+  app/shield.js:524
+
+shield.share.scoreTitle
+  app/shield.js:569
+
+shield.share.textReasons
+  app/shield.js:664
+  app/shield.js:679
+
+shield.share.textTitle
+  app/shield.js:662
+  app/shield.js:677
+
+shield.share.title
+  app/shield.js:480
+
+shield.share.typeTitle
+  app/shield.js:592
+
+shield.share.verdictTitle
+  app/shield.js:546
+
+shield.verdict.label
+  app/shield.js:786
+
+shield.verdict.typeLabel
+  app/shield.js:798
+
+shieldPro.advices.default
+  app/shield-pro.js:1213
+
+shieldPro.advices.title
+  app/shield-pro.js:1209
+
+shieldPro.aiComment.title
+  app/shield-pro.js:1149
+
+shieldPro.alert.errorText
+  app/shield-pro.js:828
+
+shieldPro.alert.errorTitle
+  app/shield-pro.js:827
+
+shieldPro.buttons.checking
+  app/shield-pro.js:948
+
+shieldPro.buttons.share
+  app/shield-pro.js:1520
+
+shieldPro.common.no
+  app/shield-pro.js:1266
+  app/shield-pro.js:1279
+  app/shield-pro.js:1292
+
+shieldPro.common.yes
+  app/shield-pro.js:1265
+  app/shield-pro.js:1278
+  app/shield-pro.js:1291
+
+shieldPro.crowd.empty
+  app/shield-pro.js:1555
+
+shieldPro.crowd.error
+  app/shield-pro.js:670
+
+shieldPro.crowd.kind.other
+  app/shield-pro.js:1637
+
+shieldPro.crowd.loading
+  app/shield-pro.js:1549
+
+shieldPro.howItWorks.disclaimer
+  app/shield-pro.js:1690
+
+shieldPro.kind.bsc
+  app/shield-pro.js:1097
+
+shieldPro.kind.eth
+  app/shield-pro.js:1095
+
+shieldPro.kind.text
+  app/shield-pro.js:1098
+
+shieldPro.kind.url
+  app/shield-pro.js:1093
+
+shieldPro.lastCheck.object
+  app/shield-pro.js:892
+
+shieldPro.lastCheck.time
+  app/shield-pro.js:900
+
+shieldPro.lastCheck.title
+  app/shield-pro.js:889
+
+shieldPro.level.critical
+  app/shield-pro.js:597
+
+shieldPro.level.high
+  app/shield-pro.js:598
+
+shieldPro.level.low
+  app/shield-pro.js:600
+
+shieldPro.level.medium
+  app/shield-pro.js:599
+
+shieldPro.network.address
+  app/shield-pro.js:1365
+
+shieldPro.network.bscscan
+  app/shield-pro.js:1387
+
+shieldPro.network.contentHits
+  app/shield-pro.js:1338
+
+shieldPro.network.csp
+  app/shield-pro.js:1288
+
+shieldPro.network.etherscan
+  app/shield-pro.js:1376
+
+shieldPro.network.finalUrl
+  app/shield-pro.js:1251
+
+shieldPro.network.forms
+  app/shield-pro.js:1323
+
+shieldPro.network.hsts
+  app/shield-pro.js:1275
+
+shieldPro.network.https
+  app/shield-pro.js:1262
+
+shieldPro.network.iframes
+  app/shield-pro.js:1312
+
+shieldPro.network.localComment
+  app/shield-pro.js:1419
+
+shieldPro.network.openPhish
+  app/shield-pro.js:1350
+
+shieldPro.network.scripts
+  app/shield-pro.js:1301
+
+shieldPro.network.source.local
+  app/shield-pro.js:1416
+
+shieldPro.network.source.scanners
+  app/shield-pro.js:1423
+
+shieldPro.network.title
+  app/shield-pro.js:1235
+
+shieldPro.reasons.default
+  app/shield-pro.js:1183
+
+shieldPro.reasons.title
+  app/shield-pro.js:1179
+
+shieldPro.samples.close
+  app/shield-pro.js:1748
+
+shieldPro.samples.title
+  app/shield-pro.js:1717
+
+shieldPro.share.advicesLabel
+  app/shield-pro.js:619
+
+shieldPro.share.reasonsLabel
+  app/shield-pro.js:616
+
+shieldPro.share.textTitle
+  app/shield-pro.js:614
+
+shieldPro.share.typeLabel
+  app/shield-pro.js:615
+
+shieldPro.verdict.blacklisted
+  app/shield-pro.js:1028
+
+shieldPro.verdict.scoreTitle
+  app/shield-pro.js:1045
+
+shieldPro.verdict.typeLabel
+  app/shield-pro.js:1091
+
+shieldPro.vote.safe
+  app/shield-pro.js:850
+
+shieldPro.vote.safeButton
+  app/shield-pro.js:1493
+
+shieldPro.vote.scamButton
+  app/shield-pro.js:1468
+
+shieldPro.vote.youMarked
+  app/shield-pro.js:843

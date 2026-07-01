@@ -1,0 +1,7 @@
+[
+  {
+    "file": "app\\lib\\store.auth.js",
+    "loc": "19:14",
+    "message": "Missing semicolon. (19:14)"
+  }
+]

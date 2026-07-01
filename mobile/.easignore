@@ -1,0 +1,16 @@
+node_modules
+android/app/build
+android/.gradle
+android/.cxx
+ios/build
+build
+dist
+.expo
+.parcel-cache
+.git
+.vscode
+.idea
+*.log
+*.tmp
+.DS_Store
+Thumbs.db

@@ -1,0 +1,15 @@
+[Unit]
+Description=Noytrix Backend (FastAPI/Uvicorn)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/backend
+ExecStart=/root/backend/venv/bin/python3 -m uvicorn main:app --host 127.0.0.1 --port 8000 --proxy-headers --workers 1
+Restart=always
+RestartSec=5
+User=root
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

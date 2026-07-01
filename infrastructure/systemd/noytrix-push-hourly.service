@@ -1,0 +1,6 @@
+[Unit]
+Description=Noytrix hourly push broadcast
+
+[Service]
+Type=oneshot
+ExecStart=curl -sS -X POST http://127.0.0.1:8000/push/hourly-broadcast

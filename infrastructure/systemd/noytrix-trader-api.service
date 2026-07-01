@@ -1,0 +1,15 @@
+[Unit]
+Description=Noytrix Trader API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/trader-bot
+ExecStart=/root/trader-bot/venv/bin/uvicorn bot_api:app --host 127.0.0.1 --port 8010
+Restart=always
+RestartSec=5
+User=root
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+﻿"Path","LineNumber","Text"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\(tabs)\profile.js","679","<Text style={{ color: C.text }}>• {ev.title}</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\(tabs)\spot.js","348","<Text style={s.soft}>/ {c.name}</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\(tabs)\spot.js","409","<Text style={s.soft}>/ {it.name}</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\(tabs)\spot.js","436","<Text style={s.soft}>/ {coin.name}</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\(tabs)\spot.js","482","<Text style={s.soft}>/ {it.name}</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\email.js","159","<Text style={[s.label, {marginTop:4}]}>>4 87 ?8AL<0</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signin.js","399","<Text style={[s.btnText, { color: ""#0b1220"" }]}>>9B8</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signin.js","406","<Text style={[s.btnText, { color: C.text }]}>B<5=0</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signin.js","491","<Text style={[s.btnText, { color: C.text }]}>0704</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signin.js","504","<Text style={[s.btnText, { color: C.text }]}>B<5=0</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signin.js","514","<Text style={s.modalTitle}>!<5=0 ?0@>;O</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signin.js","543","<Text style={[s.btnText, { color: C.text }]}>B<5=0</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signup.js","77","<Text style={s.label}>8:</Text>"
+"C:\Users\Home-PC\Desktop\noytrix-s54\app\auth\signup.js","98","<Text style={s.label}>0@>;L</Text>"

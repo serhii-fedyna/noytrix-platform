@@ -1,0 +1,1550 @@
+﻿{
+  "common": {
+    "back": "Back",
+    "cancel": "Cancel",
+    "close": "Close",
+    "copied": "Copied",
+    "copy": "Copy",
+    "delete": "Delete",
+    "edit": "Edit",
+    "error": "Error",
+    "investDisclaimerShort": "This is not investment advice.",
+    "loading": "Loading…",
+    "noData": "No data",
+    "ok": "OK",
+    "open": "Open",
+    "save": "Save",
+    "share": "Share",
+    "tryAgain": "Try again",
+    "loadingNews": "Loading news…"
+  },
+  "tabs": {
+    "home": "Home",
+    "pro": "PRO",
+    "spot": "Spot",
+    "trading": "Trading",
+    "profile": "Profile"
+  },
+  "auth": {
+    "title": "Sign in / Sign up",
+    "subtitle": "Choose a method.",
+    "loginEmailBtn": "Sign in with email",
+    "registerBtn": "Create account",
+    "forgotPassword": "Forgot password?",
+    "loginTitle": "Sign in with email",
+    "loginBtn": "Sign in",
+    "registerTitle": "Create account",
+    "registerVerifyTitle": "Confirm registration",
+    "registerVerifyText": "We sent a verification code to {{email}}. Enter it to complete registration.",
+    "resetTitle": "Change password",
+    "emailPlaceholder": "Email",
+    "passwordPlaceholder": "Password",
+    "nicknamePlaceholder": "Nickname",
+    "codePlaceholder": "Code from email",
+    "newPasswordPlaceholder": "New password",
+    "getCodeBtn": "Get code",
+    "getCodeLoadingBtn": "Sending...",
+    "confirmCodeBtn": "Confirm code",
+    "confirmCodeLoadingBtn": "Checking...",
+    "changePasswordBtn": "Change password",
+    "changePasswordLoadingBtn": "Checking...",
+    "resendCodeBtn": "Resend code",
+    "resendLoadingBtn": "Sending...",
+    "resendWaitBtn": "Resend code in {{s}}s",
+    "cancelBtn": "Cancel",
+    "okBtn": "OK",
+    "errorTitle": "Error",
+    "successTitle": "Success",
+    "alertLoginEmpty": "Enter email and password.",
+    "alertLoginError": "Invalid email or password.",
+    "alertRegisterEmpty": "Fill in nickname, email and password.",
+    "alertRegisterCodeSentTitle": "Code sent",
+    "alertRegisterCodeSentText": "We sent a verification code to your email.",
+    "alertRegisterError": "Failed to send code.",
+    "alertRegisterInvalidCode": "Invalid or expired code.",
+    "alertRegisterSuccess": "Account confirmed. You are now signed in.",
+    "alertResetEnterEmail": "Enter email to receive a code.",
+    "alertResetCodeSent": "Check your email.",
+    "alertResetError": "Failed to reset password.",
+    "alertResetSuccess": "Password changed. Log in with your new password.",
+    "errors": {
+      "network": "Network error. Please check your connection.",
+      "unknown": "Unexpected error. Please try again."
+    }
+  },
+  "home": {
+    "title": "Noytrix",
+    "subtitle": "Your crypto assistant",
+    "profile": "Profile",
+    "login": "Log in",
+    "riskBadge": "RISK ENGINE",
+    "riskBadge2": "Anti-scam protection",
+    "openPro": "Open PRO",
+    "heroTitle": "Don’t lose money to scams, fake links and mistakes.",
+    "heroText": "Check a link or wallet, get a strict verdict and a clear explanation — before you click, connect a wallet or send funds.",
+    "btnCheck": "Check",
+    "btnExplain": "Explain risk",
+    "tileImmunity": "Immunity",
+    "tileImmunitySub": "Stop scams before losses",
+    "tileShield": "Anti-scam",
+    "tileShieldSub": "Check links and addresses",
+    "tileExplain": "Explain",
+    "tileExplainSub": "Understand risk fast",
+    "tileCalendar": "Calendar",
+    "tileCalendarSub": "Events and impact",
+    "tileSpot": "Spot",
+    "tileSpotSub": "Spot overview",
+    "tileCalculator": "Crypto chat",
+    "tileCalculatorSub": "Quick calculation",
+    "marketTitle": "Market",
+    "marketCapLabel": "Cap:",
+    "marketChange24h": "24h:",
+    "newsTitle": "Latest market news",
+    "loadingNews": "Loading news…",
+    "noNews": "No data yet. Pull down to refresh.",
+    "openNews": "Open news…",
+    "articleError": "Unable to load the article."
+  },
+  "profile": {
+    "title": "Profile",
+    "headerTitle": "Profile",
+    "subtitleLoggedIn": "Your status, activity, trust, and PRO access — in one place.",
+    "subtitleLoggedOut": "Sign in to sync profile, achievements, activity and PRO access across devices.",
+    "loading": "Loading profile...",
+    "badge": {
+      "free": "FREE",
+      "pro": "PRO",
+      "roleDefault": "User"
+    },
+    "proCard": {
+      "title": "Unlock Noytrix PRO",
+      "text": "Get premium modules, deeper analytics, and faster workflows across the app.",
+      "button": "Open PRO"
+    },
+    "proActiveCard": {
+      "title": "PRO is active",
+      "text": "You have full access to premium features.",
+      "button": "Manage PRO"
+    },
+    "sections": {
+      "trust": "Trust Score",
+      "activity": "Activity",
+      "trading": "Trading Performance",
+      "achievements": "Achievements",
+      "achievementsEmpty": "No achievements yet.",
+      "futuresEmpty": "No setup analyses recorded yet.",
+      "settingsSecurity": "Settings & Security"
+    },
+    "identity": {
+      "level": "Level",
+      "memberSince": "Member since",
+      "rankLabel": "Rank",
+      "trustLabel": "Trust",
+      "activityLabel": "Activity"
+    },
+    "pro": {
+      "features": {
+        "scamshield": "ScamShield PRO",
+        "explain": "Explain PRO",
+        "deepScan": "Deep scan",
+        "market": "Market intelligence"
+      }
+    },
+    "trust": {
+      "label": "Trust Score",
+      "subtitle": "Calculated from scans, safe activity, community signals, and usage of core product modules.",
+      "scans": "Scans",
+      "safe": "Safe",
+      "malicious": "Danger",
+      "community": "Community"
+    },
+    "activity": {
+      "scans": "Scam scans",
+      "explains": "Explain sessions",
+      "tokens": "Assets checked",
+      "alerts": "Alerts used",
+      "topSymbolLabel": "Top asset",
+      "topSymbolEmpty": "No dominant asset yet.",
+      "topSymbolValue": "Most checked: {{symbol}}"
+    },
+    "trading": {
+      "total": "Setups analyzed",
+      "winRate": "Acceptance rate",
+      "avgRisk": "Approved",
+      "best": "Rejected",
+      "bestTrade": "Approved setups",
+      "worstTrade": "Risky setups",
+      "rejectedLabel": "Rejected setups",
+      "recent": "Performance summary",
+      "summaryValue": "You analyzed {{total}} setups. {{approved}} were approved, {{risky}} marked risky, and {{rejected}} rejected by the Risk Engine."
+    },
+    "achievements": {
+      "items": {
+        "first_scan": "First ScamShield check completed.",
+        "scanner_10": "10 ScamShield checks completed.",
+        "hunter_3": "3 dangerous results detected.",
+        "risk_engine_5": "5 setup analyses completed.",
+        "approved_3": "3 approved setups received.",
+        "analyst_5": "Explain used 5 times.",
+        "community_3": "3 community votes submitted.",
+        "pro_user": "PRO access is active."
+      }
+    },
+    "security": {
+      "email": "Email connected",
+      "session": "Account protection",
+      "protected": "Standard account protection active.",
+      "protectedPro": "PRO account protection active."
+    },
+    "notifications": {
+      "title": "Push notifications",
+      "text": "Price alerts, signals and calendar reminders."
+    },
+    "logout": {
+      "button": "Log out"
+    },
+    "nick": {
+      "change": "Edit",
+      "title": "Edit name",
+      "subtitle": "This name will be used in your profile and identity.",
+      "placeholder": "Type your name…",
+      "save": "Save",
+      "cancel": "Cancel"
+    }
+  },
+  "immunity": {
+    "title": "Immunity",
+    "subtitleNew": "Search a pair → open it → analyze your buy plan with Risk Engine.",
+    "common": {
+      "errorTitle": "Error",
+      "checkInput": "Check input",
+      "tapToCopy": "tap to copy",
+      "free": "FREE",
+      "pro": "PRO",
+      "copy": "Copy",
+      "verify": "Verify",
+      "copyLink": "Copy link"
+    },
+    "errors": {
+      "binanceMarket": "Failed to load Binance market data.",
+      "facts": "Failed to load facts.",
+      "amountPositive": "Amount (USDT) must be a positive number.",
+      "targetPositive": "Target profit (%) must be a positive number.",
+      "ddPositive": "Max drawdown (%) must be a positive number.",
+      "analyze": "Failed to analyze. Please try again."
+    },
+    "pick": {
+      "title": "Choose a market pair",
+      "search": "Search ticker (BTC, PEPE, SOL, BTCUSDT)",
+      "loading": "Loading Binance market…",
+      "showing": "Showing first 20 results. Refine search to find more."
+    },
+    "how": {
+      "title": "How to use Immunity",
+      "step1": "1) Search and tap a pair (e.g. BTC/USDT).",
+      "step2": "2) Check chart + facts + contract scan.",
+      "step3": "3) Tap “Analyze buy plan” and fill 6 fields.",
+      "step4": "4) Get Verdict + Coach Plan. Save and share."
+    },
+    "compare": {
+      "title": "Free vs PRO",
+      "subtitle": "PRO unlocks conflict detection + contract anti-scam + deeper verification.",
+      "features": {
+        "pairs": "Market pairs + search",
+        "chart": "TradingView chart",
+        "analysis": "Buy plan analysis (Risk Engine)",
+        "verdict": "Verdict + Coach plan",
+        "facts": "Asset facts (basic)",
+        "conflict": "Ticker conflict detection (clones)",
+        "contract": "Contract anti-scam scan + explorer verify",
+        "history": "Unlimited analysis history"
+      }
+    },
+    "shield": {
+      "compare": {
+        "title": "FREE vs PRO",
+        "subtitle": "Compare what’s included in FREE and what unlocks in PRO.",
+        "header": {
+          "feature": "Feature",
+          "free": "FREE",
+          "pro": "PRO"
+        },
+        "rows": {
+          "fastVerdict": "Fast verdict",
+          "mainSignals": "Top risk signals",
+          "communityVote": "SAFE / SCAM voting",
+          "deepDetails": "Deep data details",
+          "dataHeavyUI": "Extended data-heavy interface",
+          "unlimited": "Unlimited analyses"
+        }
+      }
+    },
+    "why": {
+      "title": "Why Immunity exists",
+      "text": "Immunity evaluates your entry logic: target, risk, horizon, behavior, and market context. It helps protect you from FOMO and discipline mistakes."
+    },
+    "usage": {
+      "title": "How to use",
+      "step1": "1) Search a pair and open it.",
+      "step2": "2) Check facts and verification (contracts/links).",
+      "step3": "3) Tap \"Analyze buy plan\" and set your inputs.",
+      "step4": "4) Get a live review, action plan, and market scenarios."
+    },
+    "coin": {
+      "powered": "Powered by Binance market data",
+      "volume": "24h Volume (USDT)",
+      "volatility": "Volatility (proxy)",
+      "spread": "Spread",
+      "analyze": "Analyze buy plan",
+      "showFacts": "Show Facts",
+      "hideFacts": "Hide Facts"
+    },
+    "facts": {
+      "title": "Asset Facts (PRO)",
+      "subtitle": "Tap any value to copy. Powered by CoinGecko + Binance.",
+      "load": "Load facts",
+      "refresh": "Refresh facts",
+      "noFacts": "No facts loaded yet. Tap “Load facts”.",
+      "conflictTitle": "⚠️ Possible ticker conflict",
+      "conflictText": "Multiple different assets share this ticker on CoinGecko. Double-check the exact ID + contract before buying.",
+      "candidateLine": "id: {{id}} • rank: {{rank}} • tap to copy id",
+      "contractScan": "Contract Scan",
+      "noRedFlags": "No major red flags detected by heuristics.",
+      "contractsTitle": "Contracts (tap to copy)",
+      "descriptionTitle": "Short description (tap to copy)",
+      "noContract": "No contract (native coin) or not provided.",
+      "labels": {
+        "cgId": "CoinGecko ID",
+        "updated": "Last updated",
+        "name": "Name",
+        "mcap": "Market Cap (USD)",
+        "fdv": "FDV (USD)",
+        "circ": "Circulating Supply",
+        "total": "Total Supply",
+        "max": "Max Supply",
+        "website": "Official website",
+        "twitter": "Twitter",
+        "telegram": "Telegram"
+      }
+    },
+    "factsExtra": {
+      "title": "Facts & verification",
+      "subtitle": "Tap any value to copy. Powered by CoinGecko + Binance.",
+      "showFacts": "Show facts",
+      "hideFacts": "Hide facts",
+      "loadFacts": "Load facts",
+      "refreshFacts": "Refresh facts",
+      "marketData": "Market data: Binance",
+      "tapToCopy": "tap to copy",
+      "seriousFlagsNone": "No major red flags detected.",
+      "shortDescription": "Short description (tap to copy)",
+      "contractsTap": "Contracts (tap to copy)",
+      "noFacts": "No facts loaded yet. Tap \"Load facts\"."
+    },
+    "verdict": {
+      "title": "Verdict",
+      "share": "Share verdict",
+      "sharePlan": "Share plan"
+    },
+    "verdictLevels": {
+      "low": "✅ OK",
+      "medium": "🟡 RISKY",
+      "high": "⚠️ HIGH RISK",
+      "critical": "❌ REJECTED"
+    },
+    "plan": {
+      "title": "Coach plan",
+      "subtitle": "Practical actions. No hype. No promises. Just risk control.",
+      "now": "What to do now",
+      "fix": "Fix your plan",
+      "safer": "Safer alternative"
+    },
+    "actionPlan": {
+      "title": "Action plan",
+      "now": "Now",
+      "fix": "Fix",
+      "safer": "Safer like this"
+    },
+    "liveReview": {
+      "title": "Live review",
+      "probability": "Estimated probability with discipline: ~{{probability}}."
+    },
+    "scenariosBlock": {
+      "title": "Scenarios",
+      "subtitle": "Not a prediction. A framework for what to do if the market moves.",
+      "worstCase": "Worst case"
+    },
+    "analysis": {
+      "title": "Analyze buy plan",
+      "input": "Provide your intention — Noytrix evaluates risk.",
+      "amount": "Amount (USDT)",
+      "horizon": "Horizon",
+      "target": "Target profit (%)",
+      "drawdown": "Max drawdown (%)",
+      "reason": "Reason",
+      "holding": "Already holding this asset?",
+      "yes": "YES",
+      "no": "NO",
+      "cancel": "Cancel",
+      "analyze": "Analyze",
+      "analyzing": "Analyzing…",
+      "running": "Running Risk Engine + PRO verification…",
+      "reasons": {
+        "news": "News",
+        "chart": "Chart",
+        "hype": "Hype",
+        "strategy": "Strategy"
+      }
+    },
+    "share": {
+      "verdictHeader": "NOYTRIX IMMUNITY — VERDICT",
+      "planHeader": "NOYTRIX IMMUNITY — PLAN",
+      "verdictLine": "Verdict: {{verdict}} | Score: {{score}}/100",
+      "priceLine": "Price: {{price}} | 24h: {{p24}}",
+      "inputsLine": "Inputs: ${{amount}} | Horizon: {{h}} | Target: {{t}} | Max DD: {{dd}}",
+      "marketLine": "Market: Price {{price}} | 24h {{p24}}",
+      "reasonsTitle": "Reasons:"
+    },
+    "shareCard": {
+      "title": "Share",
+      "goPro": "Go PRO",
+      "shareErrorTitle": "Share error",
+      "shareCardMissing": "Share card was not found.",
+      "shareFailed": "Failed to share image."
+    },
+    "freeLimit": {
+      "title": "FREE limit",
+      "text": "FREE → 4 analyses per day (UTC)\nThe 5th is blocked\nPRO → unlimited",
+      "ok": "OK",
+      "goPro": "Go PRO",
+      "freeLeft": "FREE • {{used}}/{{limit}} • {{left}} left"
+    },
+    "copy": {
+      "copied": "Copied",
+      "id": "ID copied",
+      "date": "Date copied",
+      "candidateId": "Candidate ID copied",
+      "name": "Name copied",
+      "marketcap": "Market cap copied",
+      "fdv": "FDV copied",
+      "supply": "Supply copied",
+      "website": "Website copied",
+      "twitter": "Twitter copied",
+      "telegram": "Telegram copied",
+      "contract": "Contract copied",
+      "explorerLink": "Explorer link copied",
+      "description": "Description copied"
+    },
+    "reasons": {
+      "FOMO_AFTER_PUMP": "Price is up {{change24h}}% in 24h — common FOMO trap.",
+      "TARGET_TOO_HIGH": "Target {{target}}% looks aggressive for horizon ({{horizon}}).",
+      "DRAWDOWN_MISMATCH": "Volatility (~{{vol}}%) exceeds your max drawdown ({{dd}}%).",
+      "WIDE_SPREAD": "Spread is wide (~{{spreadBps}} bps) — execution risk.",
+      "OVERTRADING_SIGNAL": "Many analyses today ({{analyses24h}}) — risk of impulsive actions.",
+      "NARRATIVE_PRESSURE": "Your reason is hype/pressure — manipulation risk increases.",
+      "ADD_WHILE_HOT": "Adding while already holding on short horizon can amplify mistakes.",
+      "BIG_TICKET": "Large ticket size — consider splitting entries."
+    },
+    "planCodes": {
+      "SPLIT_ENTRIES": "Split entries (2–3 parts) instead of one full buy.",
+      "DEFINE_INVALIDATION": "Define invalidation before entry (max loss or time-stop).",
+      "WAIT_CONFIRMATION": "Do not enter immediately. Wait for confirmation or a pullback.",
+      "START_SMALL": "If you want exposure: start with a very small starter position.",
+      "ENTER_IN_PARTS": "If you enter: do it in parts and keep risk tight.",
+      "AFTER_CONSOLIDATION": "Prefer entry after consolidation (not during spike).",
+      "REASONABLE_IF_LIMITS": "Plan looks reasonable if you follow your risk limits.",
+      "DONT_CHANGE_MID": "Avoid changing the plan mid-trade.",
+      "AVOID_AFTER_PUMP": "Avoid buying right after a strong 24h move — wait for cooling.",
+      "REDUCE_TARGET_OR_EXTEND": "Reduce target or extend horizon — target is aggressive vs volatility.",
+      "MISMATCH_SIZE_OR_DD": "Increase allowed drawdown OR reduce size — mismatch causes panic exits.",
+      "H1D_TIME_STOP": "For 1D: use strict time-stop (exit if no progress within hours).",
+      "H1W_TP_ZONES": "For 1W: define 2 take-profit zones and take partials.",
+      "H1M_IGNORE_NOISE": "For 1M: don’t overreact to daily noise; keep invalidation clear.",
+      "H6M_FUNDAMENTALS": "For 6M: focus on fundamentals; avoid frequent re-entries."
+    }
+  },
+  "shield": {
+    "title": "ScamShield",
+    "headerTitle": "Anti-scam",
+    "headerSubtitle": "Smart check of links, addresses and texts before you send funds.",
+    "subtitle": "Check a link, domain, wallet, contract, ticker or suspicious text before you act.",
+    "copied": "Copied to clipboard.",
+    "backendError": {
+      "title": "No server data"
+    },
+    "quota": {
+      "pillFree": "FREE • {{used}}/{{limit}} today • {{left}} left",
+      "pillPro": "PRO • unlimited",
+      "title": "FREE limit reached",
+      "exceeded": "Daily FREE limit reached. Upgrade to PRO for unlimited.",
+      "openPro": "Open PRO",
+      "ok": "OK"
+    },
+    "input": {
+      "placeholder": "Paste URL / domain / address / ticker / text"
+    },
+    "buttons": {
+      "check": "Check",
+      "checking": "Checking…",
+      "samples": "Examples",
+      "share": "Share",
+      "clear": "Clear",
+      "copyInput": "Copy input",
+      "copyReport": "Copy report",
+      "open": "Open"
+    },
+    "verdict": {
+      "label": "Verdict:",
+      "typeLabel": "Type:"
+    },
+    "kind": {
+      "url": "URL",
+      "domain": "Domain",
+      "wallet": "Wallet",
+      "contract": "Contract",
+      "ticker": "Ticker",
+      "address": "Address",
+      "text": "Text"
+    },
+    "level": {
+      "safe": "Safe",
+      "suspicious": "Suspicious",
+      "danger": "Danger",
+      "critical": "Critical",
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "scoring": {
+      "title": "Risk structure",
+      "confirmed": "Confirmed external",
+      "heuristics": "Heuristics",
+      "pageContent": "Page content",
+      "community": "Community"
+    },
+    "sources": {
+      "title": "Verification sources",
+      "empty": "Server returned no sources.",
+      "normalize": "Normalize / IDN",
+      "redirects": "Redirects",
+      "openphish": "OpenPhish",
+      "content": "Content analysis",
+      "community": "Community",
+      "virustotal": "VirusTotal",
+      "safeBrowsing": "Google Safe Browsing",
+      "safe_browsing": "Google Safe Browsing",
+      "urlscan": "urlscan.io",
+      "etherscan": "Etherscan",
+      "bscscan": "BscScan",
+      "coingecko": "CoinGecko",
+      "page_fetch": "Page fetch",
+      "text_heuristics": "Text heuristics",
+      "honeypot": "Honeypot"
+    },
+    "source": {
+      "safe": "Safe",
+      "danger": "Danger",
+      "error": "Error",
+      "notChecked": "Not checked"
+    },
+    "sourceExplain": {
+      "safe": "No matches/threats found (good).",
+      "danger": "A match or threat signal was found (bad).",
+      "error": "Source unavailable or returned an error (neutral).",
+      "notChecked": "Source was not checked or is not applicable."
+    },
+    "evidence": {
+      "title": "Evidence / red flags",
+      "summary": "Evidence",
+      "redirects": "Redirect chain",
+      "none": "No redirects",
+      "signals": "Signals",
+      "empty": "No explicit evidence found."
+    },
+    "community": {
+      "title": "Community verdict",
+      "verdict": "Verdict",
+      "scamVotes": "SCAM votes",
+      "safeVotes": "SAFE votes",
+      "totalUsers": "Users"
+    },
+    "vote": {
+      "appKeyMissingTitle": "APP KEY missing",
+      "appKeyMissingText": "NOYTRIX_APP_KEY was not found in expo.extra. Voting cannot work.",
+      "sending": "Sending…",
+      "markScam": "Mark SCAM",
+      "markSafe": "Mark SAFE",
+      "successTitle": "Vote sent",
+      "successScam": "Object marked as SCAM.",
+      "successSafe": "Object marked as SAFE.",
+      "errorTitle": "Vote error"
+    },
+    "page": {
+      "title": "Page details",
+      "url": "Final URL",
+      "host": "Final host",
+      "statusCode": "Status",
+      "contentType": "Content-Type"
+    },
+    "token": {
+      "title": "Token data",
+      "contract": "Contract",
+      "domain": "Domain",
+      "holders": "Holders",
+      "riskFlags": "Risk flags"
+    },
+    "honeypot": {
+      "title": "Honeypot analysis",
+      "risk": "Risk",
+      "status": "Status",
+      "isHoneypot": "Is Honeypot",
+      "liquidity": "Liquidity",
+      "buyTax": "Buy Tax",
+      "sellTax": "Sell Tax",
+      "transferTax": "Transfer Tax",
+      "openSource": "Open Source",
+      "simulation": "Simulation",
+      "chainId": "Chain ID",
+      "maxBuy": "Max Buy",
+      "maxSell": "Max Sell"
+    },
+    "proBlock": {
+      "title": "Open ScamShield PRO",
+      "subtitle": "Get deeper multi-API analysis, more data blocks, honeypot details, and unlimited access.",
+      "buttonPro": "Go to PRO",
+      "buttonBuy": "Open PRO"
+    },
+    "pro": {
+      "title": "ScamShield PRO",
+      "desc": "Deep analysis, AI verdict, advanced sources, and your personal scam history — all in one place.",
+      "button": "Open PRO"
+    },
+    "howItWorks": {
+      "title": "How it works",
+      "text": "1) Paste URL / domain / address / contract / ticker / text and tap “Check”.\n2) The frontend sends it to the backend.\n3) The backend returns real source statuses, evidence, scoring, AI verdict and community verdict.\n4) The final verdict is based on multi-API signals, heuristics, content analysis and community votes."
+    },
+    "compare": {
+      "title": "FREE vs PRO",
+      "subtitle": "Compare what you get in the free version and what becomes available in PRO.",
+      "header": {
+        "feature": "FEATURE",
+        "free": "FREE",
+        "pro": "PRO"
+      },
+      "rows": {
+        "verdictLevels": "Safe / Suspicious / Danger / Critical",
+        "realSources": "Real source statuses",
+        "communityVotes": "SAFE / SCAM voting",
+        "vtSafeBrowsingUrlscan": "VirusTotal / Safe Browsing / urlscan",
+        "contractChecks": "Etherscan / BscScan",
+        "honeypotData": "Honeypot block and details",
+        "unlimited": "Unlimited scans",
+        "basicHeuristics": "Basic offline heuristics",
+        "onlineChecks": "Online checks (OpenPhish / VirusTotal / explorers)",
+        "deepAnalysis": "Deep risk analysis & link intelligence",
+        "aiVerdict": "AI verdict + explanation",
+        "history": "Saved history in profile",
+        "userMarks": "User notes & custom tags",
+        "userScamTable": "Personal scam table & patterns",
+        "openphishCommunity": "OpenPhish + community reputation",
+        "proSources": "VirusTotal / Safe Browsing / urlscan",
+        "aiAnalysis": "AI analysis + detailed explanation",
+        "notesTags": "Notes & custom tags",
+        "patterns": "Personal scam patterns base",
+        "honeypot": "Honeypot / Buy-Sell Tax / Liquidity"
+      }
+    },
+    "samples": {
+      "title": "Examples",
+      "items": [
+        {
+          "h": "https://binance-airdrop-bonus.net",
+          "d": "Binance phishing"
+        },
+        {
+          "h": "https://metamask-support-login.com",
+          "d": "Fake MetaMask support"
+        },
+        {
+          "h": "http://paypal.com.verify-account-security.com",
+          "d": "PayPal subdomain trap"
+        },
+        {
+          "h": "0x1111111254EEB25477B68fB85Ed929F73A960582",
+          "d": "ETH address (example)"
+        },
+        {
+          "h": "BTC",
+          "d": "Ticker check"
+        },
+        {
+          "h": "PEPE",
+          "d": "Token + honeypot"
+        }
+      ]
+    },
+    "share": {
+      "title": "ScamShield report",
+      "dialogTitle": "Share report",
+      "objectPlaceholder": "Object",
+      "objectTitle": "Object",
+      "verdictTitle": "Verdict",
+      "scoreTitle": "Score",
+      "typeTitle": "Type",
+      "dateTitle": "Date",
+      "sourcesTitle": "Sources",
+      "footer": "NOYTRIX — ScamShield",
+      "textTitle": "ScamShield",
+      "textReasons": "Reasons"
+    }
+  },
+  "shieldPro": {
+    "title": "ScamShield PRO",
+    "subtitle": "Deep multi-API analysis + real source statuses + premium verdict engine.",
+    "unlimited": "PRO • unlimited",
+    "copied": "Copied to clipboard.",
+    "scanFailed": "Failed to perform the check.",
+    "noLimitBut429": "Server returned 429. This should not happen for PRO.",
+    "backendError": {
+      "title": "No server data"
+    },
+    "header": {
+      "proActive": "PRO active",
+      "proOff": "PRO not active",
+      "freeLimitLabel": "FREE limit/day:"
+    },
+    "input": {
+      "placeholder": "Paste URL / domain / address / contract / ticker / text"
+    },
+    "buttons": {
+      "check": "Check",
+      "checking": "Checking…",
+      "samples": "Examples",
+      "share": "Share",
+      "clear": "Clear",
+      "copyInput": "Copy input",
+      "copyReport": "Copy report",
+      "openBrowser": "Open in browser"
+    },
+    "actions": {
+      "copyReport": "Copy report",
+      "open": "Open",
+      "share": "Share"
+    },
+    "alert": {
+      "errorTitle": "Error",
+      "errorText": "Failed to send. Please try again.",
+      "copiedTitle": "Copied",
+      "copiedText": "Text copied to clipboard."
+    },
+    "lastCheck": {
+      "title": "Last check",
+      "object": "Object:",
+      "time": "Time:"
+    },
+    "level": {
+      "safe": "Safe",
+      "suspicious": "Suspicious",
+      "danger": "Danger",
+      "critical": "Critical / Scam",
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "status": {
+      "ok": "No matches or threats found (this is good).",
+      "warn": "A match or threat signal was found (this is bad).",
+      "err": "Source unavailable or returned an error (neutral).",
+      "none": "Source was not applicable or was not used."
+    },
+    "common": {
+      "yes": "Yes",
+      "no": "No"
+    },
+    "verdict": {
+      "scoreTitle": "Risk Score",
+      "typeLabel": "Type:",
+      "blacklisted": "Blacklisted",
+      "proVerified": "PRO sources",
+      "object": "Object:"
+    },
+    "kind": {
+      "url": "URL",
+      "domain": "Domain",
+      "wallet": "Wallet",
+      "contract": "Contract",
+      "ticker": "Ticker",
+      "eth": "ETH address",
+      "bsc": "BSC address",
+      "text": "Text"
+    },
+    "scoring": {
+      "title": "Scoring model",
+      "confirmed": "Confirmed external",
+      "heuristics": "Heuristics",
+      "pageContent": "Page content",
+      "community": "Community"
+    },
+    "aiComment": {
+      "title": "AI note"
+    },
+    "reasons": {
+      "title": "Why this verdict",
+      "default": "Not enough suspicious signals."
+    },
+    "advices": {
+      "title": "What to do",
+      "default": "Use only official sources."
+    },
+    "sources": {
+      "title": "Sources",
+      "empty": "Server returned no sources.",
+      "normalize": "Normalize / IDN",
+      "redirects": "Redirects",
+      "rdap": "Domain age (RDAP/WHOIS)",
+      "openphish": "OpenPhish",
+      "content": "Content analysis",
+      "community": "Community",
+      "virustotal": "VirusTotal",
+      "safe_browsing": "Google Safe Browsing",
+      "google_safe_browsing": "Google Safe Browsing",
+      "urlscan": "urlscan.io",
+      "etherscan": "Etherscan",
+      "bscscan": "BscScan",
+      "honeypot": "Honeypot / Token Risk",
+      "coingecko": "CoinGecko",
+      "page_fetch": "Page fetch",
+      "text_heuristics": "Text heuristics",
+      "dexscreener": "DexScreener"
+    },
+    "community": {
+      "title": "Community verdict",
+      "subtitle": "PRO users can mark an object as SCAM or SAFE. This helps everyone see its real reputation.",
+      "verdict": "Verdict",
+      "safe": "SAFE votes",
+      "scam": "SCAM votes",
+      "total": "Users",
+      "confidence": "Confidence"
+    },
+    "vote": {
+      "scam": "Mark SCAM",
+      "safe": "Mark SAFE",
+      "sending": "Sending…",
+      "youMarked": "You marked this as",
+      "confirmScamTitle": "Mark as SCAM?",
+      "confirmScamText": "This will be visible to other users. Mark it only if you are sure.",
+      "confirmSafeTitle": "Mark as SAFE?",
+      "confirmSafeText": "This will be visible to other users. Mark it only if you are sure.",
+      "savedTitle": "Done",
+      "savedText": "Your vote was saved and is visible to everyone.",
+      "failed": "Failed to send vote.",
+      "noAppKey": "APP KEY for community vote was not found in the frontend. Add it to expo extra."
+    },
+    "evidence": {
+      "title": "Evidence",
+      "summary": "Evidence",
+      "redirects": "Redirect chain",
+      "signals": "Signals",
+      "none": "No redirects",
+      "empty": "No explicit evidence found."
+    },
+    "crowd": {
+      "title": "Public reputation feed",
+      "subtitle": "Here you can see what users most often mark as SCAM or SAFE.",
+      "loading": "Loading…",
+      "empty": "No public stats yet.",
+      "refresh": "Refresh",
+      "copy": "Copy",
+      "open": "Open"
+    },
+    "share": {
+      "title": "ScamShield PRO",
+      "dialogTitle": "Share",
+      "objectPlaceholder": "Object",
+      "verdictTitle": "Verdict",
+      "scoreTitle": "Score",
+      "typeTitle": "Type",
+      "dateTitle": "Date",
+      "evidence": "Signals",
+      "reasons": "Reasons",
+      "advices": "Advices",
+      "footer": "NOYTRIX — ScamShield PRO"
+    },
+    "honeypot": {
+      "title": "Honeypot Check",
+      "canSell": "Can sell",
+      "simulation": "Simulation",
+      "buyTax": "Buy tax",
+      "sellTax": "Sell tax",
+      "transferTax": "Transfer tax",
+      "openSource": "Open source",
+      "proxy": "Proxy",
+      "liquidity": "Liquidity",
+      "pair": "Pair",
+      "pairAddress": "Pair address",
+      "router": "Router",
+      "risk": "Risk",
+      "status": "Status",
+      "isHoneypot": "Is Honeypot",
+      "chainId": "Chain ID",
+      "maxBuy": "Max Buy",
+      "maxSell": "Max Sell"
+    },
+    "token": {
+      "title": "Token data",
+      "contract": "Contract",
+      "domain": "Domain",
+      "holders": "Holders",
+      "riskFlags": "Risk flags"
+    },
+    "contract": {
+      "title": "Contract / explorer checks",
+      "note": "For EVM objects, check Etherscan / BscScan / DexScreener / Honeypot in the Sources block above."
+    },
+    "how": {
+      "title": "How PRO works",
+      "text": "PRO uses the server-side Risk Engine: normalization, redirects, domain age, brand analysis, content scan, threat-intel sources and community reputation.",
+      "disclaimer": "Disclaimer: this is not investment advice. Always verify sources and never enter your seed phrase or private key."
+    },
+    "samples": {
+      "title": "Examples"
+    }
+  },
+  "futuresPro": {
+    "title": "Explain PRO",
+    "subtitle": "Choose a pair first, then get the setup.",
+    "btnAnalyze": "Analyze",
+    "btnSaveSession": "Save session",
+    "btnSharePlan": "Share plan",
+    "btnEntered": "Mark entry",
+    "btnRefreshPrice": "Refresh price",
+    "btnClosed": "Close (log)",
+    "pairSelectionTitle": "Pair selection",
+    "pairSelectionSubtitle": "Choose from quick pairs or enter your own ticker manually.",
+    "pairInputPlaceholder": "BTC / ETH / SOL / XRP ...",
+    "timeframe": "Timeframe",
+    "tfContextTitle": "Timeframe context",
+    "score": "Score",
+    "liquidity": "Liquidity",
+    "change24h": "24h",
+    "quickSelectTitle": "Quick select",
+    "planTitle": "Plan",
+    "planSubtitle": "Compact setup overview.",
+    "planPair": "{{pair}} • TF {{tf}}",
+    "planCurrentPrice": "Current: {{price}}",
+    "planTrend": "Trend: {{trend}} • {{side}}",
+    "planRsiAtr": "RSI {{rsi}} • ATR {{atr}} ({{atrp}})",
+    "planLevels": "Levels: S {{sup}} • R {{res}}",
+    "planZone": "Entry zone: {{min}}–{{max}}",
+    "planStop": "Stop: {{stop}}",
+    "planTargets": "Targets: T1 {{t1}} • T2 {{t2}}",
+    "planLastPrice": "Last price: {{price}}",
+    "planEmptyHint": "Pick a pair and tap Analyze.",
+    "current": "Current",
+    "price": "Price",
+    "sideLabel": "Side",
+    "rangePosition": "Range position",
+    "stopDistance": "Stop distance",
+    "positionSizingSubtitle": "Compact calculator.",
+    "compareSubtitle": "Compare with another pair.",
+    "textExplainTitle": "Text explanation",
+    "textExplainSubtitle": "Text summary.",
+    "historySubtitle": "Saved sessions.",
+    "noDataTitle": "No data",
+    "noDataSubtitle": "Could not build setup for this pair.",
+    "metric": "Metric",
+    "trades": "trades",
+    "date": "Date",
+    "from": "from",
+    "position": "Position",
+    "enterPairFirst": "Enter pair first.",
+    "trend": {
+      "up": "Uptrend",
+      "down": "Downtrend",
+      "flat": "Flat"
+    },
+    "side": {
+      "long": "LONG",
+      "short": "SHORT"
+    },
+    "levels": {
+      "support": "Support",
+      "resistance": "Resistance"
+    },
+    "entryZone": "Entry zone",
+    "stop": "Stop",
+    "targets": "Targets",
+    "target1": "Target 1",
+    "target2": "Target 2",
+    "indicators": {
+      "ema20": "EMA20",
+      "ema50": "EMA50",
+      "rsi": "RSI",
+      "atr": "ATR"
+    },
+    "range": {
+      "title": "Range position",
+      "top": "Top of range",
+      "middle": "Middle of range",
+      "bottom": "Bottom of range"
+    },
+    "backtestSummary": "Backtest ({{tf}}): {{trades}} trades • PnL {{pnl}}%",
+    "liq": {
+      "ultra": "Ultra",
+      "high": "High",
+      "mid": "Medium",
+      "low": "Low",
+      "unknown": "Unknown"
+    },
+    "errorLoadPair": "Failed to load the pair.",
+    "news": {
+      "withEvents": "There are events for {{base}} within the next hour.",
+      "noEvents": "No events found for {{base}} within the next hour.",
+      "error": "Failed to check events."
+    },
+    "checklist": {
+      "title": "Checklist",
+      "subtitle": "Before entry.",
+      "done": "Done",
+      "riskTitle": "Risk rules",
+      "riskBody": "Risk per trade, stop distance, leverage sanity.",
+      "liqTitle": "Liquidity",
+      "liqBody": "Check volume/spreads. Avoid illiquid pairs.",
+      "newsTitle": "News/events",
+      "planTitle": "Plan clarity",
+      "planBody": "Entry zone, invalidation (stop), targets. No guessing.",
+      "sizeTitle": "Position size",
+      "sizeBody": "Size based on risk money and stop distance."
+    },
+    "riskBlockTitle": "Position sizing",
+    "input": {
+      "depositLabel": "Deposit",
+      "depositPlaceholder": "e.g. 500",
+      "riskLabel": "Risk %",
+      "leverageLabel": "Leverage"
+    },
+    "risk": {
+      "enterToSee": "Enter deposit to see position size.",
+      "warningNotEnoughBalance": "Not enough margin: reduce size/leverage.",
+      "summaryRisk": "Risk: {{riskMoney}} ({{riskPct}}%)",
+      "summaryQty": "Qty: {{qty}} {{coin}} • Notional {{notional}}",
+      "summaryMargin": "Leverage {{lev}} • Margin {{margin}}",
+      "summaryStop": "Stop distance {{stopPct}}% • RR1 {{rr1}} • RR2 {{rr2}}",
+      "mode": {
+        "veryConservative": "Mode: very conservative",
+        "moderate": "Mode: moderate",
+        "high": "Mode: aggressive"
+      }
+    },
+    "compare": {
+      "title": "Compare",
+      "btn": "Compare",
+      "hint": "Compare this setup with another pair.",
+      "metric": "Metric",
+      "score": "Score",
+      "trend": "Trend",
+      "side": "Side",
+      "zone": "Entry zone",
+      "stop": "Stop",
+      "rr": "RR (T1/T2)",
+      "vol": "Volatility (ATR%)",
+      "ch24": "24h change",
+      "liq": "Liquidity",
+      "winner": "Higher score = cleaner setup",
+      "errorTitle": "Compare",
+      "errorBody": "Pick a different second ticker.",
+      "loadFail": "Failed to load comparison. Try again."
+    },
+    "history": {
+      "title": "History",
+      "hint": "Saved sessions.",
+      "empty": "No sessions yet.",
+      "saveBtn": "Save session",
+      "savedTitle": "Saved",
+      "savedBody": "Session saved to history.",
+      "restoredTitle": "Restored",
+      "restoredBody": "Session restored. Tap Analyze to refresh.",
+      "line": "Side {{side}} • Zone {{z1}}–{{z2}} • Stop {{stop}} • T1 {{t1}} • T2 {{t2}}",
+      "zone": "Zone"
+    },
+    "advise": {
+      "line1": "Trend: {{trend}} | EMA20 {{ema20}} / EMA50 {{ema50}} | RSI {{rsi}}",
+      "line2": "ATR {{atr}} | Support {{sup}} | Resistance {{res}}",
+      "line3": "Entry zone {{zoneMin}}–{{zoneMax}} | Stop {{stop}}",
+      "line4": "Targets: T1 {{t1}} | T2 {{t2}}",
+      "rsiOversold": "RSI: oversold — watch for bounce / fake-outs.",
+      "rsiOverbought": "RSI: overbought — expect volatility / pullback.",
+      "followTitle": "Follow-up",
+      "trendChanged": "Trend changed vs entry",
+      "trendSame": "Trend still aligned",
+      "positionLine": "{{side}} entry {{entry}} • {{trendComment}}",
+      "atrHoldLine": "ATR now: {{atr}} — use it to trail / size volatility."
+    },
+    "alert": {
+      "errorTitle": "Error",
+      "errorGetEntryPrice": "Failed to get entry price.",
+      "errorGetPrice": "Failed to get price.",
+      "noPositionTitle": "No position",
+      "noPositionBody": "Mark entry first.",
+      "noPriceTitle": "No price",
+      "noPriceBody": "Refresh price first.",
+      "positionOpened": {
+        "title": "Position marked",
+        "body": "{{side}} at {{price}}"
+      },
+      "positionClosed": {
+        "title": "Position closed",
+        "body": "Entry {{entry}} → Exit {{exit}} ({{pnl}})"
+      }
+    },
+    "hints": {
+      "eventsLoading": "Checking events…",
+      "disclaimer": "Important: analytics only, not financial advice. Use risk management."
+    }
+  },
+  "explain": {
+    "title": "Explain",
+    "subtitle2": "Enter a ticker — get trend, risk, momentum and key levels.",
+    "inputTitle": "What to analyze?",
+    "inputTextPairsOnly": "Enter a ticker (e.g., BTC, ETH, SOL). We analyze USDT pairs.",
+    "searchPlaceholder": "Example: BTC",
+    "btnAnalyze": "Analyze",
+    "howTitle": "How it works",
+    "howBody": "Enter a ticker (BTC/ETH/SOL) — we fetch data from Binance, calculate indicators and show a market snapshot: trend, risk, momentum and key levels.",
+    "alertBadTickerTitle": "Ticker not recognized",
+    "alertBadTickerText": "Enter a ticker like BTC or ETH.",
+    "errorTitle": "Error",
+    "error": "Failed to load data. Check your internet or try another ticker.",
+    "resultTitle": "Market snapshot",
+    "score": "Score",
+    "biasLabel": "Bias",
+    "biasBull": "Buyers advantage",
+    "biasBear": "Sellers advantage",
+    "biasFlat": "Balance / sideways",
+    "change24h": "24h change",
+    "range24h": "24h range",
+    "volume24h": "24h volume",
+    "liquidity": "Liquidity",
+    "liqUltra": "Very high",
+    "liqHigh": "High",
+    "liqMid": "Medium",
+    "liqLow": "Low",
+    "liqUnknown": "Unknown",
+    "risk": "Risk",
+    "riskLow": "Low",
+    "riskMid": "Medium",
+    "riskHigh": "High",
+    "riskUnknown": "Unknown",
+    "momentum": "Momentum",
+    "momUp": "Strong upward",
+    "momDown": "Strong downward",
+    "momNeutral": "Neutral",
+    "momUnknown": "Unknown",
+    "signalsTitle": "Signals",
+    "ema": "EMA20 / EMA50",
+    "emaBull": "Buyers stronger (upward slope)",
+    "emaBear": "Sellers stronger (downward slope)",
+    "emaFlat": "No clear slope",
+    "rsi": "RSI(14)",
+    "rsiOverbought": "Overbought",
+    "rsiOversold": "Oversold",
+    "rsiNormal": "Normal zone",
+    "atr": "ATR(14)",
+    "atrHint": "ATR shows volatility. Higher % means higher movement risk.",
+    "levels": "Levels",
+    "support": "Support",
+    "resistance": "Resistance",
+    "levelsHint": "These are reference zones, not entry signals.",
+    "miniGlossaryTitle": "What these metrics mean",
+    "gEma": "EMA is an exponential moving average. EMA20 reacts faster than EMA50. EMA20 above EMA50 = bullish bias.",
+    "gRsi": "RSI measures strength (0–100). Above 70 overbought, below 30 oversold.",
+    "gAtr": "ATR shows average volatility range. Higher ATR% = higher risk.",
+    "gLevels": "Support and resistance are zones where price often reacts.",
+    "priceAction": "Price movement",
+    "sparkHint": "Mini chart for the selected timeframe.",
+    "proTitle": "Explain PRO",
+    "proBody": "Entry zone, stop-loss, targets and checklist in one structured screen.",
+    "proBtn": "Open Explain PRO",
+    "compareTitle": "FREE vs PRO comparison",
+    "compareHint": "PRO adds scenarios, discipline and advanced tools.",
+    "compareFeature": "Feature",
+    "compareFree": "FREE",
+    "comparePro": "PRO",
+    "compareF1": "Market snapshot (trend/risk/momentum)",
+    "compareF2": "Indicators (EMA/RSI/ATR) + levels",
+    "compareF3": "Favorites + recents",
+    "compareF4": "Entry zone + stop + targets",
+    "compareF5": "Checklist (risk/news/liidity)",
+    "compareF6": "History of PRO sessions",
+    "compareF7": "Compare tickers inside PRO",
+    "disclaimer": "Important: this is analytics, not financial advice."
+  },
+  "spot": {
+    "title": "Spot",
+    "subtitle": "Daily drop by 08:00: liquidity, 7d momentum, 24h change and basic filters. Inside — ideas and ready-made portfolios.",
+    "disclaimer": "This is not investment advice.",
+    "titleToday": "Today’s idea",
+    "issueLabel": "Issue",
+    "selectionLabel": "Selection",
+    "ideaRange": "Idea (1–7 days)",
+    "ideasTitle": "Ideas (1–7 days)",
+    "noData": "No data",
+    "noDataIdeas": "No data yet. Pull down to refresh.",
+    "noDataPackages": "Package data will appear after ideas are loaded.",
+    "price": "Price",
+    "marketCap": "Market cap",
+    "marketCapShort": "Mcap",
+    "volume24h": "24h volume",
+    "volumeShort": "Volume",
+    "change24h": "24h change",
+    "change7d": "7d",
+    "potential": "Potential",
+    "expectation": "Expectation",
+    "allocation": "Allocated",
+    "buyOnExchange": "Buy on exchange",
+    "packagesTitle": "Ready-made portfolios",
+    "pack100Title": "Pack for $100",
+    "pack500Title": "Pack for $500",
+    "pack1000Title": "Pack for $1,000",
+    "packageStrategy": "package strategy",
+    "shareIssue": "Share issue",
+    "shareIdea": "Share this idea",
+    "sharePack100": "Share $100 pack",
+    "sharePack500": "Share $500 pack",
+    "sharePack1000": "Share $1,000 pack",
+    "smartPicks": "Noytrix · smart picks"
+  },
+  "calendar": {
+    "title": "Crypto Calendar",
+    "headerTitle": "Crypto Calendar",
+    "headerSubtitle": "Listings, unlocks and key dates — in one feed.",
+    "notAdvice": "Events are not financial advice.",
+    "weekdays": [
+      "Mon",
+      "Tue",
+      "Wed",
+      "Thu",
+      "Fri",
+      "Sat",
+      "Sun"
+    ],
+    "months": [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December"
+    ],
+    "errorTitle": "Error",
+    "errorLoad": "Failed to load calendar events. Please try again.",
+    "filtersTitle": "Filters",
+    "filterAll": "All",
+    "filterMacro": "Macro / FOMC",
+    "filterUnlocks": "Unlocks",
+    "filterCex": "Listings",
+    "filterDerivatives": "Derivatives",
+    "filterHighMedium": "High / Medium only",
+    "eventsTitle": "Events for the day",
+    "noEvents": "No events for this day.",
+    "refreshing": "Refreshing…",
+    "metaStatusLabel": "Status:",
+    "importance": "Importance",
+    "level": {
+      "high": "High",
+      "mid": "Medium",
+      "low": "Low"
+    },
+    "status": {
+      "live": "Live",
+      "past": "Past",
+      "soon": "Soon",
+      "upcoming": "Upcoming"
+    },
+    "type": {
+      "listing": "Listing",
+      "unlock": "Unlock",
+      "governance": "Governance",
+      "tokenomics": "Tokenomics",
+      "network": "Network",
+      "macro": "Macro",
+      "airdrop": "Airdrop",
+      "derivatives": "Derivatives",
+      "event": "Event"
+    },
+    "eventTypes": {
+      "listing": "Listing",
+      "unlock": "Unlock",
+      "airdrop": "Airdrop",
+      "macro": "Macro",
+      "derivatives": "Derivatives",
+      "network": "Network",
+      "tokenomics": "Tokenomics",
+      "other": "Event"
+    },
+    "howTitle": "How to use the Calendar",
+    "howP1": "This calendar shows important crypto-related events such as listings, unlocks, macro announcements and derivatives expirations.",
+    "howP2": "Use the High / Medium filter to focus only on the most impactful events.",
+    "howP3": "Tap on any date to view detailed information about scheduled events.",
+    "howP4": "Always do your own research before making trading or investment decisions."
+  },
+  "news": {
+    "title": "Crypto news",
+    "headerTitle": "Crypto news",
+    "headerSubtitle": "Latest headlines and stories from the market.",
+    "loading": "Loading news…",
+    "empty": "No data yet. Pull down to refresh.",
+    "openArticle": "Open article",
+    "openError": "Unable to open article",
+    "openFullArticle": "Open full article",
+    "publishedAt": "Published",
+    "source": "Source",
+    "minutesAgo": "{{value}} min ago",
+    "hoursAgo": "{{value}} h ago",
+    "daysAgo": "{{value}} d ago",
+    "modalTitle": "Article",
+    "modalOpenInBrowser": "Open in browser",
+    "modalCopyLink": "Copy link",
+    "modalShare": "Share",
+    "copySuccess": "Link copied to clipboard",
+    "copyError": "Unable to copy link"
+  },
+  "calculator": {
+    "title": "Crypto chat",
+    "subtitle": "Ask Noytrix anything about crypto, trading and security.",
+    "greeting": "Hi! Send me a question, screenshot or idea — I’ll help you figure it out step by step.",
+    "inputPlaceholder": "Enter…",
+    "sendButton": "Send",
+    "thinking": "Thinking…",
+    "photoButton": "Attach screenshot",
+    "attachedImageLabel": "Attached image",
+    "attachedImageRemove": "Remove",
+    "freeLimit": "Free limit reached.",
+    "proUnlimited": "Unlimited questions for PRO users."
+  },
+ "pro": {
+  "headerTitle": "Noytrix PRO",
+
+  "heroTitle": "Don’t get rekt. Check before you trust.",
+  "heroSubtitle": "Avoid losing money in crypto. Noytrix PRO shows risk, detects scams and gives clear actions before you lose funds.",
+
+  "moneyTitle": "Protect your money + trade smarter",
+  "moneyText": "Scam protection and trading decisions in one app — before you connect, buy, send or enter a trade.",
+
+  "alerts": {
+    "purchaseTitle": "Purchase",
+    "purchaseBody": "If you confirmed the payment in Google Play, PRO will be activated. If the screen didn’t update immediately, restart the app.",
+    "errorTitle": "Payment error",
+    "errorFallback": "Unable to complete purchase. Please try again."
+  },
+
+  "benefits": {
+    "tradeRisk": "See if a trade is too risky BEFORE you enter",
+    "scamDetect": "Detect scam links, wallets and suspicious crypto traps",
+    "mistakes": "Track mistakes and stop losing money on bad decisions"
+  },
+
+  "caseTitle": "User almost lost $500 on a scam",
+  "caseText": "Noytrix detected suspicious signals before the user trusted the link.",
+
+  "fomo": {
+    "one": "Most users upgrade after first check",
+    "two": "PRO unlocks full protection"
+  },
+
+  "tariffsTitle": "Choose your protection",
+  "tariffsNote": "Limited free scans per day. Upgrade to unlock full crypto protection.",
+  "restoreHint": "Your PRO access is active.",
+  "restoreButton": "Restore purchase",
+
+  "priceAnchor": "One bad trade can cost $100+. PRO costs less than your mistake.",
+
+  "disclaimer": "PRO does not guarantee profit and does not replace your own decision. It helps you check risk before you act.",
+
+  "badges": {
+    "active": "Active"
+  },
+
+  "planActions": {
+    "unlock": "Unlock PRO",
+    "active": "Active",
+    "available": "Available",
+    "includedLifetime": "Included"
+  },
+
+  "plans": {
+    "m": {
+      "title": "1 month",
+      "save": ""
+    },
+    "h": {
+      "title": "6 months",
+      "save": "Save 20%"
+    },
+    "l": {
+      "title": "Annual access",
+      "save": "One-time purchase"
+    }
+  },
+
+  "includesSection": "What PRO helps you do",
+
+  "includes": {
+    "protectTitle": "Check before you trust",
+    "protectDesc": "Scan links, domains, wallets and crypto objects before you send funds or connect.",
+
+    "tradeTitle": "Enter trades with more control",
+    "tradeDesc": "Understand risk, volatility and possible danger before opening a position.",
+
+    "actionTitle": "Get clear actions",
+    "actionDesc": "Not just numbers — Noytrix explains what to avoid, what to check and what to do next.",
+
+    "historyTitle": "Stop repeating bad decisions",
+    "historyDesc": "Track checks, mistakes and decisions so you can improve instead of losing blindly."
+  },
+
+  "whySection": "Why it is worth it",
+
+  "why": {
+    "money": {
+      "title": "One mistake can cost more than PRO",
+      "text": "A fake link, bad trade or suspicious token can cost much more than a subscription."
+    },
+    "protection": {
+      "title": "Full protection, not random guessing",
+      "text": "PRO gives deeper checks, stronger signals and clearer risk before you act."
+    },
+    "smarter": {
+      "title": "Trade smarter, not emotionally",
+      "text": "Use risk signals and decision history to avoid emotional entries and weak setups."
+    }
+  },
+
+  "joinSection": "Unlock full access",
+
+  "join": {
+    "proLabel": "Noytrix PRO",
+    "fullAccess": "Full access",
+    "accessText": "Get full ScamShield protection, trading risk tools and decision history in one PRO plan.",
+    "ctaBuy": "Get full protection",
+    "ctaActive": "PRO active",
+    "startPriceLabel": "Starts from",
+    "startPriceValue": "{{price}}",
+    "valueLabel": "Value",
+    "valueText": "Less than one bad crypto mistake"
+  }
+},
+  "trading": {
+    "status": "Windows system",
+    "title": "Trading Center",
+    "subtitle": "Professional desktop system for Binance Futures with market analysis, risk control and semi-auto execution.",
+    "access": {
+      "label": "Desktop access",
+      "price": "from $25",
+      "badge": "Desktop Plans"
+    },
+    "hero": {
+      "note": "This is not a Telegram signal bot. It is a desktop trading control center where the operator stays in control."
+    },
+    "what": {
+      "title": "What it does"
+    },
+    "cards": {
+      "market": {
+        "title": "Market intelligence",
+        "text": "Scans futures pairs, movement, volatility and trend context before showing trade logic."
+      },
+      "entry": {
+        "title": "Entry logic",
+        "text": "Shows direction, entry zone, stop, targets and confidence instead of random signals."
+      },
+      "risk": {
+        "title": "Risk Engine",
+        "text": "Built around capital protection: leverage, position size, daily loss and trade limits."
+      },
+      "runtime": {
+        "title": "Desktop control",
+        "text": "Start, pause, stop, restart and monitor the live bot runtime from one Windows interface."
+      }
+    },
+    "diff": {
+      "title": "Why it’s different",
+      "lead": "Most bots only send signals. Noytrix gives you a full control layer over trading decisions, risk and execution."
+    },
+    "compare": {
+      "1": {
+        "left": "Signal spam",
+        "right": "Full trading workflow"
+      },
+      "2": {
+        "left": "No risk control",
+        "right": "Daily loss and trade limits"
+      },
+      "3": {
+        "left": "Blind entries",
+        "right": "Entry / stop / target logic"
+      },
+      "4": {
+        "left": "No runtime control",
+        "right": "Start / pause / stop system"
+      }
+    },
+    "system": {
+      "title": "System includes",
+      "1": "Binance API connection",
+      "2": "Real-time futures pair monitoring",
+      "3": "Long / Short signal logic",
+      "4": "Entry, stop and target planning",
+      "5": "Leverage and position control",
+      "6": "Daily loss limit and max trades per day",
+      "7": "Live runtime and bot status monitoring",
+      "8": "Manual + semi-auto execution workflow"
+    },
+    "plans": {
+      "kicker": "Desktop plans",
+      "title": "Choose access on the website",
+      "badge": "3 plans",
+      "text": "To order and pay, go to the website and choose the plan that fits you: monthly, 6 months, or 1 year access.",
+      "month": {
+        "title": "1 Month",
+        "price": "$25",
+        "text": "Fast start"
+      },
+      "six": {
+        "title": "6 Months",
+        "price": "$50",
+        "text": "Best value"
+      },
+      "life": {
+        "title": "1 Year",
+        "price": "$200",
+        "text": "Annual access"
+      }
+    },
+    "request": {
+      "button": "Leave request"
+    },
+    "site": {
+      "button": "Go to website and choose plan"
+    },
+    "warning": "Trading involves risk. The desktop program is designed for control and analysis, not guaranteed profit. Start with demo or small capital.",
+    "lead": {
+      "title": "Leave request",
+      "text": "Leave your contact details. We will send activation, payment and desktop setup instructions.",
+      "name": "Name",
+      "email": "Email / Telegram",
+      "note": "Message",
+      "send": "Send request",
+      "successTitle": "Request sent",
+      "successText": "We will contact you with access and setup details.",
+      "errorTitle": "Error",
+      "errorText": "Could not send request. Try again later."
+    }
+  }
+}

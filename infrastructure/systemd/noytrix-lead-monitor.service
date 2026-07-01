@@ -1,0 +1,7 @@
+[Unit]
+Description=Noytrix Lead Monitor scan
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/noytrix-lead-monitor
+ExecStart=/root/noytrix-lead-monitor/venv/bin/python /root/noytrix-lead-monitor/main.py

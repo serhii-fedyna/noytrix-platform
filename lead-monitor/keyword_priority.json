@@ -1,0 +1,38 @@
+{
+  "high": [
+    "wallet drained",
+    "wallet hacked",
+    "wallet compromise",
+    "wallet compromised",
+    "seed phrase",
+    "private key",
+    "stolen crypto",
+    "funds stolen",
+    "drainer",
+    "wallet drainer",
+    "crypto drainer",
+    "malicious approval",
+    "phishing attack",
+    "honeypot"
+  ],
+  "medium": [
+    "crypto scam",
+    "scammed",
+    "got scammed",
+    "is this a scam",
+    "fake airdrop",
+    "fake support",
+    "fake website",
+    "fake exchange",
+    "suspicious contract",
+    "suspicious token",
+    "suspicious wallet"
+  ],
+  "low": [
+    "can someone check",
+    "can anyone verify",
+    "is this safe",
+    "wallet security",
+    "crypto security"
+  ]
+}

@@ -1,0 +1,50 @@
+ 121: 
+ 122:     return () => {
+ 123:       cancelled = true;
+ 124:     };
+ 125:   }, [isReady, isAuth]);
+ 126: 
+ 127:   if (!isReady) return null;
+ 128: 
+ 129:   const renderBiometricGate = () => {
+ 130:     if (!isAuth) return <Slot />;
+ 131: 
+ 132:     if (!bioChecked) {
+ 133:       return (
+ 134:         <View
+ 135:           style={{
+ 136:             flex: 1,
+ 137:             backgroundColor: "#020413",
+ 138:             alignItems: "center",
+ 139:             justifyContent: "center",
+ 140:           }}
+ 141:         >
+ 142:           <ActivityIndicator />
+ 143:           <Text style={{ color: "#ffffff", fontSize: 18, textAlign: "center", marginBottom: 16 }}>
+ 144:             {t("layout.bio.failTitle")}
+ 145:           </Text>
+ 146:         </View>
+ 147:       );
+ 148:     }
+ 149: 
+ 150:     if (bioOk) {
+ 151:       return <Slot />;
+ 152:     }
+ 153: 
+ 154:     if (bioError || !bioOk) {
+ 155:       return (
+ 156:         <View
+ 157:           style={{
+ 158:             flex: 1,
+ 159:             backgroundColor: "#020413",
+ 160:             alignItems: "center",
+ 161:             justifyContent: "center",
+ 162:             paddingHorizontal: 24,
+ 163:           }}
+ 164:         >
+ 165:           <Text style={{ color: "#ffffff", fontSize: 18, textAlign: "center", marginBottom: 16 }}>
+ 166:             {t("layout.bio.failTitle")}
+ 167:           </Text>
+ 168:           <Text style={{ color: "#9ca3af", fontSize: 14, textAlign: "center", marginBottom: 24 }}>
+ 169:             {t("layout.bio.failBody")}
+ 170:           </Text>

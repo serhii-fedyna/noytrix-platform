@@ -1,0 +1,85 @@
+{
+  "min_score": 5,
+  "rules": {
+    "wallet drained": 10,
+    "wallet hacked": 10,
+    "wallet compromise": 9,
+    "wallet compromised": 9,
+    "wallet compromise": 9,
+
+    "is this safe": 9,
+    "can someone check": 9,
+    "can anyone verify": 9,
+    "suspicious website": 9,
+    "suspicious token": 9,
+    "suspicious wallet": 9,
+    "wallet security": 7,
+    "crypto security": 7,
+
+    "phishing attack": 10,
+    "phishing site": 8,
+    "phishing": 6,
+
+    "seed phrase": 4,
+    "recovery phrase": 4,
+    "secret phrase": 4,
+    "private key": 7,
+
+    "drainer": 10,
+    "wallet drainer": 10,
+    "crypto drainer": 10,
+
+    "stolen crypto": 9,
+    "lost crypto": 6,
+    "funds stolen": 9,
+    "assets stolen": 9,
+
+    "fake airdrop": 8,
+    "fake support": 8,
+    "support scam": 8,
+    "fake giveaway": 7,
+
+    "wallet connect": 5,
+    "connect wallet": 5,
+    "approve transaction": 6,
+    "token approval": 6,
+    "unlimited approval": 8,
+    "malicious approval": 10,
+
+    "crypto scam": 8,
+    "scammed": 7,
+    "got scammed": 8,
+    "is this a scam": 9,
+    "scam warning": 7,
+    "scam alert": 7,
+
+    "rug pull": 7,
+    "exit scam": 8,
+    "suspicious contract": 8,
+    "malicious contract": 10,
+    "honeypot": 8,
+    "fake telegram": 7,
+    "fake admin": 7,
+    "impersonation": 7
+  },
+  "boosts": {
+    "wallet": 2,
+    "metamask": 2,
+    "phantom": 2,
+    "trust wallet": 2,
+    "uniswap": 2,
+    "airdrop": 1,
+    "transaction": 1,
+    "approval": 2,
+    "website": 2,
+    "token": 2,
+    "contract": 2,
+    "verify": 2,
+    "safe": 2,
+    "check": 2
+  },
+  "negative": {
+    "seed phrase wallet q": -5,
+    "beginner question": -2
+  }
+}

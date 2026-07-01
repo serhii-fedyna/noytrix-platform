@@ -1,0 +1,10 @@
+app\auth\signin.js
+app\auth\signup.js
+app\auth\verify.js
+app\coach\topics\topic-ta-futures-psych.js
+app\lib\ai.js
+app\lib\authApi.js
+app\lib\iap.js
+app\lib\store.auth.js
+app\spot.js
+app\_layout.js

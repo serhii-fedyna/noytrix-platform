@@ -1,0 +1,99 @@
+server {
+    listen 443 ssl;
+    server_name www.noytrix.com;
+
+    ssl_certificate /etc/letsencrypt/live/noytrix.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/noytrix.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    root /var/www/noytrix-lab;
+    index index.html;
+
+
+
+    
+    
+    location ^~ /downloads/ {
+        return 403;
+    }
+
+
+
+    location /contact-send {
+        proxy_pass http://127.0.0.1:5055/contact-send;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+
+    location /billing/ {
+        proxy_pass http://127.0.0.1:5060/billing/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+
+
+    location = /robots.txt {
+        root /var/www/noytrix-lab;
+    }
+
+    location = /sitemap.xml {
+        root /var/www/noytrix-lab;
+    }
+
+    location = /crypto-scam-checker {
+        try_files /crypto-scam-checker.html =404;
+    }
+
+    location = /wallet-checker {
+        try_files /wallet-checker.html =404;
+    }
+
+    location = /token-risk-analysis {
+        try_files /token-risk-analysis.html =404;
+    }
+
+    location = /check-crypto-link {
+        try_files /check-crypto-link.html =404;
+    }
+
+    location = /detect-rug-pull {
+        try_files /detect-rug-pull.html =404;
+    }
+
+    location = /is-this-token-safe {
+        try_files /is-this-token-safe.html =404;
+    }
+
+    location = /crypto-phishing-check {
+        try_files /crypto-phishing-check.html =404;
+    }
+
+    location = /smart-contract-checker {
+        try_files /smart-contract-checker.html =404;
+    }
+
+    location = /crypto-safety-tool {
+        try_files /crypto-safety-tool.html =404;
+    }
+
+    location = /check-wallet-scam {
+        try_files /check-wallet-scam.html =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+
+server {
+    listen 80;
+    server_name www.noytrix.com;
+    return 301 https://www.noytrix.com$request_uri;
+}

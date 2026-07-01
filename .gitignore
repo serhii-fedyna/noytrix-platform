@@ -1,0 +1,77 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# Dependencies
+node_modules/
+
+# Python environments
+.venv/
+venv/
+
+# Local env files and secrets
+.env*
+.*.env
+*.env
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+google-services.json
+
+# Databases and runtime files
+*.db
+*.sqlite3
+*.sqlite
+*.sqlite*
+*.log
+*.pid
+
+# Archives
+*.tar.gz
+*.zip
+
+# Build and generated output
+dist/
+build/
+.expo/
+.next/
+web-build/
+__pycache__/
+expo-env.d.ts
+*.tsbuildinfo
+
+# Native and tooling
+.kotlin/
+*.orig.*
+*.before_*
+*.bad
+.metro-health-check*
+
+# Server production snapshots live outside root git commits
+_server_prod/
+data/public_feeds/
+**/data/public_feeds/
+
+# Additional local secrets and runtime state
+upload-keystore*
+.noytrix_pg_password
+keys/
+**/keys/
+push_tokens.json
+
+# Cleanup-preserved local secrets and repository metadata
+infrastructure/deploy/preserved-local-state/
+
+# Debug logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# Expo Router backups
+app/__tabs_backups/
+

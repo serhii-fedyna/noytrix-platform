@@ -1,0 +1,108 @@
+{
+  "expo": {
+    "name": "Noytrix",
+    "slug": "noytrix-s54",
+    "version": "1.0.80",
+    "scheme": "com.noytrix.app",
+    "orientation": "default",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-full.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#010440"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.noytrix.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "splash": {
+        "image": "./assets/splash-full.png",
+        "tabletImage": "./assets/splash-full.png",
+        "resizeMode": "cover",
+        "backgroundColor": "#010440"
+      }
+    },
+    "android": {
+      "package": "com.noytrix.app",
+      "versionCode": 351,
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "backgroundColor": "#010440"
+      },
+      "permissions": [
+        "com.android.vending.BILLING",
+        "POST_NOTIFICATIONS",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED"
+      ],
+      "splash": {
+        "image": "./assets/splash-full.png",
+        "resizeMode": "cover",
+        "backgroundColor": "#010440"
+      },
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ],
+          "data": [
+            {
+              "scheme": "com.noytrix.app"
+            }
+          ]
+        }
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "notification": {
+      "icon": "./assets/notification_icon.png",
+      "color": "#FFB020",
+      "iosDisplayInForeground": true
+    },
+    "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production"
+        }
+      ],
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "ndkVersion": "26.1.10909125",
+            "kotlinVersion": "2.1.20"
+          },
+          "ios": {}
+        }
+      ],
+      "expo-localization",
+      "@react-native-firebase/app",
+      "expo-web-browser"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "fae7dec4-bf4d-46bc-b013-82c99c758023"
+      },
+      "noytrixAppKey": "XOekrERNn9aaI5RFn-meCCDBye67Lk2pcS5-mlYnJIyp4yJBbb7SyXDIaogIw1nGdzThAXaMLm-qGps8kSCggg",
+      "NOYTRIX_APP_KEY": "XOekrERNn9aaI5RFn-meCCDBye67Lk2pcS5-mlYnJIyp4yJBbb7SyXDIaogIw1nGdzThAXaMLm-qGps8kSCggg",
+      "googleAndroidClientId": "564356540663-qhj86hssh0qdo128a8qfqrioho7931o8.apps.googleusercontent.com",
+      "googleWebClientId": "564356540663-pm548qluqcqqibbqcl7dic14rbr312gd.apps.googleusercontent.com",
+      "EXPO_PUBLIC_API": "https://noytrix.com",
+      "RC_ANDROID_API_KEY": "goog_OadbvxBeUgqbFvKtNBZXluHMans"
+    },
+    "owner": "hitkrit"
+  }
+}

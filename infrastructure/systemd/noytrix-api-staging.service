@@ -1,0 +1,13 @@
+[Unit]
+Description=NOYTRIX API STAGING
+After=network.target
+
+[Service]
+WorkingDirectory=/root/noytrix-api-staging
+EnvironmentFile=/root/noytrix-api-staging/.env
+ExecStart=/root/noytrix-api-staging/venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8025
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
