@@ -217,23 +217,33 @@ def link_aliases_and_observations(batch_limit: int = 250000) -> Dict[str, Any]:
                     entity_id, alias_value, normalized_alias, alias_type, source_name, metadata
                 )
                 SELECT
-                    e.id,
-                    r.raw_value,
-                    r.normalized_value,
-                    r.indicator_type,
-                    r.source_name,
-                    jsonb_build_object(
-                        'raw_indicator_id', r.id,
-                        'dedupe_key', r.dedupe_key,
-                        'status', r.status,
-                        'risk_score', r.risk_score,
-                        'confidence', r.confidence
-                    )
-                FROM raw_indicators r
-                JOIN entities e
-                  ON e.dedupe_key = r.dedupe_key
-                WHERE COALESCE(r.dedupe_key, '') <> ''
-                LIMIT %s
+                    x.entity_id,
+                    x.raw_value,
+                    x.normalized_value,
+                    x.indicator_type,
+                    x.source_name,
+                    x.metadata
+                FROM (
+                    SELECT DISTINCT ON (r.normalized_value, r.indicator_type)
+                        e.id AS entity_id,
+                        r.raw_value,
+                        r.normalized_value,
+                        r.indicator_type,
+                        r.source_name,
+                        jsonb_build_object(
+                            'raw_indicator_id', r.id,
+                            'dedupe_key', r.dedupe_key,
+                            'status', r.status,
+                            'risk_score', r.risk_score,
+                            'confidence', r.confidence
+                        ) AS metadata
+                    FROM raw_indicators r
+                    JOIN entities e
+                      ON e.dedupe_key = r.dedupe_key
+                    WHERE COALESCE(r.dedupe_key, '') <> ''
+                    ORDER BY r.normalized_value, r.indicator_type, r.risk_score DESC, r.confidence DESC, r.seen_count DESC
+                    LIMIT %s
+                ) x
                 ON CONFLICT (normalized_alias, alias_type)
                 DO UPDATE SET
                     last_seen_at = now(),
