@@ -785,6 +785,7 @@ function normalizeScanReport(raw, currentLang) {
   const details = raw.details || {};
   const token = details.token || {};
   const honeypot = token.honeypot || null;
+  const topContributors = Array.isArray(details.top_score_contributors) ? details.top_score_contributors : [];
 
   return {
     ...raw,
@@ -822,6 +823,15 @@ function normalizeScanReport(raw, currentLang) {
       immunity_score: 0,
     },
     details,
+    backendDetails: {
+      database: details.noytrix_scam_database || null,
+      safetyGate: details.false_positive_safety_gate || null,
+      scoreTrace: details.score_trace || null,
+      topContributors,
+      hardEvidenceCodes: Array.isArray(details.hard_evidence_codes) ? details.hard_evidence_codes : [],
+      hardEvidenceFound: !!details.hard_evidence_found,
+    },
+    evidenceTrace: Array.isArray(details.evidence_trace) ? details.evidence_trace : [],
     token,
     honeypot,
     quota: raw.quota || null,
@@ -1412,7 +1422,7 @@ const EvidenceRow = ({ ev, currentLang }) => (
   >
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
       <Text style={{ color: T.text, fontWeight: "900", flex: 1, fontSize: 15 }}>
-        {prettyTitleFromCode(ev?.code, currentLang)}
+        {ev?.code ? prettyTitleFromCode(ev?.code, currentLang) : safeText(backendSignalText(ev))}
       </Text>
       <Text style={{ color: T.accent, fontWeight: "900", marginLeft: 8 }}>
         +{safeText(ev?.severity ?? 0)}
@@ -1430,6 +1440,108 @@ const EvidenceRow = ({ ev, currentLang }) => (
     </Text>
   </View>
 );
+
+function backendSignalText(item) {
+  if (!item || typeof item !== "object") return String(item || "");
+  return item.text || item.reason || item.code || item.source || item.label || "";
+}
+
+function backendIntelLabel(lang, key) {
+  const ru = {
+    title: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435",
+    db: "Noytrix DB",
+    safety: "\u0417\u0430\u0449\u0438\u0442\u0430 \u043e\u0442 \u043b\u043e\u0436\u043d\u044b\u0445 \u0441\u0440\u0430\u0431\u0430\u0442\u044b\u0432\u0430\u043d\u0438\u0439",
+    evidence: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u044b\u0435 \u0441\u0438\u0433\u043d\u0430\u043b\u044b",
+    hard: "\u0416\u0435\u0441\u0442\u043a\u0438\u0435 \u0441\u0438\u0433\u043d\u0430\u043b\u044b",
+    matched: "\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435",
+    notListed: "\u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0432 \u0431\u0430\u0437\u0435",
+    applied: "\u0441\u0440\u0430\u0431\u043e\u0442\u0430\u043b\u0430",
+    notApplied: "\u043d\u0435 \u0441\u0440\u0430\u0431\u043e\u0442\u0430\u043b\u0430",
+  };
+  const uk = {
+    title: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u0456 \u0434\u0430\u043d\u0456",
+    db: "Noytrix DB",
+    safety: "\u0417\u0430\u0445\u0438\u0441\u0442 \u0432\u0456\u0434 \u0445\u0438\u0431\u043d\u0438\u0445 \u0441\u043f\u0440\u0430\u0446\u044e\u0432\u0430\u043d\u044c",
+    evidence: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u0456 \u0441\u0438\u0433\u043d\u0430\u043b\u0438",
+    hard: "\u0416\u043e\u0440\u0441\u0442\u043a\u0456 \u0441\u0438\u0433\u043d\u0430\u043b\u0438",
+    matched: "\u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0437\u0431\u0456\u0433",
+    notListed: "\u043d\u0435 \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0432 \u0431\u0430\u0437\u0456",
+    applied: "\u0441\u043f\u0440\u0430\u0446\u044e\u0432\u0430\u043b\u0430",
+    notApplied: "\u043d\u0435 \u0441\u043f\u0440\u0430\u0446\u044e\u0432\u0430\u043b\u0430",
+  };
+  const en = {
+    title: "Backend intelligence",
+    db: "Noytrix DB",
+    safety: "Safety gate",
+    evidence: "Backend evidence",
+    hard: "Hard evidence",
+    matched: "matched",
+    notListed: "not listed",
+    applied: "applied",
+    notApplied: "not applied",
+  };
+  return (String(lang || "").toLowerCase().startsWith("uk") ? uk : String(lang || "").toLowerCase().startsWith("ru") ? ru : en)[key] || key;
+}
+
+const BackendIntelCard = ({ report, currentLang, tx }) => {
+  const intel = report?.backendDetails || {};
+  const db = intel.database || {};
+  const dbMatch = db.match || {};
+  const gate = intel.safetyGate || {};
+  const rows = [];
+
+  if (db.reason || dbMatch.database) {
+    rows.push({
+      label: backendIntelLabel(currentLang, "db"),
+      value: `${dbMatch.status || (dbMatch.matched ? backendIntelLabel(currentLang, "matched") : backendIntelLabel(currentLang, "notListed"))}${db.reason ? ` · ${db.reason}` : ""}`,
+    });
+  }
+
+  if (typeof gate.applied === "boolean" || gate.reason) {
+    rows.push({
+      label: backendIntelLabel(currentLang, "safety"),
+      value: `${gate.applied ? backendIntelLabel(currentLang, "applied") : backendIntelLabel(currentLang, "notApplied")}${gate.reason ? ` · ${gate.reason}` : ""}`,
+    });
+  }
+
+  (intel.topContributors || []).slice(0, 5).forEach((item, idx) => {
+    const text = backendSignalText(item);
+    if (text) rows.push({ label: idx === 0 ? backendIntelLabel(currentLang, "evidence") : "", value: text });
+  });
+
+  if ((intel.hardEvidenceCodes || []).length) {
+    rows.push({ label: backendIntelLabel(currentLang, "hard"), value: intel.hardEvidenceCodes.slice(0, 8).join(", ") });
+  }
+
+  if (!rows.length) return null;
+
+  return (
+    <BlurCard>
+      <View style={{ flexDirection: "row", alignItems: "center" }}>
+        <Ionicons name="server-outline" size={18} color={T.logo} style={{ marginRight: 8 }} />
+        <Text style={{ color: T.text, fontWeight: "900", fontSize: 16 }}>
+          {tx("shieldPro.backendIntel.title", backendIntelLabel(currentLang, "title"))}
+        </Text>
+      </View>
+      <View style={{ marginTop: 12 }}>
+        {rows.map((row, idx) => (
+          <View
+            key={`backend-intel-${idx}`}
+            style={{
+              borderTopWidth: idx === 0 ? 0 : 1,
+              borderTopColor: "rgba(255,255,255,0.06)",
+              paddingTop: idx === 0 ? 0 : 10,
+              marginBottom: idx === rows.length - 1 ? 0 : 10,
+            }}
+          >
+            {!!row.label && <Text style={{ color: T.accent, fontWeight: "900", fontSize: 12, marginBottom: 4 }}>{row.label}</Text>}
+            <Text style={{ color: T.dim, lineHeight: 18 }}>{safeText(row.value)}</Text>
+          </View>
+        ))}
+      </View>
+    </BlurCard>
+  );
+};
 
 
 export default function ShieldPro() {
@@ -1642,6 +1754,8 @@ export default function ShieldPro() {
   }, [normalizedOut]);
 
   const topEvidence = useMemo(() => {
+    const backendTop = normalizedOut?.backendDetails?.topContributors;
+    if (Array.isArray(backendTop) && backendTop.length) return backendTop.slice(0, 3);
     return Array.isArray(normalizedOut?.evidenceList) ? normalizedOut.evidenceList.slice(0, 3) : [];
   }, [normalizedOut]);
 
@@ -2285,12 +2399,14 @@ ${uri}`,
                   </Text>
                   {topEvidence.map((ev, i) => (
                     <Text key={`quick-signal-${i}`} style={{ color: T.text, marginBottom: 6, lineHeight: 18 }}>
-                      • {prettyTitleFromCode(ev?.code, currentLang)}
+                      • {ev?.code ? prettyTitleFromCode(ev?.code, currentLang) : safeText(backendSignalText(ev))}
                     </Text>
                   ))}
                 </View>
               )}
             </BlurCard>
+
+            <BackendIntelCard report={normalizedOut} currentLang={currentLang} tx={tx} />
 
             <BlurCard>
               <SectionHeader
