@@ -55,6 +55,7 @@ from fastapi.responses import Response
 from scan_card_renderer import render_scan_card
 from fastapi import FastAPI, Query, Body, HTTPException, Request
 from scamshield.intelligence.anti_false_positive import apply_anti_false_positive_layer
+from scamshield.intelligence.noytrix_scam_database import lookup_noytrix_scam_database
 from fastapi.middleware.cors import CORSMiddleware
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
 from scamshield.core.levels import normalize_level, legacy_level, normalize_score, enforce_risk_floor
@@ -2017,7 +2018,7 @@ def _canonical_level(level: str | None, score: int | None = None) -> str:
         return "critical"
 
     if raw in {"suspicious", "warning", "warn"}:
-        return "high"
+        return "medium"
 
     try:
         s = int(score or 0)
@@ -2446,9 +2447,15 @@ SCAM_PATTERNS = [
     (re.compile(r"\bairdrop\b", re.I), "airdrop_language", 10),
     (re.compile(r"\bverify (wallet|account)\b", re.I), "verify_wallet_prompt", 18),
     (re.compile(r"\bconnect wallet\b", re.I), "connect_wallet_prompt", 10),
+    (re.compile(r"\bwallet validation\b", re.I), "wallet_validation_prompt", 18),
+    (re.compile(r"\bsign approval\b", re.I), "approval_signature_prompt", 24),
+    (re.compile(r"\bunlock withdrawal\b", re.I), "unlock_withdrawal_lure", 24),
     (re.compile(r"\bsupport (team|agent)\b", re.I), "fake_support_language", 14),
     (re.compile(r"\bimport wallet\b", re.I), "wallet_import_prompt", 20),
     (re.compile(r"\bunlimited approval\b", re.I), "token_approval", 12),
+    (re.compile(r"\brequires\b.{0,50}\b(seed phrase|private key|recovery phrase)\b", re.I), "explicit_secret_required", 55),
+    (re.compile(r"\b(wallet|account)\b.{0,40}\bsuspended\b", re.I), "fake_suspension_lure", 22),
+    (re.compile(r"\bdeposit\b.{0,40}\b(activate|verify|claim|reward)\b", re.I), "deposit_to_activate_scam", 45),
     (re.compile(r"\bdrain(er|ing)?\b", re.I), "wallet_drainer_hint", 22),
     (re.compile(r"\bsend\b.{0,20}\bbtc\b.{0,30}\b(get|receive|back|double)\b", re.I), "btc_giveaway_scam", 45),
     (re.compile(r"\b(double|2x|x2)\b.{0,20}\b(btc|eth|usdt|crypto)\b", re.I), "doubling_scam", 45),
@@ -3194,6 +3201,307 @@ def _score_scan(sources: list[dict], heuristics: list[dict], page_content: list[
     )
 
 
+URL_HARD_EVIDENCE_CODES = {
+    "credential_theft_ui",
+    "seed_phrase_request",
+    "private_key_request",
+    "recovery_phrase_request",
+    "connect_wallet_reward_flow",
+    "possible_js_drainer_flow",
+    "approval_or_drain_functions",
+    "brand_impersonation_plus_wallet_pressure",
+    "brand_plus_scam_keywords",
+    "multi_source_public_scam_match",
+    "known_malicious_entity",
+    "known_malicious_contract_identity",
+    "wallet_drainer_runtime",
+    "gsb_match",
+    "virustotal_malicious",
+    "urlscan_malicious",
+    "phishtank_match",
+    "openphish_match",
+    "scamsniffer_match",
+    "cryptoscamdb_match",
+    "noytrix_scam_database_match",
+    "part_of_known_scam_campaign",
+    "very_bad_wallet_reputation",
+}
+
+URL_GENERIC_WEB3_NOISE_CODES = {
+    "wallet_connect_request",
+    "web3_script_reference",
+    "fake_support_ui",
+    "fake_airdrop_bonus_ui",
+    "wallet_connect_pressure",
+    "wallet_verification_lure",
+    "signature_or_approval_wording",
+    "cloned_ui_fingerprint",
+    "visual_phishing_score",
+    "crypto_lure_score",
+    "wallet_trap_score",
+    "missing_ns_records",
+    "infrastructure_score",
+    "historical_threat_memory",
+    "domain_age_unavailable",
+    "infrastructure_unavailable",
+    "redirect_chain_unavailable",
+}
+
+
+def _build_url_evidence_trace(sources: list[dict], heuristics: list[dict], page_content: list[dict]) -> dict:
+    items: list[dict] = []
+
+    def add_item(module: str, ev: dict, source_status: str = "", source_verdict: str = "") -> None:
+        if not isinstance(ev, dict):
+            return
+        code = str(ev.get("code") or "unknown").strip()
+        try:
+            severity = int(ev.get("severity") or 0)
+        except Exception:
+            severity = 0
+        hard = code in URL_HARD_EVIDENCE_CODES and severity >= 60
+        generic_noise = code in URL_GENERIC_WEB3_NOISE_CODES
+        if str(source_status).lower() == "malicious" and severity >= 70 and code not in URL_GENERIC_WEB3_NOISE_CODES:
+            hard = True
+        items.append({
+            "module": module,
+            "code": code,
+            "severity": max(0, min(100, severity)),
+            "hard_evidence": bool(hard),
+            "generic_web3_noise": bool(generic_noise),
+            "source_status": source_status or None,
+            "source_verdict": source_verdict or None,
+            "text": ev.get("text") or ev.get("message") or "",
+        })
+
+    for h in heuristics or []:
+        add_item("heuristic", h)
+
+    for e in page_content or []:
+        add_item("page_content", e)
+
+    for src in sources or []:
+        if not isinstance(src, dict):
+            continue
+        module = str(src.get("name") or src.get("source") or "source")
+        status = str(src.get("status") or "")
+        verdict = str(src.get("verdict") or "")
+        for ev in src.get("evidence") or []:
+            add_item(module, ev, status, verdict)
+
+    items = sorted(items, key=lambda x: int(x.get("severity") or 0), reverse=True)
+    hard_items = [x for x in items if x.get("hard_evidence")]
+    noise_items = [x for x in items if x.get("generic_web3_noise")]
+    return {
+        "items": items[:60],
+        "hard_evidence_found": bool(hard_items),
+        "hard_evidence_codes": sorted({x["code"] for x in hard_items if x.get("code")}),
+        "generic_noise_codes": sorted({x["code"] for x in noise_items if x.get("code")}),
+        "top_contributors": items[:8],
+    }
+
+
+def _apply_false_positive_safety_gate_to_url_score(score_info: dict, evidence_trace: dict) -> dict:
+    out = dict(score_info or {})
+    level = str(out.get("level") or "").lower()
+    score = normalize_score(out.get("score") or 0)
+    has_hard = bool((evidence_trace or {}).get("hard_evidence_found"))
+    generic_codes = (evidence_trace or {}).get("generic_noise_codes") or []
+
+    applied = False
+    reason = None
+
+    if not has_hard and (level in {"danger", "critical", "high", "malicious"} or score >= 60):
+        applied = True
+        reason = "soft_or_generic_evidence_only"
+        score = min(score, 34)
+        out["score"] = score
+        out["internal_score"] = min(normalize_score(out.get("internal_score") or score), score)
+        out["level"] = "suspicious"
+        out["normalized_level"] = "medium"
+        out["verdict_en"] = "Suspicious"
+        out["verdict_ru"] = "Подозрительно"
+        out["confirmed_red_flag"] = False
+        out["internal_red_flag"] = False
+        out["malicious_sources"] = []
+        out["internal_malicious_sources"] = []
+
+    out["false_positive_safety_gate"] = {
+        "applied": applied,
+        "reason": reason,
+        "hard_evidence_found": has_hard,
+        "generic_noise_codes": generic_codes,
+        "score_after": out.get("score"),
+        "level_after": out.get("level"),
+    }
+    return out
+
+
+def _source_from_noytrix_scam_database(match: dict) -> dict:
+    if not (match or {}).get("matched"):
+        return _mk_source(
+            "noytrix_scam_database",
+            "clean",
+            verdict="not_listed",
+            details=match or {},
+            evidence=[{
+                "code": "noytrix_scam_database_checked",
+                "severity": 0,
+                "text": "Noytrix Scam Database exact-match lookup completed without a listing.",
+            }],
+        )
+
+    status = str(match.get("status") or "observed").lower()
+    level = str(match.get("level") or status or "observed").lower()
+    risk_score = normalize_score(match.get("risk_score") or 0)
+    source_status = "malicious" if status in {"malicious", "scam", "danger", "critical", "high", "blocked"} else "clean" if status in {"safe", "trusted", "allowlisted", "allowlist"} else "observed"
+    code = "noytrix_scam_database_match" if source_status == "malicious" else "noytrix_scam_database_safe_match" if source_status == "clean" else "noytrix_scam_database_observed"
+    return _mk_source(
+        "noytrix_scam_database",
+        source_status,
+        verdict=level,
+        details=match,
+        evidence=[{
+            "code": code,
+            "severity": risk_score if risk_score else (90 if source_status == "malicious" else 0),
+            "text": "Exact match in Noytrix Scam Database.",
+        }],
+    )
+
+
+def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
+    out = dict(score_info or {})
+    if not (db_match or {}).get("matched") or not db_match.get("force_verdict"):
+        out["noytrix_scam_database"] = {
+            "applied": False,
+            "reason": "no_forceable_exact_match",
+            "match": db_match or {},
+        }
+        return out
+
+    status = str(db_match.get("status") or "").lower()
+    score = normalize_score(db_match.get("risk_score") or 0)
+    malicious = status in {"malicious", "scam", "danger", "critical", "high", "blocked"}
+    safe = status in {"safe", "trusted", "allowlisted", "allowlist"}
+
+    if malicious:
+        forced_score = max(score, 90)
+        forced_level = "critical" if forced_score >= 85 else "danger"
+        out["score"] = forced_score
+        out["internal_score"] = max(normalize_score(out.get("internal_score") or 0), forced_score)
+        out["level"] = forced_level
+        out["normalized_level"] = forced_level
+        out["verdict_en"] = "Critical / Scam" if forced_level == "critical" else "Danger"
+        out["verdict_ru"] = "Critical / Scam" if forced_level == "critical" else "Danger"
+        out["confirmed_red_flag"] = True
+        out["internal_red_flag"] = True
+        sources = list(out.get("malicious_sources") or [])
+        if "noytrix_scam_database" not in sources:
+            sources.append("noytrix_scam_database")
+        out["malicious_sources"] = sources
+        out["noytrix_scam_database"] = {
+            "applied": True,
+            "reason": "exact_malicious_database_match",
+            "match": db_match,
+        }
+        return out
+
+    if safe:
+        out["score"] = min(score, 5)
+        out["internal_score"] = min(normalize_score(out.get("internal_score") or 0), 5)
+        out["external_score"] = min(normalize_score(out.get("external_score") or 0), 5)
+        out["level"] = "safe"
+        out["normalized_level"] = "safe"
+        out["verdict_en"] = "Safe"
+        out["verdict_ru"] = "Safe"
+        out["confirmed_red_flag"] = False
+        out["internal_red_flag"] = False
+        out["external_red_flag"] = False
+        out["malicious_sources"] = []
+        out["internal_malicious_sources"] = []
+        out["noytrix_scam_database"] = {
+            "applied": True,
+            "reason": "exact_safe_database_match",
+            "match": db_match,
+        }
+        return out
+
+    out["noytrix_scam_database"] = {
+        "applied": False,
+        "reason": "non_final_database_status",
+        "match": db_match,
+    }
+    return out
+
+
+def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind: str, lang: str, db_match: dict) -> dict:
+    source = _source_from_noytrix_scam_database(db_match)
+    status = str((db_match or {}).get("status") or "").lower()
+    malicious = status in {"malicious", "scam", "danger", "critical", "high", "blocked"}
+    safe = status in {"safe", "trusted", "allowlisted", "allowlist"}
+    score = 90 if malicious else 0 if safe else normalize_score((db_match or {}).get("risk_score") or 0)
+    level = "critical" if malicious else "safe" if safe else "suspicious"
+    evidence = []
+    for ev in source.get("evidence") or []:
+        evidence.append({"source": source.get("name"), **ev})
+    out = {
+        "ok": True,
+        "input": target,
+        "normalized_input": normalized_input,
+        "kind": kind,
+        "kind_localized": _localized_object_kind(kind, lang),
+        "score": score,
+        "internal_score": score,
+        "external_score": 0,
+        "internal_level": level,
+        "external_level": "safe" if safe else "unknown",
+        "internal_red_flag": malicious,
+        "external_red_flag": False,
+        "internal_only": True,
+        "level": level,
+        "normalized_level": level,
+        "verdict": level,
+        "verdict_en": "Critical / Scam" if malicious else "Safe" if safe else "Suspicious",
+        "verdict_ru": "Critical / Scam" if malicious else "Safe" if safe else "Suspicious",
+        "verdict_localized": "Critical / Scam" if malicious else "Safe" if safe else "Suspicious",
+        "confirmed_red_flag": malicious,
+        "malicious_sources": ["noytrix_scam_database"] if malicious else [],
+        "scoring": {"noytrix_scam_database": score},
+        "sources": [source],
+        "evidence": evidence,
+        "community": {},
+        "details": {
+            "noytrix_scam_database": {
+                "applied": bool((db_match or {}).get("force_verdict")),
+                "reason": "exact_database_match_quick_result",
+                "match": db_match or {},
+            },
+            "evidence_trace": evidence,
+            "score_trace": {
+                "before_safety_gate": {"score": score, "level": level},
+                "after_safety_gate": {"score": score, "level": level},
+                "components": {"noytrix_scam_database": score},
+            },
+            "top_score_contributors": evidence[:8],
+            "hard_evidence_found": malicious,
+            "hard_evidence_codes": ["noytrix_scam_database_match"] if malicious else [],
+            "generic_noise_codes": [],
+            "false_positive_safety_gate": {
+                "applied": False,
+                "reason": "database_exact_match",
+                "hard_evidence_found": malicious,
+                "score_after": score,
+                "level_after": level,
+            },
+        },
+        "lang": lang,
+        "cached": False,
+        "cache_source": "noytrix_scam_database",
+    }
+    out = attach_legacy_fields(out, lang)
+    return out
+
+
 def _is_dominant_top_ticker_match(symbol: str, picked: dict, all_matches: list[dict], market_data: dict | None) -> bool:
     try:
         if not picked:
@@ -3520,7 +3828,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     host = _extract_host(url)
 
     cache_mode = "internal" if internal_only else "full"
-    cache_key = f"scan:url:v6:{cache_mode}:{_sha256_short(url)}"
+    cache_key = f"scan:url:v7:{cache_mode}:{_sha256_short(url)}"
     cached = cache_get(cache_key)
     if cached:
         out = dict(cached)
@@ -3594,6 +3902,19 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     heuristics: list[dict] = []
     page_content_evidence: list[dict] = []
     enrich: dict = {"page": None, "token": None, "ticker": None}
+    noytrix_db_match = lookup_noytrix_scam_database(url if input_kind == "url" else host)
+    sources.append(_source_from_noytrix_scam_database(noytrix_db_match))
+    if internal_only and (noytrix_db_match or {}).get("matched") and (noytrix_db_match or {}).get("force_verdict"):
+        out = _quick_result_from_noytrix_database(
+            target,
+            url if input_kind == "url" else host,
+            input_kind,
+            lang,
+            noytrix_db_match,
+        )
+        cache_set(cache_key, out, 120)
+        out["sources"] = _localize_sources(out.get("sources") or [], lang)
+        return out
 
     heuristics.extend(_heuristics_for_host(host))
 
@@ -3782,6 +4103,14 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             }],
             "status_text": "Skipped"
         })
+
+    visible_text = ""
+    meta = {}
+    js_behavior = {}
+    wallet_trap = {}
+    crypto_lure = {}
+    visual_phishing = {}
+    advanced_url_intel = {}
 
     page = await _fetch_page(url)
     if page.get("ok"):
@@ -4359,6 +4688,17 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             evidence_all.append({"source": s.get("name"), **ev})
 
     evidence_all_sorted = sorted(evidence_all, key=lambda x: int(x.get("severity") or 0), reverse=True)[:30]
+    evidence_trace = _build_url_evidence_trace(sources, heuristics, page_content_evidence)
+    score_before_safety_gate = {
+        "score": score_info.get("score"),
+        "level": score_info.get("level"),
+        "internal_score": score_info.get("internal_score"),
+        "external_score": score_info.get("external_score"),
+        "components": score_info.get("components") or {},
+    }
+    score_info = _apply_false_positive_safety_gate_to_url_score(score_info, evidence_trace)
+    score_info = _apply_noytrix_database_verdict(score_info, noytrix_db_match)
+    safety_gate = score_info.get("false_positive_safety_gate") or {}
 
     out = {
         "ok": True,
@@ -4389,6 +4729,28 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         "details": {
             "page": enrich.get("page"),
             "input_kind": input_kind,
+            "noytrix_scam_database": score_info.get("noytrix_scam_database") or {
+                "applied": False,
+                "match": noytrix_db_match,
+            },
+            "evidence_trace": evidence_trace.get("items") or [],
+            "score_trace": {
+                "before_safety_gate": score_before_safety_gate,
+                "after_safety_gate": {
+                    "score": score_info.get("score"),
+                    "level": score_info.get("level"),
+                    "internal_score": score_info.get("internal_score"),
+                    "external_score": score_info.get("external_score"),
+                },
+                "components": score_info.get("components") or {},
+                "internal_url_score": score_info.get("internal_url_score"),
+                "internal_url_only_memory_signal": score_info.get("internal_url_only_memory_signal"),
+            },
+            "top_score_contributors": evidence_trace.get("top_contributors") or [],
+            "hard_evidence_found": evidence_trace.get("hard_evidence_found"),
+            "hard_evidence_codes": evidence_trace.get("hard_evidence_codes") or [],
+            "generic_noise_codes": evidence_trace.get("generic_noise_codes") or [],
+            "false_positive_safety_gate": safety_gate,
         },
         "lang": lang,
         "cached": False,
@@ -4497,6 +4859,19 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
     chain = det.get("chain")
     heuristics: list[dict] = []
     page_content_evidence: list[dict] = []
+    noytrix_db_match = lookup_noytrix_scam_database(address)
+    sources.append(_source_from_noytrix_scam_database(noytrix_db_match))
+    if (noytrix_db_match or {}).get("matched") and (noytrix_db_match or {}).get("force_verdict"):
+        out = _quick_result_from_noytrix_database(
+            target,
+            address,
+            "wallet",
+            lang,
+            noytrix_db_match,
+        )
+        cache_set(cache_key, out, 180)
+        out["sources"] = _localize_sources(out.get("sources") or [], lang)
+        return out
 
     is_evm = bool(RE_EVM_ADDR.match(address))
     if is_evm:
@@ -4631,6 +5006,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         page_content=page_content_evidence,
         community=community,
     )
+    score_info = _apply_noytrix_database_verdict(score_info, noytrix_db_match)
 
     if chain == "ton":
         ton_src = next((x for x in sources if str(x.get("name") or "") == "tonapi"), None)
@@ -4679,6 +5055,10 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             "chain_label": _localized_chain_label(chain, lang),
             "is_evm": is_evm,
             "contract_identity": contract_identity,
+            "noytrix_scam_database": score_info.get("noytrix_scam_database") or {
+                "applied": False,
+                "match": noytrix_db_match,
+            },
         },
         "contract_identity": contract_identity,
         "permissions_summary": {
@@ -4949,6 +5329,31 @@ async def _scan_text(target: str, lang: str) -> dict:
         page_content=analysis["evidence"],
         community=community,
     )
+    text_score = normalize_score(analysis.get("score") or 0)
+    text_codes = {str(x.get("code") or "") for x in (analysis.get("evidence") or [])}
+    secret_codes = {
+        "seed_phrase_request",
+        "secret_phrase_request",
+        "recovery_phrase_request",
+        "private_key_request",
+        "explicit_secret_required",
+        "private_key_hex_found",
+    }
+    if text_score >= 30 and str(score_info.get("level") or "").lower() == "safe":
+        score_info["score"] = max(int(score_info.get("score") or 0), min(84, text_score))
+        score_info["level"] = "suspicious"
+        score_info["normalized_level"] = "medium"
+        score_info["verdict_en"] = "Suspicious"
+        score_info["verdict_ru"] = "Suspicious"
+    if text_codes & secret_codes:
+        score_info["score"] = max(int(score_info.get("score") or 0), 60)
+        score_info["level"] = "danger"
+        score_info["normalized_level"] = "high"
+        score_info["verdict_en"] = "Danger"
+        score_info["verdict_ru"] = "Danger"
+        score_info["confirmed_red_flag"] = True
+        score_info["internal_red_flag"] = True
+        score_info["malicious_sources"] = ["text_heuristics"]
 
     evidence_all = [{"source": "text_heuristics", **x} for x in analysis["evidence"]]
 
@@ -5903,6 +6308,7 @@ async def security_analyze_core(payload: dict) -> dict:
         "wallet_profile": data.get("wallet_profile") or {},
         "evidence": data.get("evidence") or [],
         "sources": data.get("sources") or [],
+        "details": data.get("details") or {},
         "ai_explanation": data.get("ai_explanation") or data.get("explanation") or "",
 
         "raw": data,

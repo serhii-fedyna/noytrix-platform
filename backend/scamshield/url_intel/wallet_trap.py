@@ -121,6 +121,16 @@ def _find_patterns(text: str, blocks: List[Dict[str, Any]]) -> List[Dict[str, An
     return out
 
 
+def _has_secret_request_context(text: str) -> bool:
+    text = str(text or "").lower()
+    secret_terms = r"(seed phrase|secret phrase|recovery phrase|mnemonic|private key)"
+    request_terms = r"(enter|input|submit|provide|paste|type|import|restore|verify|validate|sync|unlock|recover|confirm)"
+    return bool(
+        re.search(request_terms + r".{0,90}" + secret_terms, text, re.I | re.S)
+        or re.search(secret_terms + r".{0,90}" + request_terms, text, re.I | re.S)
+    )
+
+
 def analyze_wallet_trap(html: str, visible_text: str = "") -> Dict[str, Any]:
     html = str(html or "")
     visible_text = str(visible_text or "")
@@ -128,6 +138,9 @@ def analyze_wallet_trap(html: str, visible_text: str = "") -> Dict[str, Any]:
     signals = []
     signals.extend(_find_patterns(visible_text, PATTERNS))
     signals.extend(_find_patterns(html, SCRIPT_PATTERNS))
+
+    if not _has_secret_request_context(f"{visible_text}\n{html}"):
+        signals = [s for s in signals if s.get("code") != "seed_phrase_request"]
 
     score = 0
     for sig in signals:

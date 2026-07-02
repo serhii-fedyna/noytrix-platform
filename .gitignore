@@ -41,6 +41,7 @@ web-build/
 __pycache__/
 expo-env.d.ts
 *.tsbuildinfo
+backend/tests/reports/
 
 # Native and tooling
 .kotlin/

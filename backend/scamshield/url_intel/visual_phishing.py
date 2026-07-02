@@ -13,6 +13,8 @@ TRUSTED_BRANDS = [
 
 
 OFFICIAL_BRAND_DOMAINS = {
+    "bitcoin": ["bitcoin.org"],
+    "ethereum": ["ethereum.org"],
     "binance": ["binance.com"],
     "coinbase": ["coinbase.com"],
     "metamask": ["metamask.io"],
@@ -27,6 +29,12 @@ OFFICIAL_BRAND_DOMAINS = {
     "ledger": ["ledger.com"],
     "trezor": ["trezor.io"],
     "walletconnect": ["walletconnect.com"],
+}
+
+OFFICIAL_ROOT_DOMAINS = {
+    d
+    for domains in OFFICIAL_BRAND_DOMAINS.values()
+    for d in domains
 }
 
 
@@ -119,6 +127,31 @@ def _hits(text: str, blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _is_official_host(host: str) -> bool:
+    host = str(host or "").lower().strip(".")
+    if host.startswith("www."):
+        host = host[4:]
+    return any(host == root or host.endswith("." + root) for root in OFFICIAL_ROOT_DOMAINS)
+
+
+def _has_secret_request_context(text: str) -> bool:
+    text = str(text or "").lower()
+    secret_terms = r"(seed phrase|secret phrase|recovery phrase|mnemonic|private key)"
+    request_terms = r"(enter|input|submit|provide|paste|type|import|restore|verify|validate|sync|unlock|recover|confirm)"
+    return bool(
+        re.search(request_terms + r".{0,90}" + secret_terms, text, re.I | re.S)
+        or re.search(secret_terms + r".{0,90}" + request_terms, text, re.I | re.S)
+    )
+
+
+def _has_claim_wallet_context(text: str) -> bool:
+    text = str(text or "").lower()
+    return bool(
+        re.search(r"\bconnect\b.{0,70}\bwallet\b.{0,90}\b(claim|reward|bonus|airdrop|unlock|verify)\b", text, re.I | re.S)
+        or re.search(r"\b(claim|reward|bonus|airdrop|unlock|verify)\b.{0,90}\bconnect\b.{0,70}\bwallet\b", text, re.I | re.S)
+    )
+
+
 def analyze_visual_phishing(html: str, visible_text: str = "", host: str = "", title: str = "") -> Dict[str, Any]:
     html = str(html or "")
     visible_text = str(visible_text or "")
@@ -130,6 +163,18 @@ def analyze_visual_phishing(html: str, visible_text: str = "", host: str = "", t
 
     host_tokens = _host_words(host)
     text_low = full_text.lower()
+    official_host = _is_official_host(host)
+
+    if official_host:
+        signals = [
+            sig for sig in signals
+            if sig.get("code") not in {
+                "fake_support_ui",
+                "fake_airdrop_bonus_ui",
+                "wallet_connect_pressure",
+                "cloned_ui_fingerprint",
+            }
+        ]
 
     for brand in TRUSTED_BRANDS:
         brand_key = brand.lower()
@@ -156,14 +201,14 @@ def analyze_visual_phishing(html: str, visible_text: str = "", host: str = "", t
                     "brand": brand,
                 })
 
-    if "connect" in text_low and "wallet" in text_low and ("claim" in text_low or "reward" in text_low or "bonus" in text_low):
+    if _has_claim_wallet_context(full_text) and not official_host:
         signals.append({
             "code": "connect_wallet_reward_flow",
             "severity": 75,
             "text": "Page combines wallet connection with reward/claim/bonus flow.",
         })
 
-    if "seed phrase" in text_low or "private key" in text_low or "recovery phrase" in text_low:
+    if _has_secret_request_context(full_text) and not official_host:
         signals.append({
             "code": "credential_theft_ui",
             "severity": 95,
