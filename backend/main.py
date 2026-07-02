@@ -56,6 +56,7 @@ from scan_card_renderer import render_scan_card
 from fastapi import FastAPI, Query, Body, HTTPException, Request
 from scamshield.intelligence.anti_false_positive import apply_anti_false_positive_layer
 from scamshield.intelligence.noytrix_scam_database import lookup_noytrix_scam_database
+from scamshield.intelligence.verdict_core import build_internal_verdict
 from fastapi.middleware.cors import CORSMiddleware
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
 from scamshield.core.levels import normalize_level, legacy_level, normalize_score, enforce_risk_floor
@@ -3444,6 +3445,50 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
     evidence = []
     for ev in source.get("evidence") or []:
         evidence.append({"source": source.get("name"), **ev})
+    quick_score_info = {
+        "score": score,
+        "level": level,
+        "normalized_level": level,
+        "internal_score": score,
+        "external_score": 0,
+        "internal_level": level,
+        "external_level": "safe" if safe else "unknown",
+        "confirmed_red_flag": malicious,
+        "internal_red_flag": malicious,
+        "external_red_flag": False,
+        "malicious_sources": ["noytrix_scam_database"] if malicious else [],
+        "internal_malicious_sources": ["noytrix_scam_database"] if malicious else [],
+        "external_malicious_sources": [],
+        "components": {"noytrix_scam_database": score},
+        "noytrix_scam_database": {
+            "applied": bool((db_match or {}).get("force_verdict")),
+            "reason": "exact_database_match_quick_result",
+            "match": db_match or {},
+        },
+        "false_positive_safety_gate": {
+            "applied": False,
+            "reason": "database_exact_match",
+            "hard_evidence_found": malicious,
+            "score_after": score,
+            "level_after": level,
+        },
+    }
+    quick_evidence_trace = {
+        "items": evidence,
+        "top_contributors": evidence[:8],
+        "hard_evidence_found": malicious,
+        "hard_evidence_codes": ["noytrix_scam_database_match"] if malicious else [],
+        "generic_noise_codes": [],
+    }
+    internal_verdict = build_internal_verdict(
+        kind=kind,
+        target=normalized_input,
+        score_info=quick_score_info,
+        sources=[source],
+        evidence_trace=quick_evidence_trace,
+        community={},
+        noytrix_database=quick_score_info["noytrix_scam_database"],
+    )
     out = {
         "ok": True,
         "input": target,
@@ -3493,6 +3538,7 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
                 "score_after": score,
                 "level_after": level,
             },
+            "internal_verdict": internal_verdict,
         },
         "lang": lang,
         "cached": False,
@@ -4699,6 +4745,18 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     score_info = _apply_false_positive_safety_gate_to_url_score(score_info, evidence_trace)
     score_info = _apply_noytrix_database_verdict(score_info, noytrix_db_match)
     safety_gate = score_info.get("false_positive_safety_gate") or {}
+    internal_verdict = build_internal_verdict(
+        kind=input_kind,
+        target=url if input_kind == "url" else host,
+        score_info=score_info,
+        sources=sources,
+        evidence_trace=evidence_trace,
+        community=community,
+        noytrix_database=score_info.get("noytrix_scam_database") or {
+            "applied": False,
+            "match": noytrix_db_match,
+        },
+    )
 
     out = {
         "ok": True,
@@ -4751,6 +4809,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "hard_evidence_codes": evidence_trace.get("hard_evidence_codes") or [],
             "generic_noise_codes": evidence_trace.get("generic_noise_codes") or [],
             "false_positive_safety_gate": safety_gate,
+            "internal_verdict": internal_verdict,
         },
         "lang": lang,
         "cached": False,
