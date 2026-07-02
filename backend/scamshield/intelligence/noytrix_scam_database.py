@@ -183,6 +183,38 @@ def _lookup_postgres(value: str) -> Optional[dict]:
 
                 cur.execute(
                     """
+                    SELECT e.entity, e.normalized_entity, e.entity_type, e.status,
+                           e.risk_score, e.confidence,
+                           e.metadata || jsonb_build_object(
+                               'alias_match',
+                               jsonb_build_object(
+                                   'normalized_alias', a.normalized_alias,
+                                   'alias_type', a.alias_type,
+                                   'source_name', a.source_name
+                               )
+                           ) AS metadata
+                    FROM entity_aliases a
+                    JOIN entities e ON e.id = a.entity_id
+                    WHERE a.normalized_alias = ANY(%s)
+                    ORDER BY
+                        CASE
+                            WHEN lower(e.status) IN ('malicious','scam','danger','critical','high','blocked') THEN 0
+                            WHEN lower(e.status) IN ('safe','trusted','allowlisted','allowlist') THEN 1
+                            ELSE 2
+                        END,
+                        e.risk_score DESC,
+                        e.confidence DESC,
+                        a.seen_count DESC
+                    LIMIT 1
+                    """,
+                    (candidates,),
+                )
+                row = cur.fetchone()
+                if row:
+                    return _row_to_match(dict(row), "postgres_entity_aliases", str(row.get("normalized_entity")))
+
+                cur.execute(
+                    """
                     SELECT raw_value, normalized_value, indicator_type, status,
                            risk_score, confidence, metadata, raw_record
                     FROM raw_indicators

@@ -7,10 +7,15 @@
   - URL/domain scan now writes `details.internal_verdict`.
   - Exact Noytrix Scam Database quick results also write `details.internal_verdict`.
   - External API evidence is marked as reference-only inside the internal verdict envelope.
+- Step 2: Noytrix Scam Database v2 deduplication model.
+  - Added `scamshield/intelligence/scam_database_v2.py`.
+  - Added `scripts/upgrade_scam_database_v2.py`.
+  - Added `dedupe_key` support for `entities` and `raw_indicators`.
+  - Added `entity_aliases`, `indicator_observations`, and `source_reputation`.
+  - Noytrix Scam Database lookup can now resolve canonical entities through aliases.
 
 ## Remaining
 
-- Step 2: Noytrix Scam Database v2 deduplication model.
 - Step 3: Source reputation and confidence scoring.
 - Step 4: Self-learning entity reputation with time decay.
 - Step 5: Full graph risk propagation.
