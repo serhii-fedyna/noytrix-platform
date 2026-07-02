@@ -163,37 +163,47 @@ def backfill_dedupe_keys(batch_limit: int = 250000) -> Dict[str, Any]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, normalized_value, indicator_type
-                FROM raw_indicators
-                WHERE COALESCE(dedupe_key, '') = ''
-                LIMIT %s
+                WITH batch AS (
+                    SELECT id
+                    FROM raw_indicators
+                    WHERE COALESCE(dedupe_key, '') = ''
+                      AND COALESCE(normalized_value, '') <> ''
+                      AND COALESCE(indicator_type, '') <> ''
+                    LIMIT %s
+                )
+                UPDATE raw_indicators r
+                SET dedupe_key = lower(r.indicator_type) || ':' || lower(r.normalized_value)
+                FROM batch
+                WHERE r.id = batch.id
                 """,
                 (int(batch_limit),),
             )
-            raw_rows = cur.fetchall()
-            for row in raw_rows:
-                c = canonical_indicator(row["normalized_value"], row["indicator_type"])
-                cur.execute("UPDATE raw_indicators SET dedupe_key=%s WHERE id=%s", (c["dedupe_key"], row["id"]))
+            raw_count = cur.rowcount
 
             cur.execute(
                 """
-                SELECT id, normalized_entity, entity_type
-                FROM entities
-                WHERE COALESCE(dedupe_key, '') = ''
-                LIMIT %s
+                WITH batch AS (
+                    SELECT id
+                    FROM entities
+                    WHERE COALESCE(dedupe_key, '') = ''
+                      AND COALESCE(normalized_entity, '') <> ''
+                      AND COALESCE(entity_type, '') <> ''
+                    LIMIT %s
+                )
+                UPDATE entities e
+                SET dedupe_key = lower(e.entity_type) || ':' || lower(e.normalized_entity)
+                FROM batch
+                WHERE e.id = batch.id
                 """,
                 (int(batch_limit),),
             )
-            entity_rows = cur.fetchall()
-            for row in entity_rows:
-                c = canonical_indicator(row["normalized_entity"], row["entity_type"])
-                cur.execute("UPDATE entities SET dedupe_key=%s WHERE id=%s", (c["dedupe_key"], row["id"]))
+            entity_count = cur.rowcount
 
             conn.commit()
 
     return {
-        "raw_indicators_backfilled": len(raw_rows),
-        "entities_backfilled": len(entity_rows),
+        "raw_indicators_backfilled": raw_count,
+        "entities_backfilled": entity_count,
     }
 
 
