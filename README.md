@@ -32,6 +32,10 @@ NOYTRIX-Code/
 | Lead monitor | `lead-monitor/` | `main.py`, `requirements.txt` |
 | Trader | `trader/` | `main.py`, `bot_api.py` |
 
+## Documentation
+
+- `docs/intelligence-platform-roadmap.md` - target architecture and phased roadmap for the Noytrix first-party threat-intelligence platform.
+
 ## Safety
 
 Do not push or deploy without explicit confirmation. Do not commit `.env*`, databases, logs, signing keys, archives, or generated dependency folders.
