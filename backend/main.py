@@ -66,12 +66,14 @@ from scamshield.runtime.behavior import analyze_transaction_behavior
 from scamshield.runtime.execution_graph import build_execution_graph, build_recursive_execution_graph
 from scamshield.runtime.drain_simulator import simulate_wallet_drain
 from scamshield.runtime.contract import build_runtime_contract, normalize_runtime_payload
+from scamshield.runtime.signature_simulator import simulate_signature
 from scamshield.ai.explainer import build_ai_explanation_context, generate_ai_security_explanation, _cache_connect
 from scamshield.url_intel.domain_age import analyze_domain_age
 from scamshield.url_intel.redirect_chain import analyze_redirect_chain
 from scamshield.url_intel.wallet_trap import analyze_wallet_trap
 from scamshield.url_intel.crypto_lure import analyze_crypto_lure
 from scamshield.url_intel.js_behavior import analyze_js_behavior
+from scamshield.url_intel.headless_sandbox import analyze_headless_sandbox
 from scamshield.url_intel.infrastructure import analyze_infrastructure
 from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
@@ -2106,6 +2108,60 @@ def _evm_word_to_int(word: str) -> int | None:
 
 
 def _analyze_typed_signature_payload(payload: dict) -> dict:
+    signature = simulate_signature(payload)
+    runtime_severity = normalize_score(signature.get("score") or 0)
+    normalized_level = normalize_level("", runtime_severity)
+    level = legacy_level(normalized_level)
+    simulation = signature.get("simulation") or {}
+    permissions = signature.get("permissions_summary") or {}
+    flags = [str(x.get("code")) for x in (signature.get("signals") or []) if x.get("code")]
+
+    return {
+        "ok": True,
+        "kind": "typed_signature",
+        "method": signature.get("method"),
+        "score": runtime_severity,
+        "level": level,
+        "normalized_level": normalized_level,
+        "runtime_severity": runtime_severity,
+        "verdict_en": "Signature can authorize asset movement" if permissions.get("can_spend") else "Wallet signature detected",
+        "verdict_ru": "Signature can authorize asset movement" if permissions.get("can_spend") else "Wallet signature detected",
+        "verdict_localized": "Signature can authorize asset movement" if permissions.get("can_spend") else "Wallet signature detected",
+        "confirmed_red_flag": level in {"danger", "critical"},
+        "typed_signature": {
+            "domain": simulation.get("domain") or {},
+            "primaryType": simulation.get("primary_type"),
+            "family": signature.get("family"),
+            "spender": simulation.get("spender"),
+            "amount": simulation.get("amount"),
+            "deadline": simulation.get("deadline"),
+            "flags": flags,
+        },
+        "signature_simulation": signature,
+        "drainer": {
+            "detected": bool(flags),
+            "score": runtime_severity,
+            "risk": "high" if level in {"danger", "critical"} else "medium",
+            "flags": flags,
+            "summary": simulation.get("worst_case") or "Wallet signature detected.",
+        },
+        "permissions_summary": permissions,
+        "simulation": {
+            "available": True,
+            "summary": simulation.get("worst_case") or "",
+            "worst_case": simulation.get("worst_case") or "",
+            "loss_scenarios": [simulation.get("worst_case")] if simulation.get("worst_case") else [],
+            "recommended_actions": simulation.get("recommended_actions") or [],
+        },
+        "what_can_happen": simulation.get("worst_case") or "This signature may authorize wallet actions.",
+        "worst_case": simulation.get("worst_case") or "Worst case: a malicious signature can authorize unwanted wallet actions.",
+        "evidence": [{"source": "signature_simulator", **sig} for sig in (signature.get("signals") or [])],
+        "details": {
+            "typed_signature": payload.get("typedData") or payload.get("typed_data") or payload.get("data"),
+            "signature_simulation": signature,
+        },
+    }
+
     method = str(payload.get("method") or "").lower()
     typed = payload.get("typedData") or payload.get("typed_data") or payload.get("data") or {}
 
@@ -3211,6 +3267,12 @@ URL_HARD_EVIDENCE_CODES = {
     "connect_wallet_reward_flow",
     "possible_js_drainer_flow",
     "approval_or_drain_functions",
+    "runtime_approval_or_drain_flow",
+    "runtime_secret_phrase_request",
+    "runtime_connect_plus_signature_flow",
+    "runtime_connect_plus_transaction_flow",
+    "headless_possible_js_drainer_flow",
+    "headless_approval_or_drain_functions",
     "brand_impersonation_plus_wallet_pressure",
     "brand_plus_scam_keywords",
     "multi_source_public_scam_match",
@@ -3231,6 +3293,9 @@ URL_HARD_EVIDENCE_CODES = {
 
 URL_GENERIC_WEB3_NOISE_CODES = {
     "wallet_connect_request",
+    "runtime_wallet_connect_request",
+    "runtime_many_script_loads",
+    "headless_wallet_connect_request",
     "web3_script_reference",
     "fake_support_ui",
     "fake_airdrop_bonus_ui",
@@ -4188,6 +4253,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     visible_text = ""
     meta = {}
     js_behavior = {}
+    headless_sandbox = {}
     wallet_trap = {}
     crypto_lure = {}
     visual_phishing = {}
@@ -4210,6 +4276,9 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
 
         js_behavior = analyze_js_behavior(page.get("html") or "")
         enrich["js_behavior"] = js_behavior
+
+        headless_sandbox = await analyze_headless_sandbox(final_url or url)
+        enrich["headless_sandbox"] = headless_sandbox
 
         visual_phishing = analyze_visual_phishing(
             page.get("html") or "",
@@ -4334,6 +4403,62 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
                         "code": "js_behavior_checked",
                         "severity": 0,
                         "text": "JavaScript wallet behavior checks completed."
+                    }],
+                )
+            )
+
+        if headless_sandbox.get("available"):
+            for sig in (headless_sandbox.get("signals") or []):
+                heuristics.append({
+                    "code": sig.get("code"),
+                    "severity": sig.get("severity", 0),
+                    "text": sig.get("text"),
+                })
+
+            sandbox_level = str(headless_sandbox.get("level") or "").lower()
+            sandbox_status = (
+                "clean" if sandbox_level == "safe" else
+                "warn" if sandbox_level in {"low", "medium"} else
+                "malicious" if sandbox_level in {"high", "critical"} else
+                "observed"
+            )
+
+            sources.append(
+                _mk_source(
+                    "headless_sandbox",
+                    sandbox_status,
+                    verdict=sandbox_level or "observed",
+                    details={
+                        "score": headless_sandbox.get("score"),
+                        "level": headless_sandbox.get("level"),
+                        "summary": headless_sandbox.get("summary"),
+                        "final_url": headless_sandbox.get("final_url"),
+                        "wallet_calls": headless_sandbox.get("wallet_calls") or [],
+                        "script_urls": headless_sandbox.get("script_urls") or [],
+                        "page_errors": headless_sandbox.get("page_errors") or [],
+                    },
+                    evidence=headless_sandbox.get("signals") or [{
+                        "code": "headless_sandbox_checked",
+                        "severity": 0,
+                        "text": "Headless browser sandbox completed."
+                    }],
+                )
+            )
+        elif headless_sandbox:
+            sources.append(
+                _mk_source(
+                    "headless_sandbox",
+                    "no_data",
+                    verdict="unavailable",
+                    details={
+                        "available": False,
+                        "reason": headless_sandbox.get("reason"),
+                        "error": headless_sandbox.get("error"),
+                    },
+                    evidence=[{
+                        "code": "headless_sandbox_unavailable",
+                        "severity": 0,
+                        "text": "Headless browser sandbox was unavailable for this scan."
                     }],
                 )
             )
@@ -6554,6 +6679,18 @@ def admin_list_drainer_campaigns(request: Request, lang: str | None = None, limi
 # Runtime extension analysis
 # =========================================================
 
+def _is_signature_runtime_method(method: str) -> bool:
+    method = str(method or "").lower()
+    return any(x in method for x in [
+        "signtypeddata",
+        "personal_sign",
+        "eth_sign",
+        "signmessage",
+        "sign_typed",
+        "wallet_sign",
+    ])
+
+
 @app.post("/runtime/analyze")
 async def runtime_analyze(payload: dict = Body(...)):
     runtime_payload = normalize_runtime_payload(payload)
@@ -6571,7 +6708,7 @@ async def runtime_analyze(payload: dict = Body(...)):
     lang = normalize_lang(str(payload.get("lang") or "en"))
     method = str(payload.get("method") or "").lower()
 
-    if "signtypeddata" in method:
+    if _is_signature_runtime_method(method):
         data = _analyze_typed_signature_payload(payload)
     else:
         if not target:

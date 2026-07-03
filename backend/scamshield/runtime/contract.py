@@ -62,6 +62,7 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
     recursive_graph = verdict.get("recursive_execution_graph") or {}
     campaign = verdict.get("campaign") or {}
     wallet_profile = verdict.get("wallet_profile") or {}
+    signature_simulation = verdict.get("signature_simulation") or {}
 
     score = int(verdict.get("score") or verdict.get("runtime_severity") or 0)
     level = str(verdict.get("level") or "unknown").lower()
@@ -102,6 +103,7 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
             "recommended_actions": simulation.get("recommended_actions") or [],
         },
         "runtime_behavior": behavior,
+        "signature_simulation": signature_simulation,
         "execution_graph": {
             "available": bool(execution_graph) or bool(recursive_graph),
             "direct": execution_graph,
