@@ -63,6 +63,8 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
     campaign = verdict.get("campaign") or {}
     wallet_profile = verdict.get("wallet_profile") or {}
     signature_simulation = verdict.get("signature_simulation") or {}
+    multi_chain = verdict.get("multi_chain_intelligence") or {}
+    ai_investigation = verdict.get("ai_investigation") or {}
 
     score = int(verdict.get("score") or verdict.get("runtime_severity") or 0)
     level = str(verdict.get("level") or "unknown").lower()
@@ -113,4 +115,13 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
         },
         "campaign": campaign,
         "wallet_profile": wallet_profile,
+        "multi_chain_intelligence": multi_chain,
+        "ai_investigation": {
+            "available": bool(ai_investigation.get("available")),
+            "engine": ai_investigation.get("engine"),
+            "primary_hypothesis": ai_investigation.get("primary_hypothesis"),
+            "confidence": ai_investigation.get("confidence"),
+            "evidence_links": ai_investigation.get("evidence_links") or [],
+            "recommended_actions": ai_investigation.get("recommended_actions") or [],
+        },
     }

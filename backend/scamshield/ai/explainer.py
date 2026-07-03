@@ -237,6 +237,10 @@ def build_ai_explanation_context(verdict: Dict[str, Any]) -> Dict[str, Any]:
         "campaign": verdict.get("campaign") or {},
         "wallet_profile": verdict.get("wallet_profile") or {},
         "contract_identity": verdict.get("contract_identity") or raw.get("contract_identity") or {},
+        "internal_verdict": (verdict.get("details") or {}).get("internal_verdict") if isinstance(verdict.get("details"), dict) else {},
+        "scam_family": verdict.get("scam_family") or ((verdict.get("details") or {}).get("scam_family") if isinstance(verdict.get("details"), dict) else {}) or {},
+        "multi_chain_intelligence": verdict.get("multi_chain_intelligence") or ((verdict.get("details") or {}).get("multi_chain_intelligence") if isinstance(verdict.get("details"), dict) else {}) or {},
+        "ai_investigation": verdict.get("ai_investigation") or ((verdict.get("details") or {}).get("ai_investigation") if isinstance(verdict.get("details"), dict) else {}) or {},
 
         "noytrix_url_intelligence": noytrix_url_intelligence,
 
@@ -315,6 +319,8 @@ async def generate_ai_security_explanation(
         "Write like a calm senior crypto security analyst: clear, confident, practical, and user-protective. "
         "If hidden danger exists, explain what is hidden from the normal user and why it matters. "
         "Do not claim hidden scripts, wallet-drainer scripts, or malicious JavaScript as fact unless js_behavior, wallet_trap, runtime_behavior, or execution_graph provides evidence. "
+        "If ai_investigation.evidence_links exists, base the explanation on those linked evidence items and mention the strongest evidence IDs naturally when useful. "
+        "If multi_chain_intelligence exists, explain chain context as context only and never as risk by itself. "
         "If JavaScript evidence is clean or missing, phrase script-based danger only as a possible future risk, not as confirmed behavior. "
         "If social manipulation exists, explain the psychological trick: fake bonus, urgency, impersonation, guaranteed profit, deposit pressure, or trust abuse. "
         "If an attack chain exists, explain the flow in plain language: first action, hidden action, possible consequence. "

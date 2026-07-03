@@ -58,6 +58,7 @@ from scamshield.intelligence.anti_false_positive import apply_anti_false_positiv
 from scamshield.intelligence.noytrix_scam_database import lookup_noytrix_scam_database
 from scamshield.intelligence.verdict_core import build_internal_verdict
 from scamshield.intelligence.scam_family import classify_scam_family
+from scamshield.intelligence.multichain import build_multichain_intelligence
 from scamshield.intelligence.threat_collectors import autonomous_collector_loop
 from fastapi.middleware.cors import CORSMiddleware
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
@@ -70,6 +71,7 @@ from scamshield.runtime.drain_simulator import simulate_wallet_drain
 from scamshield.runtime.contract import build_runtime_contract, normalize_runtime_payload
 from scamshield.runtime.signature_simulator import simulate_signature
 from scamshield.ai.explainer import build_ai_explanation_context, generate_ai_security_explanation, _cache_connect
+from scamshield.ai.investigation import build_ai_investigation
 from scamshield.url_intel.domain_age import analyze_domain_age
 from scamshield.url_intel.redirect_chain import analyze_redirect_chain
 from scamshield.url_intel.wallet_trap import analyze_wallet_trap
@@ -1825,6 +1827,45 @@ RE_SEED_WORDS = re.compile(
 
 def _sha256_short(s: str) -> str:
     return hashlib.sha256((s or "").encode("utf-8")).hexdigest()[:20]
+
+def _attach_ai_investigation_fields(out: dict) -> dict:
+    try:
+        investigation = build_ai_investigation(out)
+        out["ai_investigation"] = investigation
+        details = out.setdefault("details", {})
+        if isinstance(details, dict):
+            details["ai_investigation"] = investigation
+    except Exception as e:
+        out["ai_investigation"] = {
+            "available": False,
+            "reason": str(e)[:240],
+        }
+    return out
+
+def _attach_multichain_fields(out: dict, value: str | None = None, metadata: dict | None = None) -> dict:
+    try:
+        target = value or out.get("normalized_input") or out.get("input") or ""
+        multi = build_multichain_intelligence(
+            target,
+            kind=str(out.get("kind") or ""),
+            sources=out.get("sources") or [],
+            evidence=out.get("evidence") or [],
+            metadata=metadata or {
+                "chain": out.get("chain"),
+                "chainId": out.get("chain_id"),
+                "kind": out.get("kind"),
+            },
+        )
+        out["multi_chain_intelligence"] = multi
+        details = out.setdefault("details", {})
+        if isinstance(details, dict):
+            details["multi_chain_intelligence"] = multi
+    except Exception as e:
+        out["multi_chain_intelligence"] = {
+            "available": False,
+            "reason": str(e)[:240],
+        }
+    return out
 
 def _normalize_url(x: str) -> str:
     s = (x or "").strip()
@@ -5099,6 +5140,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     }
 
     out = _attach_pg_graph_context(out)
+    out = _attach_ai_investigation_fields(out)
 
     _save_scan_to_pg_intelligence(out)
 
@@ -5433,7 +5475,9 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
     }
 
     out = _attach_pg_graph_context(out)
+    out = _attach_multichain_fields(out, address, {"chain": chain, "chainId": preferred_chain_id, "kind": kind})
     out = apply_anti_false_positive_layer(out)
+    out = _attach_ai_investigation_fields(out)
 
     cache_set(cache_key, out, 180)
 
@@ -6648,6 +6692,8 @@ async def security_analyze_core(payload: dict) -> dict:
         "simulation": data.get("simulation") or {},
         "campaign": data.get("campaign") or {},
         "wallet_profile": data.get("wallet_profile") or {},
+        "multi_chain_intelligence": data.get("multi_chain_intelligence") or {},
+        "ai_investigation": data.get("ai_investigation") or {},
         "evidence": data.get("evidence") or [],
         "sources": data.get("sources") or [],
         "details": data.get("details") or {},
@@ -6662,6 +6708,9 @@ async def security_analyze_core(payload: dict) -> dict:
 
     # Re-apply graph/reputation context after anti-FP, so malicious wallet reputation still affects wallet verdicts.
     unified = _attach_pg_graph_context(unified)
+
+    if str(unified.get("kind") or "").lower() in {"wallet", "contract", "transaction", "runtime_web3"} or str(unified.get("normalized_input") or "").startswith("0x"):
+        unified = _attach_multichain_fields(unified)
 
     try:
         remember_many_from_verdict(unified, source="security_core")
@@ -6681,6 +6730,8 @@ async def security_analyze_core(payload: dict) -> dict:
 
     except Exception as e:
         unified["threat_memory_error"] = str(e)
+
+    unified = _attach_ai_investigation_fields(unified)
 
     return unified
 
@@ -6929,6 +6980,16 @@ async def runtime_analyze(payload: dict = Body(...)):
     if wallet_profile:
         data["wallet_profile"] = wallet_profile
 
+    data = _attach_multichain_fields(
+        data,
+        runtime_wallet or runtime_spender or target or runtime_payload.get("url") or runtime_payload.get("domain"),
+        {
+            "chain": payload.get("chain") or payload.get("network"),
+            "chainId": payload.get("chainId") or payload.get("chain_id"),
+            "kind": data.get("kind") or "runtime_web3",
+        },
+    )
+    data = _attach_ai_investigation_fields(data)
     data["runtime_contract"] = build_runtime_contract(payload, data)
     data["runtime"] = {
         "source": runtime_payload.get("source") or "extension",

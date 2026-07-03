@@ -62,11 +62,17 @@
   - Added `scamshield/url_intel/compromised_site.py`.
   - URL analysis now detects old/legitimate or hosted-platform domains that suddenly show wallet-drainer, credential theft, lure redirects, or obfuscated wallet behavior.
   - Legitimate-domain context alone is zero-risk; only fresh malicious behavior can raise the verdict.
+- Step 14: Multi-chain intelligence beyond EVM.
+  - Added `scamshield/intelligence/multichain.py`.
+  - Wallet/runtime verdicts now expose `multi_chain_intelligence` with chain family, chain label, supported chains, chain-specific signals, limitations, and risk context.
+  - Chain context is zero-risk by itself and never upgrades a verdict without independent evidence.
+- Step 15: AI investigation layer with evidence-linked explanations.
+  - Added `scamshield/ai/investigation.py`.
+  - URL, wallet/contract, and runtime responses now expose `ai_investigation` with evidence links, primary hypothesis, confirmed/not-confirmed facts, attack path, open questions, and recommended actions.
+  - AI explanation context now includes internal verdict, scam family, multi-chain context, and evidence-linked investigation data.
 
 ## Remaining
 
-- Step 14: Multi-chain intelligence beyond EVM.
-- Step 15: AI investigation layer with evidence-linked explanations.
 - Step 16: Active attack map and investigation UI.
 - Step 17: Product-wide rendering of graph, reputation, runtime impact, and AI evidence.
 
