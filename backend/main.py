@@ -6557,8 +6557,14 @@ def admin_list_drainer_campaigns(request: Request, lang: str | None = None, limi
 @app.post("/runtime/analyze")
 async def runtime_analyze(payload: dict = Body(...)):
     runtime_payload = normalize_runtime_payload(payload)
-    runtime_data = str(payload.get("data") or "").strip()
-    runtime_input = str(payload.get("input") or payload.get("target") or "").strip()
+    runtime_data = str(runtime_payload.get("data") or "").strip()
+    runtime_input = str(
+        payload.get("input")
+        or payload.get("target")
+        or runtime_payload.get("url")
+        or runtime_payload.get("domain")
+        or ""
+    ).strip()
 
     target = runtime_data if runtime_data.startswith("0x") or "|" in runtime_data else runtime_input
 
