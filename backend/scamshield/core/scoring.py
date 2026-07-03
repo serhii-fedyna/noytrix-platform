@@ -112,6 +112,10 @@ def score_scan(
                 "wallet_drainer_runtime",
                 "obfuscated_wallet_drainer_javascript",
                 "runtime_wallet_calls_with_obfuscation",
+                "compromised_legitimate_site_wallet_flow",
+                "compromised_legitimate_redirect_to_lure",
+                "legitimate_domain_obfuscated_wallet_flow",
+                "hosted_platform_abuse_wallet_flow",
             }
             has_strong_evidence = any(
                 str(e.get("code") or "") in strong_codes and int(e.get("severity") or 0) >= 70
@@ -175,6 +179,10 @@ def score_scan(
         "known_malicious_contract_identity",
         "obfuscated_wallet_drainer_javascript",
         "runtime_wallet_calls_with_obfuscation",
+        "compromised_legitimate_site_wallet_flow",
+        "compromised_legitimate_redirect_to_lure",
+        "legitimate_domain_obfuscated_wallet_flow",
+        "hosted_platform_abuse_wallet_flow",
     }
 
     all_codes = set()

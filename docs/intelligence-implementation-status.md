@@ -53,11 +53,18 @@
   - Added `scamshield/intelligence/scam_family.py`.
   - Internal verdicts now expose `risk_family` and `scam_family` with primary family, confidence, ranked family candidates, and matching evidence codes.
   - Top-level URL/runtime responses also expose `scam_family` so products can render backend truth directly.
+- Step 12: Autonomous threat collectors.
+  - Added `scamshield/intelligence/threat_collectors.py`.
+  - Added `scripts/run_autonomous_threat_collectors.py`.
+  - Collectors ingest Reddit scam RSS and public text threat feeds into `source_feeds` / `raw_indicators` with dedupe keys, risk scoring, scam-family metadata, and quarantine/malicious status.
+  - Backend startup now runs the collector loop automatically unless `NOYTRIX_THREAT_COLLECTORS=0`.
+- Step 13: Compromised legitimate site detection.
+  - Added `scamshield/url_intel/compromised_site.py`.
+  - URL analysis now detects old/legitimate or hosted-platform domains that suddenly show wallet-drainer, credential theft, lure redirects, or obfuscated wallet behavior.
+  - Legitimate-domain context alone is zero-risk; only fresh malicious behavior can raise the verdict.
 
 ## Remaining
 
-- Step 12: Autonomous threat collectors.
-- Step 13: Compromised legitimate site detection.
 - Step 14: Multi-chain intelligence beyond EVM.
 - Step 15: AI investigation layer with evidence-linked explanations.
 - Step 16: Active attack map and investigation UI.

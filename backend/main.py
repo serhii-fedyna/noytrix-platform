@@ -58,6 +58,7 @@ from scamshield.intelligence.anti_false_positive import apply_anti_false_positiv
 from scamshield.intelligence.noytrix_scam_database import lookup_noytrix_scam_database
 from scamshield.intelligence.verdict_core import build_internal_verdict
 from scamshield.intelligence.scam_family import classify_scam_family
+from scamshield.intelligence.threat_collectors import autonomous_collector_loop
 from fastapi.middleware.cors import CORSMiddleware
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
 from scamshield.core.levels import normalize_level, legacy_level, normalize_score, enforce_risk_floor
@@ -76,6 +77,7 @@ from scamshield.url_intel.crypto_lure import analyze_crypto_lure
 from scamshield.url_intel.js_behavior import analyze_js_behavior
 from scamshield.url_intel.headless_sandbox import analyze_headless_sandbox
 from scamshield.url_intel.obfuscation import analyze_obfuscated_javascript
+from scamshield.url_intel.compromised_site import analyze_compromised_legitimate_site
 from scamshield.url_intel.infrastructure import analyze_infrastructure
 from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
@@ -3277,6 +3279,10 @@ URL_HARD_EVIDENCE_CODES = {
     "headless_approval_or_drain_functions",
     "obfuscated_wallet_drainer_javascript",
     "runtime_wallet_calls_with_obfuscation",
+    "compromised_legitimate_site_wallet_flow",
+    "compromised_legitimate_redirect_to_lure",
+    "legitimate_domain_obfuscated_wallet_flow",
+    "hosted_platform_abuse_wallet_flow",
     "brand_impersonation_plus_wallet_pressure",
     "brand_plus_scam_keywords",
     "multi_source_public_scam_match",
@@ -3304,6 +3310,8 @@ URL_GENERIC_WEB3_NOISE_CODES = {
     "js_large_base64_blob",
     "js_high_entropy_payload",
     "js_dynamic_script_loading",
+    "legitimate_domain_context",
+    "legitimate_domain_suspicious_path",
     "web3_script_reference",
     "fake_support_ui",
     "fake_airdrop_bonus_ui",
@@ -4263,6 +4271,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     js_behavior = {}
     headless_sandbox = {}
     js_obfuscation = {}
+    compromised_site = {}
     wallet_trap = {}
     crypto_lure = {}
     visual_phishing = {}
@@ -4299,6 +4308,20 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             str((meta or {}).get("title") or ""),
         )
         enrich["visual_phishing"] = visual_phishing
+
+        compromised_site = analyze_compromised_legitimate_site(
+            final_url or url,
+            final_host or host,
+            domain_age=domain_age,
+            redirect_chain=redirect_chain,
+            wallet_trap=wallet_trap,
+            crypto_lure=crypto_lure,
+            js_behavior=js_behavior,
+            headless_sandbox=headless_sandbox,
+            js_obfuscation=js_obfuscation,
+            visual_phishing=visual_phishing,
+        )
+        enrich["compromised_site"] = compromised_site
 
         if visual_phishing.get("available"):
             for sig in (visual_phishing.get("signals") or []):
@@ -4506,6 +4529,44 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
                         "code": "js_obfuscation_checked",
                         "severity": 0,
                         "text": "JavaScript obfuscation checks completed."
+                    }],
+                )
+            )
+
+        if compromised_site.get("available"):
+            for sig in (compromised_site.get("signals") or []):
+                heuristics.append({
+                    "code": sig.get("code"),
+                    "severity": sig.get("severity", 0),
+                    "text": sig.get("text"),
+                })
+
+            comp_level = str(compromised_site.get("level") or "").lower()
+            comp_status = (
+                "clean" if comp_level == "safe" else
+                "warn" if comp_level in {"low", "medium"} else
+                "malicious" if comp_level in {"high", "critical"} else
+                "observed"
+            )
+
+            sources.append(
+                _mk_source(
+                    "compromised_site",
+                    comp_status,
+                    verdict=comp_level or "observed",
+                    details={
+                        "score": compromised_site.get("score"),
+                        "level": compromised_site.get("level"),
+                        "summary": compromised_site.get("summary"),
+                        "known_legitimate_context": compromised_site.get("known_legitimate_context"),
+                        "old_domain": compromised_site.get("old_domain"),
+                        "platform_root": compromised_site.get("platform_root"),
+                        "suspicious_path_words": compromised_site.get("suspicious_path_words") or [],
+                    },
+                    evidence=compromised_site.get("signals") or [{
+                        "code": "compromised_site_checked",
+                        "severity": 0,
+                        "text": "Compromised legitimate site checks completed."
                     }],
                 )
             )
@@ -8128,6 +8189,8 @@ async def startup_event():
         asyncio.create_task(market_signals_loop())
         asyncio.create_task(security_alerts_loop())
         asyncio.create_task(reddit_scam_monitor_loop())
+        if str(os.getenv("NOYTRIX_THREAT_COLLECTORS", "1")).strip().lower() not in {"0", "false", "no", "off"}:
+            asyncio.create_task(autonomous_collector_loop())
         init_threat_memory()
         try:
             conn = _cache_connect()

@@ -81,7 +81,16 @@ FAMILY_RULES = {
         "base": 35,
     },
     "compromised_or_redirect": {
-        "codes": {"redirect_plus_behavioral_risk", "multi_layer_behavioral_fingerprint", "cross_domain_redirect", "suspicious_redirect"},
+        "codes": {
+            "redirect_plus_behavioral_risk",
+            "multi_layer_behavioral_fingerprint",
+            "cross_domain_redirect",
+            "suspicious_redirect",
+            "compromised_legitimate_site_wallet_flow",
+            "compromised_legitimate_redirect_to_lure",
+            "legitimate_domain_obfuscated_wallet_flow",
+            "hosted_platform_abuse_wallet_flow",
+        },
         "words": {"redirect", "shortlink", "pages.dev", "vercel.app", "netlify.app"},
         "base": 20,
     },
