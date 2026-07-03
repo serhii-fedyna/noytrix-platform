@@ -37,13 +37,25 @@
   - `/runtime/analyze` now emits a stable `runtime_contract` for products.
   - Added `/runtime/web3/analyze` and `/mobile/runtime/analyze` aliases over the same backend truth.
   - `details.internal_verdict.runtime_context` exposes source, method, domain, wallet, spender, and warn/block decisions.
+- Step 8: Deep approve/sign simulation for all supported signature types.
+  - Added `scamshield/runtime/signature_simulator.py`.
+  - Runtime analysis now classifies `eth_signTypedData*`, `personal_sign`, `eth_sign`, Permit, Permit2, marketplace orders, delegated permissions, and unlimited allowances.
+  - `runtime_contract.signature_simulation` exposes signature family, spender, token, amount, deadline, revoke difficulty, and recommended actions.
+- Step 9: Headless site sandbox and JavaScript behavior capture.
+  - Added `scamshield/url_intel/headless_sandbox.py`.
+  - URL analysis can execute a page in Chromium, inject a mock wallet provider, and capture wallet RPC calls, runtime JS behavior, console messages, page errors, and script URLs.
+  - The `headless_sandbox` source contributes runtime evidence without breaking scans when the sandbox is unavailable.
+- Step 10: Obfuscated JavaScript detection and deobfuscation.
+  - Added `scamshield/url_intel/obfuscation.py`.
+  - URL analysis now detects packed/eval/base64/escaped/string-array/dynamic-script obfuscation.
+  - Obfuscation remains low-context evidence unless it combines with wallet signing, approve, transfer, or runtime wallet calls.
+- Step 11: Scam family classifier.
+  - Added `scamshield/intelligence/scam_family.py`.
+  - Internal verdicts now expose `risk_family` and `scam_family` with primary family, confidence, ranked family candidates, and matching evidence codes.
+  - Top-level URL/runtime responses also expose `scam_family` so products can render backend truth directly.
 
 ## Remaining
 
-- Step 8: Deep approve/sign simulation for all supported signature types.
-- Step 9: Headless site sandbox and JavaScript behavior capture.
-- Step 10: Obfuscated JavaScript detection and deobfuscation.
-- Step 11: Scam family classifier.
 - Step 12: Autonomous threat collectors.
 - Step 13: Compromised legitimate site detection.
 - Step 14: Multi-chain intelligence beyond EVM.

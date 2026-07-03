@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 
 from scamshield.core.levels import legacy_level, normalize_level, normalize_score
+from scamshield.intelligence.scam_family import classify_scam_family, risk_family_from_classifier
 
 
 EXTERNAL_REFERENCE_SOURCES = {
@@ -128,6 +129,20 @@ def build_internal_verdict(
         "community": normalize_score((community or {}).get("scam_votes") or 0),
         "external_reference": min(100, sum(int(x.get("severity") or 0) for x in external_reference[:5])),
     }
+    family_context = {
+        "kind": kind,
+        "input": target,
+        "normalized_input": target,
+        "score": score,
+        "level": level,
+        "evidence": top_internal,
+        "sources": sources,
+        "details": {
+            "evidence_trace": trace.get("items") or [],
+            "runtime_context": runtime_context or {},
+        },
+    }
+    scam_family = classify_scam_family(family_context, trace)
 
     decision_reasons: list[str] = []
     if db_applied:
@@ -150,7 +165,8 @@ def build_internal_verdict(
         "level": level,
         "score": score,
         "confidence": confidence,
-        "risk_family": _risk_family(top_internal, kind),
+        "risk_family": risk_family_from_classifier(scam_family, _risk_family(top_internal, kind)),
+        "scam_family": scam_family,
         "risk_reasons": decision_reasons,
         "evidence": top_internal,
         "external_reference_evidence": sorted(

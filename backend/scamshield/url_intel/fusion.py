@@ -10,6 +10,7 @@ INTERNAL_SOURCE_NAMES = {
     "crypto_lure",
     "js_behavior",
     "headless_sandbox",
+    "js_obfuscation",
     "infrastructure",
     "visual_phishing",
     "advanced_url_intel",
@@ -178,6 +179,8 @@ def build_url_intelligence(
         "runtime_connect_plus_transaction_flow",
         "headless_possible_js_drainer_flow",
         "headless_approval_or_drain_functions",
+        "obfuscated_wallet_drainer_javascript",
+        "runtime_wallet_calls_with_obfuscation",
     }
 
     _weak_noise_codes = {
@@ -188,6 +191,10 @@ def build_url_intelligence(
         "runtime_wallet_connect_request",
         "runtime_many_script_loads",
         "headless_wallet_connect_request",
+        "js_minified_or_packed_long_lines",
+        "js_large_base64_blob",
+        "js_high_entropy_payload",
+        "js_dynamic_script_loading",
         "web3_script_reference",
         "visual_phishing_score",
         "wallet_trap_score",

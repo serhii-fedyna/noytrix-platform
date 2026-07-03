@@ -57,6 +57,7 @@ from fastapi import FastAPI, Query, Body, HTTPException, Request
 from scamshield.intelligence.anti_false_positive import apply_anti_false_positive_layer
 from scamshield.intelligence.noytrix_scam_database import lookup_noytrix_scam_database
 from scamshield.intelligence.verdict_core import build_internal_verdict
+from scamshield.intelligence.scam_family import classify_scam_family
 from fastapi.middleware.cors import CORSMiddleware
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
 from scamshield.core.levels import normalize_level, legacy_level, normalize_score, enforce_risk_floor
@@ -74,6 +75,7 @@ from scamshield.url_intel.wallet_trap import analyze_wallet_trap
 from scamshield.url_intel.crypto_lure import analyze_crypto_lure
 from scamshield.url_intel.js_behavior import analyze_js_behavior
 from scamshield.url_intel.headless_sandbox import analyze_headless_sandbox
+from scamshield.url_intel.obfuscation import analyze_obfuscated_javascript
 from scamshield.url_intel.infrastructure import analyze_infrastructure
 from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
@@ -3273,6 +3275,8 @@ URL_HARD_EVIDENCE_CODES = {
     "runtime_connect_plus_transaction_flow",
     "headless_possible_js_drainer_flow",
     "headless_approval_or_drain_functions",
+    "obfuscated_wallet_drainer_javascript",
+    "runtime_wallet_calls_with_obfuscation",
     "brand_impersonation_plus_wallet_pressure",
     "brand_plus_scam_keywords",
     "multi_source_public_scam_match",
@@ -3296,6 +3300,10 @@ URL_GENERIC_WEB3_NOISE_CODES = {
     "runtime_wallet_connect_request",
     "runtime_many_script_loads",
     "headless_wallet_connect_request",
+    "js_minified_or_packed_long_lines",
+    "js_large_base64_blob",
+    "js_high_entropy_payload",
+    "js_dynamic_script_loading",
     "web3_script_reference",
     "fake_support_ui",
     "fake_airdrop_bonus_ui",
@@ -4254,6 +4262,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     meta = {}
     js_behavior = {}
     headless_sandbox = {}
+    js_obfuscation = {}
     wallet_trap = {}
     crypto_lure = {}
     visual_phishing = {}
@@ -4279,6 +4288,9 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
 
         headless_sandbox = await analyze_headless_sandbox(final_url or url)
         enrich["headless_sandbox"] = headless_sandbox
+
+        js_obfuscation = analyze_obfuscated_javascript(page.get("html") or "", headless_sandbox)
+        enrich["js_obfuscation"] = js_obfuscation
 
         visual_phishing = analyze_visual_phishing(
             page.get("html") or "",
@@ -4459,6 +4471,41 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
                         "code": "headless_sandbox_unavailable",
                         "severity": 0,
                         "text": "Headless browser sandbox was unavailable for this scan."
+                    }],
+                )
+            )
+
+        if js_obfuscation.get("available"):
+            for sig in (js_obfuscation.get("signals") or []):
+                heuristics.append({
+                    "code": sig.get("code"),
+                    "severity": sig.get("severity", 0),
+                    "text": sig.get("text"),
+                })
+
+            obf_level = str(js_obfuscation.get("level") or "").lower()
+            obf_status = (
+                "clean" if obf_level == "safe" else
+                "warn" if obf_level in {"low", "medium"} else
+                "malicious" if obf_level in {"high", "critical"} else
+                "observed"
+            )
+
+            sources.append(
+                _mk_source(
+                    "js_obfuscation",
+                    obf_status,
+                    verdict=obf_level or "observed",
+                    details={
+                        "score": js_obfuscation.get("score"),
+                        "level": js_obfuscation.get("level"),
+                        "summary": js_obfuscation.get("summary"),
+                        "metrics": js_obfuscation.get("metrics") or {},
+                    },
+                    evidence=js_obfuscation.get("signals") or [{
+                        "code": "js_obfuscation_checked",
+                        "severity": 0,
+                        "text": "JavaScript obfuscation checks completed."
                     }],
                 )
             )
@@ -4919,6 +4966,15 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         },
         reputation_context=reputation_context,
     )
+    scam_family = internal_verdict.get("scam_family") or classify_scam_family({
+        "kind": input_kind,
+        "input": target,
+        "normalized_input": url if input_kind == "url" else host,
+        "host": host,
+        "evidence": evidence_all_sorted,
+        "sources": sources,
+        "details": {"evidence_trace": evidence_trace.get("items") or []},
+    }, evidence_trace)
 
     out = {
         "ok": True,
@@ -4941,6 +4997,8 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         "verdict_ru": score_info["verdict_ru"],
         "verdict_localized": score_info["verdict_ru"] if lang == "ru" else score_info["verdict_en"],
         "confirmed_red_flag": score_info["confirmed_red_flag"],
+        "risk_family": internal_verdict.get("risk_family"),
+        "scam_family": scam_family,
         "malicious_sources": score_info["malicious_sources"],
         "scoring": score_info["components"],
         "sources": sources,
@@ -4973,6 +5031,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "generic_noise_codes": evidence_trace.get("generic_noise_codes") or [],
             "false_positive_safety_gate": safety_gate,
             "internal_verdict": internal_verdict,
+            "scam_family": scam_family,
         },
         "lang": lang,
         "cached": False,
@@ -6851,6 +6910,13 @@ async def runtime_analyze(payload: dict = Body(...)):
                 "campaign_context": data.get("campaign") or {},
                 "runtime_context": details["runtime_context"],
             }
+        runtime_family = classify_scam_family(data)
+        data["scam_family"] = runtime_family
+        data["risk_family"] = runtime_family.get("primary_family")
+        if isinstance(details.get("internal_verdict"), dict):
+            details["internal_verdict"]["scam_family"] = runtime_family
+            details["internal_verdict"]["risk_family"] = runtime_family.get("primary_family")
+        details["scam_family"] = runtime_family
 
     try:
         data["ai_explanation_result"] = await generate_ai_security_explanation(

@@ -15,6 +15,7 @@ INTERNAL_SOURCE_NAMES = {
     "visual_phishing",
     "advanced_url_intel",
     "js_behavior",
+    "js_obfuscation",
     "crypto_lure",
     "wallet_trap",
     "page_fetch",
@@ -109,6 +110,8 @@ def score_scan(
                 "multi_source_public_scam_match",
                 "known_malicious_entity",
                 "wallet_drainer_runtime",
+                "obfuscated_wallet_drainer_javascript",
+                "runtime_wallet_calls_with_obfuscation",
             }
             has_strong_evidence = any(
                 str(e.get("code") or "") in strong_codes and int(e.get("severity") or 0) >= 70
@@ -170,6 +173,8 @@ def score_scan(
         "drainer_pattern",
         "wallet_drainer",
         "known_malicious_contract_identity",
+        "obfuscated_wallet_drainer_javascript",
+        "runtime_wallet_calls_with_obfuscation",
     }
 
     all_codes = set()
