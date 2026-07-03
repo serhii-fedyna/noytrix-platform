@@ -70,11 +70,16 @@
   - Added `scamshield/ai/investigation.py`.
   - URL, wallet/contract, and runtime responses now expose `ai_investigation` with evidence links, primary hypothesis, confirmed/not-confirmed facts, attack path, open questions, and recommended actions.
   - AI explanation context now includes internal verdict, scam family, multi-chain context, and evidence-linked investigation data.
+- Step 16: Active attack map and investigation UI.
+  - Website ScamShield, mobile ScamShield PRO, browser extension popup, and Telegram scan messages now render backend `ai_investigation`.
+  - Products show active attack path, primary hypothesis, and evidence-link counts without calculating their own verdicts.
+- Step 17: Product-wide rendering of graph, reputation, runtime impact, and AI evidence.
+  - Product UIs now read backend graph/reputation context, runtime contract decisions, multi-chain context, and AI evidence fields.
+  - Rendering stays frontend-only: all products display backend truth and do not recalculate risk.
 
 ## Remaining
 
-- Step 16: Active attack map and investigation UI.
-- Step 17: Product-wide rendering of graph, reputation, runtime impact, and AI evidence.
+- All current top-level intelligence roadmap items are implemented. Next work should be accuracy expansion, UI polish, telemetry scale, or new intelligence sources.
 
 ## Current Contract Rule
 

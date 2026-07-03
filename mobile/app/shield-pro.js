@@ -823,15 +823,20 @@ function normalizeScanReport(raw, currentLang) {
       immunity_score: 0,
     },
     details,
-    backendDetails: {
-      database: details.noytrix_scam_database || null,
-      safetyGate: details.false_positive_safety_gate || null,
-      scoreTrace: details.score_trace || null,
-      topContributors,
-      hardEvidenceCodes: Array.isArray(details.hard_evidence_codes) ? details.hard_evidence_codes : [],
-      hardEvidenceFound: !!details.hard_evidence_found,
-    },
-    evidenceTrace: Array.isArray(details.evidence_trace) ? details.evidence_trace : [],
+	    backendDetails: {
+	      database: details.noytrix_scam_database || null,
+	      safetyGate: details.false_positive_safety_gate || null,
+	      scoreTrace: details.score_trace || null,
+	      topContributors,
+	      hardEvidenceCodes: Array.isArray(details.hard_evidence_codes) ? details.hard_evidence_codes : [],
+	      hardEvidenceFound: !!details.hard_evidence_found,
+	    },
+	    aiInvestigation: raw.ai_investigation || details.ai_investigation || null,
+	    multiChain: raw.multi_chain_intelligence || details.multi_chain_intelligence || null,
+	    runtimeContract: raw.runtime_contract || details.runtime_contract || null,
+	    graphContext: raw.graph || details.graph || details.internal_verdict?.graph_context || null,
+	    reputationContext: raw.reputation || details.reputation || details.internal_verdict?.reputation_context || raw.threat_memory || null,
+	    evidenceTrace: Array.isArray(details.evidence_trace) ? details.evidence_trace : [],
     token,
     honeypot,
     quota: raw.quota || null,
@@ -1451,8 +1456,15 @@ function backendIntelLabel(lang, key) {
     title: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u044b\u0435 \u0434\u0430\u043d\u043d\u044b\u0435",
     db: "Noytrix DB",
     safety: "\u0417\u0430\u0449\u0438\u0442\u0430 \u043e\u0442 \u043b\u043e\u0436\u043d\u044b\u0445 \u0441\u0440\u0430\u0431\u0430\u0442\u044b\u0432\u0430\u043d\u0438\u0439",
-    evidence: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u044b\u0435 \u0441\u0438\u0433\u043d\u0430\u043b\u044b",
-    hard: "\u0416\u0435\u0441\u0442\u043a\u0438\u0435 \u0441\u0438\u0433\u043d\u0430\u043b\u044b",
+	    evidence: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u044b\u0435 \u0441\u0438\u0433\u043d\u0430\u043b\u044b",
+	    hard: "\u0416\u0435\u0441\u0442\u043a\u0438\u0435 \u0441\u0438\u0433\u043d\u0430\u043b\u044b",
+	    investigation: "AI-\u0440\u0430\u0441\u0441\u043b\u0435\u0434\u043e\u0432\u0430\u043d\u0438\u0435",
+	    hypothesis: "\u0413\u0438\u043f\u043e\u0442\u0435\u0437\u0430",
+	    chain: "\u0421\u0435\u0442\u044c",
+	    runtime: "Runtime",
+	    reputation: "\u0420\u0435\u043f\u0443\u0442\u0430\u0446\u0438\u044f",
+	    attackPath: "\u041a\u0430\u0440\u0442\u0430 \u0430\u0442\u0430\u043a\u0438",
+	    evidenceLinks: "Evidence links",
     matched: "\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0441\u043e\u0432\u043f\u0430\u0434\u0435\u043d\u0438\u0435",
     notListed: "\u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0432 \u0431\u0430\u0437\u0435",
     applied: "\u0441\u0440\u0430\u0431\u043e\u0442\u0430\u043b\u0430",
@@ -1462,24 +1474,108 @@ function backendIntelLabel(lang, key) {
     title: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u0456 \u0434\u0430\u043d\u0456",
     db: "Noytrix DB",
     safety: "\u0417\u0430\u0445\u0438\u0441\u0442 \u0432\u0456\u0434 \u0445\u0438\u0431\u043d\u0438\u0445 \u0441\u043f\u0440\u0430\u0446\u044e\u0432\u0430\u043d\u044c",
-    evidence: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u0456 \u0441\u0438\u0433\u043d\u0430\u043b\u0438",
-    hard: "\u0416\u043e\u0440\u0441\u0442\u043a\u0456 \u0441\u0438\u0433\u043d\u0430\u043b\u0438",
+	    evidence: "\u0421\u0435\u0440\u0432\u0435\u0440\u043d\u0456 \u0441\u0438\u0433\u043d\u0430\u043b\u0438",
+	    hard: "\u0416\u043e\u0440\u0441\u0442\u043a\u0456 \u0441\u0438\u0433\u043d\u0430\u043b\u0438",
+	    investigation: "AI-\u0440\u043e\u0437\u0441\u043b\u0456\u0434\u0443\u0432\u0430\u043d\u043d\u044f",
+	    hypothesis: "\u0413\u0456\u043f\u043e\u0442\u0435\u0437\u0430",
+	    chain: "\u041c\u0435\u0440\u0435\u0436\u0430",
+	    runtime: "Runtime",
+	    reputation: "\u0420\u0435\u043f\u0443\u0442\u0430\u0446\u0456\u044f",
+	    attackPath: "\u041a\u0430\u0440\u0442\u0430 \u0430\u0442\u0430\u043a\u0438",
+	    evidenceLinks: "Evidence links",
     matched: "\u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0437\u0431\u0456\u0433",
     notListed: "\u043d\u0435 \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u0432 \u0431\u0430\u0437\u0456",
     applied: "\u0441\u043f\u0440\u0430\u0446\u044e\u0432\u0430\u043b\u0430",
     notApplied: "\u043d\u0435 \u0441\u043f\u0440\u0430\u0446\u044e\u0432\u0430\u043b\u0430",
   };
-  const en = {
-    title: "Backend intelligence",
-    db: "Noytrix DB",
-    safety: "Safety gate",
-    evidence: "Backend evidence",
-    hard: "Hard evidence",
-    matched: "matched",
-    notListed: "not listed",
-    applied: "applied",
+	  const en = {
+	    title: "Backend intelligence",
+	    db: "Noytrix DB",
+	    safety: "Safety gate",
+	    evidence: "Backend evidence",
+	    hard: "Hard evidence",
+	    investigation: "Investigation map",
+	    hypothesis: "Hypothesis",
+	    chain: "Chain",
+	    runtime: "Runtime",
+	    reputation: "Reputation",
+	    attackPath: "Attack path",
+	    evidenceLinks: "Evidence links",
+	    matched: "matched",
+	    notListed: "not listed",
+	    applied: "applied",
     notApplied: "not applied",
-  };
+	};
+
+const InvestigationMapCard = ({ report, currentLang, tx, expanded, onPress }) => {
+  const investigation = report?.aiInvestigation || {};
+  const multi = report?.multiChain || {};
+  const runtime = report?.runtimeContract || {};
+  const graph = report?.graphContext || {};
+  const reputation = report?.reputationContext || {};
+  const evidenceLinks = Array.isArray(investigation.evidence_links) ? investigation.evidence_links : [];
+  const attackPath = Array.isArray(investigation.attack_path) ? investigation.attack_path : [];
+  const hasData =
+    investigation.summary ||
+    investigation.primary_hypothesis ||
+    multi.available ||
+    multi.chain_label ||
+    runtime.should_warn !== undefined ||
+    graph.available ||
+    reputation.risk_score ||
+    reputation.level ||
+    reputation.memory_level;
+
+  if (!hasData) return null;
+
+  return (
+    <BlurCard>
+      <SectionHeader
+        title={tx("shieldPro.investigation.title", backendIntelLabel(currentLang, "investigation"))}
+        icon="git-network-outline"
+        expanded={expanded}
+        onPress={onPress}
+      />
+
+      {expanded && (
+        <View style={{ marginTop: 12 }}>
+          {!!(investigation.primary_hypothesis || investigation.summary) && (
+            <View style={{ borderWidth: 1, borderColor: "rgba(255,176,32,0.18)", borderRadius: 16, padding: 12, backgroundColor: "rgba(255,176,32,0.06)", marginBottom: 10 }}>
+              <Text style={{ color: T.accent, fontWeight: "900", fontSize: 12, marginBottom: 4 }}>
+                {tx("shieldPro.investigation.hypothesis", backendIntelLabel(currentLang, "hypothesis"))}
+              </Text>
+              <Text style={{ color: T.text, lineHeight: 19 }}>{safeText(investigation.primary_hypothesis || investigation.summary)}</Text>
+              {!!evidenceLinks.length && (
+                <Text style={{ color: T.dim, marginTop: 6, fontSize: 12 }}>
+                  {tx("shieldPro.investigation.evidenceLinks", backendIntelLabel(currentLang, "evidenceLinks"))}: {evidenceLinks.length}
+                </Text>
+              )}
+            </View>
+          )}
+
+          <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
+            <MetricChip label={tx("shieldPro.investigation.chain", backendIntelLabel(currentLang, "chain"))} value={multi.chain_label || multi.chain || "—"} />
+            <MetricChip label={tx("shieldPro.investigation.runtime", backendIntelLabel(currentLang, "runtime"))} value={runtime.should_block !== undefined ? `block ${runtime.should_block}` : "—"} />
+            <MetricChip label={tx("shieldPro.investigation.reputation", backendIntelLabel(currentLang, "reputation"))} value={reputation.level || reputation.memory_level || reputation.risk_level || reputation.risk_score || "—"} />
+          </View>
+
+          {!!attackPath.length && (
+            <View style={{ marginTop: 10 }}>
+              <Text style={{ color: T.accent, fontWeight: "900", fontSize: 12, marginBottom: 6 }}>
+                {tx("shieldPro.investigation.attackPath", backendIntelLabel(currentLang, "attackPath"))}
+              </Text>
+              {attackPath.slice(0, 5).map((step, idx) => (
+                <Text key={`attack-path-${idx}`} style={{ color: T.dim, lineHeight: 18, marginBottom: 4 }}>
+                  {idx + 1}. {safeText(step)}
+                </Text>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
+    </BlurCard>
+  );
+};
   return (String(lang || "").toLowerCase().startsWith("uk") ? uk : String(lang || "").toLowerCase().startsWith("ru") ? ru : en)[key] || key;
 }
 
@@ -1569,10 +1665,10 @@ export default function ShieldPro() {
     };
   }, [t0]);
 
-  const currentLang = useMemo(() => {
-    const v = i18nHook?.lang || i18nHook?.language || i18nHook?.i18n?.language || i18nHook?.locale || "en";
-    const s = String(v || "").toLowerCase();
-    return s.startsWith("ru") ? "ru" : "en";
+	  const currentLang = useMemo(() => {
+	    const v = i18nHook?.lang || i18nHook?.language || i18nHook?.i18n?.language || i18nHook?.locale || "en";
+	    const s = String(v || "").toLowerCase();
+	    return s.startsWith("ru") ? "ru" : s.startsWith("uk") ? "uk" : "en";
   }, [i18nHook]);
 
   const authUid = useMemo(() => uidFromUser(user), [user]);
@@ -1707,9 +1803,10 @@ export default function ShieldPro() {
   const [crowdItems, setCrowdItems] = useState([]);
   const [crowdLoading, setCrowdLoading] = useState(false);
 
-  const [expanded, setExpanded] = useState({
-    scoring: true,
-    sources: true,
+	  const [expanded, setExpanded] = useState({
+	    scoring: true,
+	    investigation: true,
+	    sources: true,
     evidence: true,
     honeypot: true,
     token: true,
@@ -2406,7 +2503,15 @@ ${uri}`,
               )}
             </BlurCard>
 
-            <BackendIntelCard report={normalizedOut} currentLang={currentLang} tx={tx} />
+	            <InvestigationMapCard
+	              report={normalizedOut}
+	              currentLang={currentLang}
+	              tx={tx}
+	              expanded={expanded.investigation}
+	              onPress={() => toggle("investigation")}
+	            />
+
+	            <BackendIntelCard report={normalizedOut} currentLang={currentLang} tx={tx} />
 
             <BlurCard>
               <SectionHeader
