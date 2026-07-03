@@ -7748,7 +7748,7 @@ async def _check_reddit_scam_alerts_once(dry_run: bool = True):
                 title_push = "🚨 Noytrix Scam Alert"
                 body_push = _reddit_push_body(target, ctx, alert_type)
 
-                kind_for_db = "url" if str(target).lower().startswith(("http://", "https://")) else detectKind(target)
+                kind_for_db = "url" if str(target).lower().startswith(("http://", "https://")) else (_detect_input_kind(target).get("kind") or "unknown")
                 _save_reddit_scam_to_community(target, kind_for_db, post_link, title)
 
                 globals()["_ONESIGNAL_NEXT_DATA"] = {
