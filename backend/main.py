@@ -6698,6 +6698,22 @@ async def runtime_analyze(payload: dict = Body(...)):
         internal_verdict = details.get("internal_verdict")
         if isinstance(internal_verdict, dict):
             internal_verdict["runtime_context"] = details["runtime_context"]
+        else:
+            details["internal_verdict"] = {
+                "engine": "noytrix_runtime_verdict_core",
+                "version": "1.0",
+                "authority": "internal",
+                "target": target or runtime_payload.get("domain") or runtime_payload.get("url"),
+                "kind": data.get("kind") or "runtime_web3",
+                "level": data.get("level"),
+                "score": data.get("score"),
+                "confidence": data.get("confidence_score") or data.get("confidence") or 50,
+                "evidence": data.get("evidence") or [],
+                "graph_context": data.get("graph") or {},
+                "reputation_context": data.get("reputation") or {},
+                "campaign_context": data.get("campaign") or {},
+                "runtime_context": details["runtime_context"],
+            }
 
     try:
         data["ai_explanation_result"] = await generate_ai_security_explanation(
