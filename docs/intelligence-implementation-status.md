@@ -18,11 +18,18 @@
   - Source reputation now scores feed trust from volume, promoted entities, confidence, risk consistency, and future true/false-positive counters.
   - Noytrix Scam Database matches now include `source_reputation` with adjusted confidence, source trust, aligned/conflicting observations, and top contributing sources.
   - URL/domain quick results and full scan results expose reputation context under `details.source_reputation` and `details.internal_verdict.reputation_context`.
+- Step 4: Self-learning entity reputation with time decay.
+  - Added `scamshield/intelligence/reputation_graph.py`.
+  - Added `scripts/run_reputation_graph_cycle.py`.
+  - Entity reputation now learns from status, confidence, source count, seen count, graph neighbors, propagated risk, trust overrides, and last-seen age.
+  - Reputation changes are written to `reputation_history` with `self_learning_time_decay_v4` metadata.
+- Step 5: Full graph risk propagation.
+  - The same v4 cycle maintains `entity_edges`, graph metrics, and `metadata.risk_propagation`.
+  - Risk now propagates across campaign, brand, shared-source, URL/domain, and wallet-cluster edges with trusted/safe protection.
+  - API responses now expose graph/reputation context inside `details.internal_verdict`.
 
 ## Remaining
 
-- Step 4: Self-learning entity reputation with time decay.
-- Step 5: Full graph risk propagation.
 - Step 6: Scam campaign and network clustering.
 - Step 7: Runtime Web3 integration from extension/mobile to backend.
 - Step 8: Deep approve/sign simulation for all supported signature types.

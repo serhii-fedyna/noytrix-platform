@@ -3698,6 +3698,7 @@ def _attach_pg_graph_context(out: dict) -> dict:
             "entity_type": ctx.get("entity_type"),
             "basis": ((ctx.get("metadata") or {}).get("reputation") or {}).get("basis"),
             "version": ((ctx.get("metadata") or {}).get("reputation") or {}).get("version"),
+            "metadata": ((ctx.get("metadata") or {}).get("reputation") or {}),
         }
 
         out["graph"] = {
@@ -3725,6 +3726,8 @@ def _attach_pg_graph_context(out: dict) -> dict:
                 "propagated_risk": rp.get("propagated_risk"),
                 "malicious_neighbors": rp.get("malicious_neighbors"),
                 "version": rp.get("version"),
+                "edge_types": rp.get("edge_types") or rp.get("allowed_edge_types") or [],
+                "top_paths": (rp.get("top_paths") or [])[:8] if isinstance(rp.get("top_paths") or [], list) else [],
             }
 
         if campaign:
@@ -3812,6 +3815,16 @@ def _attach_pg_graph_context(out: dict) -> dict:
                 out["evidence"].insert(0, ev)
 
         out = _apply_reputation_risk_context(out)
+        details = out.setdefault("details", {})
+        if isinstance(details, dict):
+            internal_verdict = details.get("internal_verdict")
+            if isinstance(internal_verdict, dict):
+                internal_verdict["graph_context"] = out.get("graph") or {}
+                internal_verdict["reputation_context"] = out.get("reputation") or {}
+                if out.get("campaign"):
+                    internal_verdict["campaign_context"] = out.get("campaign") or {}
+            details["graph"] = out.get("graph") or {}
+            details["reputation"] = out.get("reputation") or {}
         return out
 
     except Exception as e:

@@ -494,7 +494,7 @@ def get_entity_graph_context(entity: str) -> Optional[Dict[str, Any]]:
                 if host:
                     cur.execute("""
                         SELECT id, normalized_entity, entity_type, status, risk_score, confidence,
-                               campaign_id, metadata
+                               reputation_score, campaign_id, metadata
                         FROM entities
                         WHERE normalized_entity = %s
                         LIMIT 1
