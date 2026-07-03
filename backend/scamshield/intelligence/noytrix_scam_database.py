@@ -13,6 +13,7 @@ try:
         guess_entity_type,
         normalize_entity,
     )
+    from scamshield.intelligence.source_reputation import build_reputation_context
 except Exception:  # pragma: no cover - optional production dependency
     connect = None
 
@@ -21,6 +22,21 @@ except Exception:  # pragma: no cover - optional production dependency
 
     def guess_entity_type(value: str) -> str:
         return "evm_address" if re.fullmatch(r"0x[a-f0-9]{40}", (value or "").lower()) else "domain"
+
+    def build_reputation_context(**kwargs) -> dict:
+        return {
+            "version": "1.0",
+            "base_confidence": int(kwargs.get("base_confidence") or 0),
+            "adjusted_confidence": int(kwargs.get("base_confidence") or 0),
+            "source_count": 0,
+            "avg_source_trust": 0,
+            "max_source_trust": 0,
+            "aligned_observations": 0,
+            "conflicting_observations": 0,
+            "status_counts": {},
+            "top_sources": [],
+            "signals": {},
+        }
 
 
 DATABASE_NAME = "Noytrix Scam Database"
@@ -129,6 +145,8 @@ def _row_to_match(row: dict, source: str, matched_value: str) -> dict:
     status = str(row.get("status") or "unknown").lower()
     risk_score = int(row.get("risk_score") or 0)
     confidence = int(row.get("confidence") or 0)
+    reputation_context = row.get("source_reputation") or {}
+    adjusted_confidence = int(reputation_context.get("adjusted_confidence") or confidence)
     level = _status_to_level(status, risk_score)
     force_verdict = status in MALICIOUS_STATUSES or status in SAFE_STATUSES
     return {
@@ -143,10 +161,65 @@ def _row_to_match(row: dict, source: str, matched_value: str) -> dict:
         "status": status,
         "level": level,
         "risk_score": risk_score,
-        "confidence": confidence,
+        "confidence": adjusted_confidence,
+        "base_confidence": confidence,
         "force_verdict": force_verdict,
+        "source_reputation": reputation_context,
         "metadata": row.get("metadata") or row.get("raw_record") or {},
     }
+
+
+def _entity_reputation_context(cur, entity_id: int, status: str, base_confidence: int) -> dict:
+    cur.execute(
+        """
+        SELECT
+            io.source_name,
+            io.status,
+            io.risk_score,
+            io.confidence,
+            io.observed_at AS last_seen_at,
+            COALESCE(sr.trust_score, 50) AS trust_score
+        FROM indicator_observations io
+        LEFT JOIN source_reputation sr
+          ON sr.source_name = io.source_name
+        WHERE io.entity_id = %s
+        ORDER BY COALESCE(sr.trust_score, 50) DESC, io.confidence DESC, io.risk_score DESC
+        LIMIT 25
+        """,
+        (entity_id,),
+    )
+    return build_reputation_context(
+        status=status,
+        base_confidence=int(base_confidence or 0),
+        observations=[dict(x) for x in cur.fetchall()],
+    )
+
+
+def _raw_reputation_context(cur, source_name: str, status: str, base_confidence: int, risk_score: int, last_seen_at: Any = None) -> dict:
+    cur.execute(
+        """
+        SELECT source_name, trust_score, last_seen_at
+        FROM source_reputation
+        WHERE source_name = %s
+        LIMIT 1
+        """,
+        (source_name,),
+    )
+    row = cur.fetchone()
+    source_reputation = dict(row) if row else {"source_name": source_name, "trust_score": 50, "last_seen_at": last_seen_at}
+    return build_reputation_context(
+        status=status,
+        base_confidence=int(base_confidence or 0),
+        observations=[{
+            "source_name": source_name,
+            "status": status,
+            "risk_score": risk_score,
+            "confidence": base_confidence,
+            "trust_score": source_reputation.get("trust_score") or 50,
+            "last_seen_at": source_reputation.get("last_seen_at") or last_seen_at,
+        }],
+        source_reputation=source_reputation,
+    )
 
 
 def _lookup_postgres(value: str) -> Optional[dict]:
@@ -161,7 +234,7 @@ def _lookup_postgres(value: str) -> Optional[dict]:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT entity, normalized_entity, entity_type, status, risk_score,
+                    SELECT id, entity, normalized_entity, entity_type, status, risk_score,
                            confidence, metadata
                     FROM entities
                     WHERE normalized_entity = ANY(%s)
@@ -179,11 +252,18 @@ def _lookup_postgres(value: str) -> Optional[dict]:
                 )
                 row = cur.fetchone()
                 if row:
-                    return _row_to_match(dict(row), "postgres_entities", str(row.get("normalized_entity")))
+                    row = dict(row)
+                    row["source_reputation"] = _entity_reputation_context(
+                        cur,
+                        int(row.get("id") or 0),
+                        str(row.get("status") or "unknown"),
+                        int(row.get("confidence") or 0),
+                    )
+                    return _row_to_match(row, "postgres_entities", str(row.get("normalized_entity")))
 
                 cur.execute(
                     """
-                    SELECT e.entity, e.normalized_entity, e.entity_type, e.status,
+                    SELECT e.id, e.entity, e.normalized_entity, e.entity_type, e.status,
                            e.risk_score, e.confidence,
                            e.metadata || jsonb_build_object(
                                'alias_match',
@@ -211,12 +291,20 @@ def _lookup_postgres(value: str) -> Optional[dict]:
                 )
                 row = cur.fetchone()
                 if row:
-                    return _row_to_match(dict(row), "postgres_entity_aliases", str(row.get("normalized_entity")))
+                    row = dict(row)
+                    row["source_reputation"] = _entity_reputation_context(
+                        cur,
+                        int(row.get("id") or 0),
+                        str(row.get("status") or "unknown"),
+                        int(row.get("confidence") or 0),
+                    )
+                    return _row_to_match(row, "postgres_entity_aliases", str(row.get("normalized_entity")))
 
                 cur.execute(
                     """
                     SELECT raw_value, normalized_value, indicator_type, status,
-                           risk_score, confidence, metadata, raw_record
+                           risk_score, confidence, metadata, raw_record,
+                           source_name, last_seen_at
                     FROM raw_indicators
                     WHERE normalized_value = ANY(%s)
                       AND lower(status) = ANY(%s)
@@ -227,7 +315,16 @@ def _lookup_postgres(value: str) -> Optional[dict]:
                 )
                 row = cur.fetchone()
                 if row:
-                    return _row_to_match(dict(row), "postgres_raw_indicators", str(row.get("normalized_value")))
+                    row = dict(row)
+                    row["source_reputation"] = _raw_reputation_context(
+                        cur,
+                        str(row.get("source_name") or "unknown"),
+                        str(row.get("status") or "unknown"),
+                        int(row.get("confidence") or 0),
+                        int(row.get("risk_score") or 0),
+                        row.get("last_seen_at"),
+                    )
+                    return _row_to_match(row, "postgres_raw_indicators", str(row.get("normalized_value")))
     except Exception as exc:
         return {
             "available": False,
@@ -291,6 +388,17 @@ def _lookup_local_public_feeds(value: str) -> Optional[dict]:
                 "risk_score": 90,
                 "confidence": 80,
                 "force_verdict": True,
+                "source_reputation": build_reputation_context(
+                    status="malicious",
+                    base_confidence=80,
+                    observations=[{
+                        "source_name": "local_public_feed_scamsniffer",
+                        "status": "malicious",
+                        "risk_score": 90,
+                        "confidence": 80,
+                        "trust_score": 75,
+                    }],
+                ),
                 "metadata": index[candidate],
             }
     return None
@@ -316,6 +424,17 @@ def _lookup_verified_official_domains(value: str) -> Optional[dict]:
                 "risk_score": 0,
                 "confidence": 95,
                 "force_verdict": True,
+                "source_reputation": build_reputation_context(
+                    status="trusted",
+                    base_confidence=95,
+                    observations=[{
+                        "source_name": "local_verified_official_crypto_domains",
+                        "status": "trusted",
+                        "risk_score": 0,
+                        "confidence": 95,
+                        "trust_score": 98,
+                    }],
+                ),
                 "metadata": {"verified_official_domain": True},
             }
     return None

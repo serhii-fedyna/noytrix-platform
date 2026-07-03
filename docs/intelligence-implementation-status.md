@@ -13,10 +13,14 @@
   - Added `dedupe_key` support for `entities` and `raw_indicators`.
   - Added `entity_aliases`, `indicator_observations`, and `source_reputation`.
   - Noytrix Scam Database lookup can now resolve canonical entities through aliases.
+- Step 3: Source reputation and confidence scoring.
+  - Added `scamshield/intelligence/source_reputation.py`.
+  - Source reputation now scores feed trust from volume, promoted entities, confidence, risk consistency, and future true/false-positive counters.
+  - Noytrix Scam Database matches now include `source_reputation` with adjusted confidence, source trust, aligned/conflicting observations, and top contributing sources.
+  - URL/domain quick results and full scan results expose reputation context under `details.source_reputation` and `details.internal_verdict.reputation_context`.
 
 ## Remaining
 
-- Step 3: Source reputation and confidence scoring.
 - Step 4: Self-learning entity reputation with time decay.
 - Step 5: Full graph risk propagation.
 - Step 6: Scam campaign and network clustering.

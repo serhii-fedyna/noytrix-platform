@@ -6,6 +6,7 @@ from typing import Any, Dict
 from urllib.parse import urlparse
 
 from scamshield.intelligence.postgres_intelligence import connect, guess_entity_type, init_schema, normalize_entity
+from scamshield.intelligence.source_reputation import source_trust_from_stats
 
 
 MALICIOUS_STATUSES = {"malicious", "scam", "danger", "critical", "high", "blocked"}
@@ -309,6 +310,8 @@ def refresh_source_reputation() -> Dict[str, Any]:
                         r.source_name,
                         COUNT(*)::bigint AS raw_indicator_count,
                         COUNT(DISTINCT io.entity_id)::bigint AS promoted_entity_count,
+                        AVG(r.confidence)::float AS avg_confidence,
+                        AVG(r.risk_score)::float AS avg_risk_score,
                         MAX(r.last_seen_at) AS last_seen_at
                     FROM raw_indicators r
                     LEFT JOIN indicator_observations io
@@ -332,11 +335,30 @@ def refresh_source_reputation() -> Dict[str, Any]:
                 )
                 SELECT
                     s.source_name,
-                    LEAST(95, GREATEST(25, 50 + s.promoted_entity_count::int / 1000)),
+                    LEAST(
+                        98,
+                        GREATEST(
+                            20,
+                            35
+                            + LEAST(20, (s.raw_indicator_count / 100000)::int)
+                            + LEAST(15, (s.promoted_entity_count / 250)::int)
+                            + LEAST(15, (COALESCE(s.avg_confidence, 0) / 8)::int)
+                            + CASE
+                                WHEN COALESCE(s.avg_risk_score, 0) >= 70 THEN 8
+                                WHEN COALESCE(s.avg_risk_score, 0) >= 40 THEN 4
+                                ELSE 0
+                              END
+                        )
+                    ),
                     s.raw_indicator_count,
                     s.promoted_entity_count,
                     s.last_seen_at,
-                    jsonb_build_object('status_counts', COALESCE(m.status_counts, '{}'::jsonb))
+                    jsonb_build_object(
+                        'status_counts', COALESCE(m.status_counts, '{}'::jsonb),
+                        'avg_confidence', COALESCE(s.avg_confidence, 0),
+                        'avg_risk_score', COALESCE(s.avg_risk_score, 0),
+                        'scoring_version', 'source_reputation_v1'
+                    )
                 FROM source_stats s
                 LEFT JOIN status_meta m
                   ON m.source_name = s.source_name
@@ -353,6 +375,10 @@ def refresh_source_reputation() -> Dict[str, Any]:
             conn.commit()
 
     return {"source_reputation_refreshed": rows}
+
+
+def preview_source_trust(stats: Dict[str, Any]) -> Dict[str, Any]:
+    return source_trust_from_stats(stats)
 
 
 def run_upgrade(batch_limit: int = 250000) -> Dict[str, Any]:

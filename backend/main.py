@@ -3355,6 +3355,7 @@ def _source_from_noytrix_scam_database(match: dict) -> dict:
     status = str(match.get("status") or "observed").lower()
     level = str(match.get("level") or status or "observed").lower()
     risk_score = normalize_score(match.get("risk_score") or 0)
+    reputation_context = (match or {}).get("source_reputation") or {}
     source_status = "malicious" if status in {"malicious", "scam", "danger", "critical", "high", "blocked"} else "clean" if status in {"safe", "trusted", "allowlisted", "allowlist"} else "observed"
     code = "noytrix_scam_database_match" if source_status == "malicious" else "noytrix_scam_database_safe_match" if source_status == "clean" else "noytrix_scam_database_observed"
     return _mk_source(
@@ -3366,6 +3367,8 @@ def _source_from_noytrix_scam_database(match: dict) -> dict:
             "code": code,
             "severity": risk_score if risk_score else (90 if source_status == "malicious" else 0),
             "text": "Exact match in Noytrix Scam Database.",
+            "confidence": reputation_context.get("adjusted_confidence") or match.get("confidence"),
+            "source_trust": reputation_context.get("avg_source_trust"),
         }],
     )
 
@@ -3377,11 +3380,14 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
             "applied": False,
             "reason": "no_forceable_exact_match",
             "match": db_match or {},
+            "source_reputation": (db_match or {}).get("source_reputation") or {},
         }
         return out
 
     status = str(db_match.get("status") or "").lower()
     score = normalize_score(db_match.get("risk_score") or 0)
+    reputation_context = (db_match or {}).get("source_reputation") or {}
+    db_confidence = normalize_score(reputation_context.get("adjusted_confidence") or db_match.get("confidence") or 0)
     malicious = status in {"malicious", "scam", "danger", "critical", "high", "blocked"}
     safe = status in {"safe", "trusted", "allowlisted", "allowlist"}
 
@@ -3390,6 +3396,8 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
         forced_level = "critical" if forced_score >= 85 else "danger"
         out["score"] = forced_score
         out["internal_score"] = max(normalize_score(out.get("internal_score") or 0), forced_score)
+        out["confidence_score"] = max(normalize_score(out.get("confidence_score") or 0), db_confidence)
+        out["confidence"] = out["confidence_score"]
         out["level"] = forced_level
         out["normalized_level"] = forced_level
         out["verdict_en"] = "Critical / Scam" if forced_level == "critical" else "Danger"
@@ -3404,6 +3412,7 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
             "applied": True,
             "reason": "exact_malicious_database_match",
             "match": db_match,
+            "source_reputation": reputation_context,
         }
         return out
 
@@ -3411,6 +3420,8 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
         out["score"] = min(score, 5)
         out["internal_score"] = min(normalize_score(out.get("internal_score") or 0), 5)
         out["external_score"] = min(normalize_score(out.get("external_score") or 0), 5)
+        out["confidence_score"] = max(normalize_score(out.get("confidence_score") or 0), db_confidence)
+        out["confidence"] = out["confidence_score"]
         out["level"] = "safe"
         out["normalized_level"] = "safe"
         out["verdict_en"] = "Safe"
@@ -3424,6 +3435,7 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
             "applied": True,
             "reason": "exact_safe_database_match",
             "match": db_match,
+            "source_reputation": reputation_context,
         }
         return out
 
@@ -3431,6 +3443,7 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
         "applied": False,
         "reason": "non_final_database_status",
         "match": db_match,
+        "source_reputation": reputation_context,
     }
     return out
 
@@ -3442,6 +3455,8 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
     safe = status in {"safe", "trusted", "allowlisted", "allowlist"}
     score = 90 if malicious else 0 if safe else normalize_score((db_match or {}).get("risk_score") or 0)
     level = "critical" if malicious else "safe" if safe else "suspicious"
+    reputation_context = (db_match or {}).get("source_reputation") or {}
+    confidence = normalize_score(reputation_context.get("adjusted_confidence") or (db_match or {}).get("confidence") or 50)
     evidence = []
     for ev in source.get("evidence") or []:
         evidence.append({"source": source.get("name"), **ev})
@@ -3453,6 +3468,8 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
         "external_score": 0,
         "internal_level": level,
         "external_level": "safe" if safe else "unknown",
+        "confidence": confidence,
+        "confidence_score": confidence,
         "confirmed_red_flag": malicious,
         "internal_red_flag": malicious,
         "external_red_flag": False,
@@ -3488,6 +3505,7 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
         evidence_trace=quick_evidence_trace,
         community={},
         noytrix_database=quick_score_info["noytrix_scam_database"],
+        reputation_context=reputation_context,
     )
     out = {
         "ok": True,
@@ -3500,6 +3518,8 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
         "external_score": 0,
         "internal_level": level,
         "external_level": "safe" if safe else "unknown",
+        "confidence": confidence,
+        "confidence_score": confidence,
         "internal_red_flag": malicious,
         "external_red_flag": False,
         "internal_only": True,
@@ -3521,6 +3541,7 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
                 "reason": "exact_database_match_quick_result",
                 "match": db_match or {},
             },
+            "source_reputation": reputation_context,
             "evidence_trace": evidence,
             "score_trace": {
                 "before_safety_gate": {"score": score, "level": level},
@@ -4745,6 +4766,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     score_info = _apply_false_positive_safety_gate_to_url_score(score_info, evidence_trace)
     score_info = _apply_noytrix_database_verdict(score_info, noytrix_db_match)
     safety_gate = score_info.get("false_positive_safety_gate") or {}
+    reputation_context = (score_info.get("noytrix_scam_database") or {}).get("source_reputation") or (noytrix_db_match or {}).get("source_reputation") or {}
     internal_verdict = build_internal_verdict(
         kind=input_kind,
         target=url if input_kind == "url" else host,
@@ -4756,6 +4778,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "applied": False,
             "match": noytrix_db_match,
         },
+        reputation_context=reputation_context,
     )
 
     out = {
@@ -4791,6 +4814,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
                 "applied": False,
                 "match": noytrix_db_match,
             },
+            "source_reputation": reputation_context,
             "evidence_trace": evidence_trace.get("items") or [],
             "score_trace": {
                 "before_safety_gate": score_before_safety_gate,
