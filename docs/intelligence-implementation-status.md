@@ -27,11 +27,19 @@
   - The same v4 cycle maintains `entity_edges`, graph metrics, and `metadata.risk_propagation`.
   - Risk now propagates across campaign, brand, shared-source, URL/domain, and wallet-cluster edges with trusted/safe protection.
   - API responses now expose graph/reputation context inside `details.internal_verdict`.
+- Step 6: Scam campaign and network clustering.
+  - Added `scamshield/intelligence/campaign_network.py`.
+  - Added `scripts/run_campaign_network_clustering.py`.
+  - Malicious connected components are now promoted into `campaign:network:*` campaign entities.
+  - Cluster members get `campaign_id`, `metadata.network_cluster`, and `network_part_of_campaign` graph edges.
+- Step 7: Runtime Web3 integration from extension/mobile to backend.
+  - Added `scamshield/runtime/contract.py`.
+  - `/runtime/analyze` now emits a stable `runtime_contract` for products.
+  - Added `/runtime/web3/analyze` and `/mobile/runtime/analyze` aliases over the same backend truth.
+  - `details.internal_verdict.runtime_context` exposes source, method, domain, wallet, spender, and warn/block decisions.
 
 ## Remaining
 
-- Step 6: Scam campaign and network clustering.
-- Step 7: Runtime Web3 integration from extension/mobile to backend.
 - Step 8: Deep approve/sign simulation for all supported signature types.
 - Step 9: Headless site sandbox and JavaScript behavior capture.
 - Step 10: Obfuscated JavaScript detection and deobfuscation.

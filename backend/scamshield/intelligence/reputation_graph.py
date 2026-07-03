@@ -14,6 +14,8 @@ PROPAGATION_EDGE_TYPES = (
     "shared_threat_sources",
     "url_belongs_to_domain",
     "shared_wallet_cluster",
+    "shared_wallet_threat_source",
+    "network_part_of_campaign",
 )
 
 

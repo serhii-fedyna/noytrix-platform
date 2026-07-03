@@ -65,6 +65,7 @@ from scamshield.runtime.approve import build_approve_runtime_fields
 from scamshield.runtime.behavior import analyze_transaction_behavior
 from scamshield.runtime.execution_graph import build_execution_graph, build_recursive_execution_graph
 from scamshield.runtime.drain_simulator import simulate_wallet_drain
+from scamshield.runtime.contract import build_runtime_contract, normalize_runtime_payload
 from scamshield.ai.explainer import build_ai_explanation_context, generate_ai_security_explanation, _cache_connect
 from scamshield.url_intel.domain_age import analyze_domain_age
 from scamshield.url_intel.redirect_chain import analyze_redirect_chain
@@ -6555,6 +6556,7 @@ def admin_list_drainer_campaigns(request: Request, lang: str | None = None, limi
 
 @app.post("/runtime/analyze")
 async def runtime_analyze(payload: dict = Body(...)):
+    runtime_payload = normalize_runtime_payload(payload)
     runtime_data = str(payload.get("data") or "").strip()
     runtime_input = str(payload.get("input") or payload.get("target") or "").strip()
 
@@ -6664,14 +6666,32 @@ async def runtime_analyze(payload: dict = Body(...)):
     if wallet_profile:
         data["wallet_profile"] = wallet_profile
 
+    data["runtime_contract"] = build_runtime_contract(payload, data)
     data["runtime"] = {
-        "source": "noytrix_extension",
+        "source": runtime_payload.get("source") or "extension",
         "method": payload.get("method"),
         "domain": payload.get("domain"),
         "provider": payload.get("provider"),
         "flags": payload.get("flags") or [],
         "spender": runtime_spender,
+        "contract_version": data["runtime_contract"].get("version"),
     }
+
+    details = data.setdefault("details", {})
+    if isinstance(details, dict):
+        details["runtime_contract"] = data["runtime_contract"]
+        details["runtime_context"] = {
+            "source": data["runtime"].get("source"),
+            "method": data["runtime"].get("method"),
+            "domain": data["runtime"].get("domain"),
+            "wallet": runtime_payload.get("wallet"),
+            "spender": runtime_spender,
+            "should_warn": data["runtime_contract"].get("should_warn"),
+            "should_block": data["runtime_contract"].get("should_block"),
+        }
+        internal_verdict = details.get("internal_verdict")
+        if isinstance(internal_verdict, dict):
+            internal_verdict["runtime_context"] = details["runtime_context"]
 
     try:
         data["ai_explanation_result"] = await generate_ai_security_explanation(
@@ -6688,6 +6708,20 @@ async def runtime_analyze(payload: dict = Body(...)):
         }
 
     return data
+
+
+@app.post("/runtime/web3/analyze")
+async def runtime_web3_analyze(payload: dict = Body(...)):
+    payload = dict(payload or {})
+    payload.setdefault("source", "extension")
+    return await runtime_analyze(payload)
+
+
+@app.post("/mobile/runtime/analyze")
+async def mobile_runtime_analyze(payload: dict = Body(...)):
+    payload = dict(payload or {})
+    payload.setdefault("source", "mobile")
+    return await runtime_analyze(payload)
 
 
 
