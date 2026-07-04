@@ -163,6 +163,21 @@ def _collect_evidence_codes(evidence: Any = None, sources: Any = None) -> set[st
     return codes
 
 
+def _is_hard_risk_code(code: str) -> bool:
+    value = str(code or "").lower()
+    benign_tokens = (
+        "checked",
+        "no_match",
+        "not_listed",
+        "no_listing",
+        "clean",
+        "without_listing",
+    )
+    if any(token in value for token in benign_tokens):
+        return False
+    return any(token in value for token in ("malicious", "drainer", "phishing", "blocked", "suspended", "wallet_drain"))
+
+
 def _signal(code: str, severity: int, text: str, hard: bool = False) -> Dict[str, Any]:
     return {
         "code": code,
@@ -226,11 +241,7 @@ def build_multichain_intelligence(
             "Address uses the Solana format; SPL token authority and account interaction risk need Solana-specific analysis.",
         ))
 
-    hard_codes = {
-        code
-        for code in evidence_codes
-        if any(token in code for token in ("malicious", "drainer", "phishing", "scam", "blocked", "suspended"))
-    }
+    hard_codes = {code for code in evidence_codes if _is_hard_risk_code(code)}
     if hard_codes:
         signals.append(_signal(
             "multichain_existing_hard_evidence",

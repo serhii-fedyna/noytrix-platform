@@ -40,6 +40,18 @@ def _is_hard(item: Dict[str, Any]) -> bool:
     source = str(item.get("source") or "").lower()
     status = str(item.get("status") or "").lower()
     severity = _to_int(item.get("severity"), 0)
+    benign_lookup = any(token in code or token in text for token in (
+        "checked",
+        "without a listing",
+        "no listing",
+        "not listed",
+        "no match",
+        "clean",
+    ))
+    if benign_lookup and not any(token in code for token in ("match", "malicious", "drainer", "phishing", "blocked", "suspended")):
+        return False
+    if code in {"noytrix_scam_database_checked", "multichain_existing_hard_evidence"} and "match" not in text:
+        return False
     has_threat_keyword = any(token in code or token in text for token in HARD_KEYWORDS)
     source_confirms_malicious = status in {"malicious", "danger", "critical"} or source in {
         "noytrix_scam_database",
