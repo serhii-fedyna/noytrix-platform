@@ -82,6 +82,16 @@ SAFE_OFFICIAL_CRYPTO = [
     "https://debank.com",
 ]
 
+SAFE_ORDINARY_SITES = [
+    "https://google.com",
+    "https://github.com",
+    "https://youtube.com",
+    "https://wikipedia.org",
+    "https://stackoverflow.com",
+    "https://microsoft.com",
+    "https://apple.com",
+]
+
 SAFE_WALLETS = [
     "0x0000000000000000000000000000000000000000",
     "0x00000000219ab540356cBB839Cbe05303d7705Fa",
@@ -167,6 +177,8 @@ def build_cases(feed_limit: int) -> list[dict[str, Any]]:
     cases: list[dict[str, Any]] = []
     for value in SAFE_OFFICIAL_CRYPTO:
         cases.append({"kind": "scan", "id": "safe_domain:" + value, "input": value, "expect": "not_high"})
+    for value in SAFE_ORDINARY_SITES:
+        cases.append({"kind": "scan", "id": "ordinary_domain:" + value, "input": value, "expect": "not_high"})
     for value in SAFE_WALLETS:
         cases.append({"kind": "scan", "id": "safe_wallet:" + value, "input": value, "expect": "not_high"})
     for idx, value in enumerate(MALICIOUS_TEXT_CASES, 1):

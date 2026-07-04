@@ -181,7 +181,6 @@ def score_scan(
         "runtime_wallet_calls_with_obfuscation",
         "compromised_legitimate_site_wallet_flow",
         "compromised_legitimate_redirect_to_lure",
-        "legitimate_domain_obfuscated_wallet_flow",
         "hosted_platform_abuse_wallet_flow",
     }
 
