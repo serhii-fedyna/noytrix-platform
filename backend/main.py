@@ -6386,7 +6386,11 @@ async def b2b_http_exception_handler(request: Request, exc: HTTPException):
         else:
             body = {"ok": False, "error": "http_error", "message": str(exc.detail)}
         return JSONResponse(status_code=exc.status_code, content=body)
-    raise exc
+    if isinstance(exc.detail, dict):
+        body = {"ok": False, **exc.detail}
+    else:
+        body = {"ok": False, "error": "http_error", "message": str(exc.detail)}
+    return JSONResponse(status_code=exc.status_code, content=body)
 
 
 @app.get("/v1/docs")
