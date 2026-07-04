@@ -147,8 +147,17 @@ def _row_to_match(row: dict, source: str, matched_value: str) -> dict:
     confidence = int(row.get("confidence") or 0)
     reputation_context = row.get("source_reputation") or {}
     adjusted_confidence = int(reputation_context.get("adjusted_confidence") or confidence)
+    avg_source_trust = int(reputation_context.get("avg_source_trust") or 0)
+    max_source_trust = int(reputation_context.get("max_source_trust") or 0)
     level = _status_to_level(status, risk_score)
-    force_verdict = status in MALICIOUS_STATUSES or status in SAFE_STATUSES
+    trusted_match = (
+        status in SAFE_STATUSES
+        or adjusted_confidence >= 50
+        or avg_source_trust >= 35
+        or max_source_trust >= 50
+        or (adjusted_confidence >= 30 and risk_score >= 90)
+    )
+    force_verdict = (status in MALICIOUS_STATUSES or status in SAFE_STATUSES) and trusted_match
     return {
         "available": True,
         "matched": True,

@@ -49,6 +49,9 @@ def _is_hard(item: Dict[str, Any]) -> bool:
         "verified_safe",
         "benign",
         "clean",
+        "untrusted_match",
+        "low_confidence_match",
+        "context only",
     ))
     if safe_context and not any(token in code or token in text for token in ("malicious", "drainer", "phishing", "blocked", "suspended")):
         return False

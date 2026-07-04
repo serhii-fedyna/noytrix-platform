@@ -3382,6 +3382,39 @@ URL_GENERIC_WEB3_NOISE_CODES = {
 }
 
 
+def _noytrix_database_match_quality(match: dict) -> dict:
+    reputation = (match or {}).get("source_reputation") or {}
+    confidence = normalize_score(
+        reputation.get("adjusted_confidence")
+        or (match or {}).get("confidence")
+        or (match or {}).get("base_confidence")
+        or 0
+    )
+    avg_source_trust = normalize_score(
+        reputation.get("avg_source_trust")
+        or (match or {}).get("source_trust")
+        or 0
+    )
+    max_source_trust = normalize_score(
+        reputation.get("max_source_trust")
+        or (match or {}).get("max_source_trust")
+        or 0
+    )
+    trusted = (
+        confidence >= 50
+        or avg_source_trust >= 35
+        or max_source_trust >= 50
+        or (confidence >= 30 and normalize_score((match or {}).get("risk_score") or 0) >= 90)
+    )
+    return {
+        "confidence": confidence,
+        "avg_source_trust": avg_source_trust,
+        "max_source_trust": max_source_trust,
+        "trusted": trusted,
+        "untrusted": confidence <= 0 and avg_source_trust <= 0 and max_source_trust <= 0,
+    }
+
+
 def _build_url_evidence_trace(sources: list[dict], heuristics: list[dict], page_content: list[dict]) -> dict:
     items: list[dict] = []
 
@@ -3489,8 +3522,14 @@ def _source_from_noytrix_scam_database(match: dict) -> dict:
     level = str(match.get("level") or status or "observed").lower()
     risk_score = normalize_score(match.get("risk_score") or 0)
     reputation_context = (match or {}).get("source_reputation") or {}
+    quality = _noytrix_database_match_quality(match)
     source_status = "malicious" if status in {"malicious", "scam", "danger", "critical", "high", "blocked"} else "clean" if status in {"safe", "trusted", "allowlisted", "allowlist"} else "observed"
+    if source_status == "malicious" and not quality["trusted"]:
+        source_status = "observed"
+        level = "observed"
     code = "noytrix_scam_database_match" if source_status == "malicious" else "noytrix_scam_database_safe_match" if source_status == "clean" else "noytrix_scam_database_observed"
+    if source_status == "observed" and status in {"malicious", "scam", "danger", "critical", "high", "blocked"}:
+        code = "noytrix_scam_database_untrusted_match"
     return _mk_source(
         "noytrix_scam_database",
         source_status,
@@ -3498,10 +3537,16 @@ def _source_from_noytrix_scam_database(match: dict) -> dict:
         details=match,
         evidence=[{
             "code": code,
-            "severity": risk_score if risk_score else (90 if source_status == "malicious" else 0),
-            "text": "Exact match in Noytrix Scam Database.",
-            "confidence": reputation_context.get("adjusted_confidence") or match.get("confidence"),
-            "source_trust": reputation_context.get("avg_source_trust"),
+            "severity": risk_score if source_status == "malicious" else 0,
+            "text": (
+                "Exact trusted match in Noytrix Scam Database."
+                if source_status == "malicious"
+                else "Exact match in Noytrix Scam Database has no trusted confidence, so it is treated as context only."
+                if code == "noytrix_scam_database_untrusted_match"
+                else "Exact match in Noytrix Scam Database."
+            ),
+            "confidence": quality["confidence"],
+            "source_trust": quality["avg_source_trust"],
         }],
     )
 
@@ -3520,9 +3565,20 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
     status = str(db_match.get("status") or "").lower()
     score = normalize_score(db_match.get("risk_score") or 0)
     reputation_context = (db_match or {}).get("source_reputation") or {}
-    db_confidence = normalize_score(reputation_context.get("adjusted_confidence") or db_match.get("confidence") or 0)
+    quality = _noytrix_database_match_quality(db_match)
+    db_confidence = quality["confidence"]
     malicious = status in {"malicious", "scam", "danger", "critical", "high", "blocked"}
     safe = status in {"safe", "trusted", "allowlisted", "allowlist"}
+
+    if malicious and not quality["trusted"]:
+        out["noytrix_scam_database"] = {
+            "applied": False,
+            "reason": "untrusted_exact_database_match",
+            "match": db_match,
+            "source_reputation": reputation_context,
+            "quality": quality,
+        }
+        return out
 
     if malicious:
         forced_score = max(score, 90)
@@ -3584,12 +3640,13 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
 def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind: str, lang: str, db_match: dict) -> dict:
     source = _source_from_noytrix_scam_database(db_match)
     status = str((db_match or {}).get("status") or "").lower()
-    malicious = status in {"malicious", "scam", "danger", "critical", "high", "blocked"}
+    quality = _noytrix_database_match_quality(db_match)
+    malicious = status in {"malicious", "scam", "danger", "critical", "high", "blocked"} and quality["trusted"]
     safe = status in {"safe", "trusted", "allowlisted", "allowlist"}
-    score = 90 if malicious else 0 if safe else normalize_score((db_match or {}).get("risk_score") or 0)
+    score = 90 if malicious else 0 if safe else 0 if quality["untrusted"] else normalize_score((db_match or {}).get("risk_score") or 0)
     level = "critical" if malicious else "safe" if safe else "suspicious"
     reputation_context = (db_match or {}).get("source_reputation") or {}
-    confidence = normalize_score(reputation_context.get("adjusted_confidence") or (db_match or {}).get("confidence") or 50)
+    confidence = quality["confidence"] if malicious or safe else 0
     evidence = []
     for ev in source.get("evidence") or []:
         evidence.append({"source": source.get("name"), **ev})
