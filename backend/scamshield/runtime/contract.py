@@ -68,8 +68,22 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
 
     score = int(verdict.get("score") or verdict.get("runtime_severity") or 0)
     level = str(verdict.get("level") or "unknown").lower()
-    should_block = level in {"critical", "danger", "high"} or bool(permissions.get("unlimited")) or score >= 70
-    should_warn = should_block or level in {"suspicious", "warning", "medium"} or score >= 30
+    spender_trust = str(permissions.get("spender_trust") or "").lower()
+    spender_risk = str(permissions.get("spender_risk") or "").lower()
+    unlimited_unknown = bool(permissions.get("unlimited")) and spender_trust not in {"trusted", "verified", "safe"}
+    unlimited_trusted = bool(permissions.get("unlimited")) and spender_trust in {"trusted", "verified", "safe"}
+    should_block = (
+        level in {"critical", "danger", "high"}
+        or score >= 70
+        or unlimited_unknown
+        or spender_risk in {"high", "critical", "malicious"}
+    )
+    should_warn = (
+        should_block
+        or unlimited_trusted
+        or level in {"suspicious", "warning", "medium"}
+        or score >= 30
+    )
 
     return {
         "version": RUNTIME_CONTRACT_VERSION,

@@ -12,7 +12,9 @@ HARD_KEYWORDS = (
     "suspended",
     "steal",
     "approve",
+    "approval",
     "permit",
+    "unlimited",
     "wallet_drain",
     "obfuscated_wallet",
 )
@@ -40,6 +42,16 @@ def _is_hard(item: Dict[str, Any]) -> bool:
     source = str(item.get("source") or "").lower()
     status = str(item.get("status") or "").lower()
     severity = _to_int(item.get("severity"), 0)
+    safe_context = any(token in code or token in text for token in (
+        "safe_match",
+        "trusted_match",
+        "allowlist",
+        "verified_safe",
+        "benign",
+        "clean",
+    ))
+    if safe_context and not any(token in code or token in text for token in ("malicious", "drainer", "phishing", "blocked", "suspended")):
+        return False
     benign_lookup = any(token in code or token in text for token in (
         "checked",
         "without a listing",

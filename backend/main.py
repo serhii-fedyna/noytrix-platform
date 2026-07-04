@@ -5820,8 +5820,9 @@ async def scan_core(target: str, lang: str, user_id: Optional[str], is_pro_user:
             "evidence": [{
                 "source": "tx_decoder",
                 "code": tx_decoded.get("type"),
-                "severity": 35 if tx_decoded.get("unlimited") else 20,
+                "severity": approve_fields["score"],
                 "text": tx_decoded.get("method"),
+                "hard_evidence": bool(approve_fields.get("confirmed_red_flag")),
             }],
             "community": {"community_verdict": "unknown", "safe_votes": 0, "scam_votes": 0, "total_users": 0, "immunity_score": 0},
             "details": {"transaction": tx_decoded, "drainer": drainer},
@@ -6909,6 +6910,36 @@ async def runtime_analyze(payload: dict = Body(...)):
     ) if data.get("permissions_summary") else bool(payload.get("approve_unlimited"))
 
     runtime_flags = (data.get("drainer") or {}).get("flags") or []
+
+    if runtime_unlimited:
+        permissions = data.get("permissions_summary") or {}
+        if not isinstance(permissions, dict):
+            permissions = {}
+        permissions.setdefault("can_spend", True)
+        permissions.setdefault("unlimited", True)
+        permissions.setdefault("spender", runtime_spender)
+        permissions.setdefault("spend_limit", "unlimited")
+        permissions.setdefault("revoke_difficulty", "high")
+        permissions.setdefault("summary", "This wallet action can grant unlimited token spending permission.")
+        data["permissions_summary"] = permissions
+        spender_trust = str(permissions.get("spender_trust") or permissions.get("spender_trust_level") or "").lower()
+        if spender_trust not in {"trusted", "verified", "safe"} and int(data.get("score") or 0) < 85:
+            data["score"] = 92
+            data["runtime_severity"] = 92
+            data["heuristics_score"] = max(92, int(data.get("heuristics_score") or 0))
+            data["level"] = "critical"
+            data["normalized_level"] = "critical"
+            data["risk_type"] = data.get("risk_type") or "unlimited_approval_to_unknown_spender"
+            data["confirmed_red_flag"] = True
+            evidence = data.setdefault("evidence", [])
+            if isinstance(evidence, list):
+                evidence.append({
+                    "source": "runtime_extension",
+                    "code": "unlimited_approval_to_unknown_spender",
+                    "severity": 92,
+                    "text": "The wallet request can grant unlimited token spending permission to an unverified spender.",
+                    "hard_evidence": True,
+                })
 
     try:
         raw_data = data.get("raw") or {}
