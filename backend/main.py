@@ -681,6 +681,8 @@ def _auto_escalate_spender_reputation(address: str):
     addr = str(address or "").lower().strip()
     if not RE_EVM_ADDR.match(addr):
         return
+    if addr in TRUSTED_SPENDER_BOOK:
+        return
 
     existing = _get_spender_reputation_from_db(addr)
     if existing and existing.get("trust") in {"trusted", "malicious"}:
@@ -2552,6 +2554,7 @@ SCAM_PATTERNS = [
     (re.compile(r"\bconnect wallet\b", re.I), "connect_wallet_prompt", 10),
     (re.compile(r"\bwallet validation\b", re.I), "wallet_validation_prompt", 18),
     (re.compile(r"\bsign approval\b", re.I), "approval_signature_prompt", 24),
+    (re.compile(r"\bsign\b.{0,30}\bpermit\b.{0,30}\b(transaction|signature)\b", re.I), "permit_signature_prompt", 42),
     (re.compile(r"\bunlock withdrawal\b", re.I), "unlock_withdrawal_lure", 24),
     (re.compile(r"\bsupport (team|agent)\b", re.I), "fake_support_language", 14),
     (re.compile(r"\bimport wallet\b", re.I), "wallet_import_prompt", 20),
@@ -4844,6 +4847,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "uniswap.org",
             "pancakeswap.finance",
             "opensea.io",
+            "blur.io",
             "aave.com",
             "curve.fi",
             "lido.fi",
@@ -4852,6 +4856,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "1inch.io",
             "compound.finance",
             "balancer.fi",
+            "tonscan.org",
         }
 
         _host_l = (host or "").lower().strip(".")
@@ -4861,6 +4866,16 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             _expected_web3_codes = {
                 "wallet_connect_request",
                 "web3_script_reference",
+                "connect_wallet_reward_flow",
+                "fake_airdrop_bonus_ui",
+                "wallet_connect_pressure",
+                "cloned_ui_fingerprint",
+                "visual_phishing_score",
+                "js_dynamic_eval_execution",
+                "js_dynamic_script_loading",
+                "js_high_entropy_payload",
+                "js_minified_or_packed_long_lines",
+                "js_obfuscation_score",
             }
 
             heuristics = [
@@ -4874,7 +4889,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             ]
 
             for src in sources:
-                if str(src.get("name") or "") in {"js_behavior", "wallet_trap"}:
+                if str(src.get("name") or "") in {"js_behavior", "wallet_trap", "visual_phishing", "js_obfuscation"}:
                     ev = src.get("evidence") or []
                     if ev and all(str(x.get("code") or "") in _expected_web3_codes for x in ev):
                         src["status"] = "clean"
@@ -4901,6 +4916,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "uniswap.org",
             "pancakeswap.finance",
             "opensea.io",
+            "blur.io",
             "aave.com",
             "curve.fi",
             "lido.fi",
@@ -4909,6 +4925,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
             "1inch.io",
             "compound.finance",
             "balancer.fi",
+            "tonscan.org",
         }
 
         _host_l2 = (host or "").lower().strip(".")

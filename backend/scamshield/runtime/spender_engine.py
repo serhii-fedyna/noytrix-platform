@@ -24,10 +24,6 @@ async def build_spender_reputation(
             "reasons": ["invalid_evm_address"],
         }
 
-    db_rep = get_db_rep(addr)
-    if db_rep:
-        return db_rep
-
     bad = malicious_book.get(addr)
     if bad:
         return normalize_rep({
@@ -51,6 +47,10 @@ async def build_spender_reputation(
             "risk": "low",
             "reasons": ["known_trusted_spender"],
         }, addr)
+
+    db_rep = get_db_rep(addr)
+    if db_rep:
+        return db_rep
 
     eth_res, bsc_res = await asyncio.gather(
         explorer_checker(addr, "eth"),
