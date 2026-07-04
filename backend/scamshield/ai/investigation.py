@@ -36,8 +36,18 @@ def _is_hard(item: Dict[str, Any]) -> bool:
     if bool(item.get("hard_evidence")):
         return True
     code = str(item.get("code") or "").lower()
+    text = str(item.get("text") or "").lower()
+    source = str(item.get("source") or "").lower()
+    status = str(item.get("status") or "").lower()
     severity = _to_int(item.get("severity"), 0)
-    return severity >= 70 or any(token in code for token in HARD_KEYWORDS)
+    has_threat_keyword = any(token in code or token in text for token in HARD_KEYWORDS)
+    source_confirms_malicious = status in {"malicious", "danger", "critical"} or source in {
+        "noytrix_scam_database",
+        "noytrix_url_intelligence",
+        "headless_sandbox",
+        "runtime_contract",
+    }
+    return bool(has_threat_keyword and (severity >= 60 or source_confirms_malicious))
 
 
 def _collect_evidence(verdict: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -121,6 +131,8 @@ def _build_summary(verdict: Dict[str, Any], evidence_links: List[Dict[str, Any]]
     if hard_count:
         label = family.replace("_", " ") if family else "high-risk behavior"
         return f"Noytrix found {hard_count} hard evidence item(s) consistent with {label}; current verdict is {level} at score {score}."
+    if level == "safe" and score < 30:
+        return f"Noytrix found no linked threat evidence in this response; current verdict is {level} at score {score}."
     if evidence_links:
         return f"Noytrix found contextual signals but no hard proof of a scam; current verdict is {level} at score {score}."
     return f"Noytrix found no linked evidence in the current response; current verdict is {level} at score {score}."
@@ -152,6 +164,9 @@ def build_ai_investigation(verdict: Dict[str, Any]) -> Dict[str, Any]:
     if hard_links:
         primary = family.replace("_", " ") if family else "confirmed high-risk behavior"
         confidence = min(98, max(70, score, max(_to_int(x.get("severity")) for x in hard_links)))
+    elif level == "safe" and score < 30:
+        primary = "no linked threat evidence in this response"
+        confidence = min(70, max(35, 100 - score))
     elif evidence_links:
         primary = "contextual risk requiring caution"
         confidence = min(75, max(35, score))
