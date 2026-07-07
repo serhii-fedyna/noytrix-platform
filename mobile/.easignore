@@ -1,16 +1,44 @@
-node_modules
-android/app/build
-android/.gradle
-android/.cxx
-ios/build
-build
-dist
-.expo
-.parcel-cache
-.git
-.vscode
-.idea
+# Dependencies
+node_modules/
+
+# Local env files and secrets
+.env*
+.*.env
+*.env
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+
+# Build and generated output
+android/.gradle/
+android/build/
+android/app/build/
+ios/build/
+.expo/
+dist/
+build/
+web-build/
+expo-env.d.ts
+*.tsbuildinfo
+
+# Logs and caches
 *.log
-*.tmp
+*.pid
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.metro-health-check*
+
+# Archives
+*.tar.gz
+*.zip
+
+# OS files
 .DS_Store
-Thumbs.db
+
+# Required by the Google Services Gradle plugin during EAS builds.
+!google-services.json
+!android/app/google-services.json
