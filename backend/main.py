@@ -42,6 +42,7 @@ import pathlib as _p
 import feedparser
 import html
 import base64
+import requests
 
 from typing import Dict, Any, Optional, List, Tuple
 from urllib.parse import urlparse, quote
@@ -61,6 +62,8 @@ from scamshield.intelligence.scam_family import classify_scam_family
 from scamshield.intelligence.multichain import build_multichain_intelligence
 from scamshield.intelligence.threat_collectors import autonomous_collector_loop
 from fastapi.middleware.cors import CORSMiddleware
+from google.oauth2 import service_account
+from google.auth.transport.requests import Request as GoogleAuthRequest
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
 from scamshield.core.levels import normalize_level, legacy_level, normalize_score, enforce_risk_floor
 from scamshield.core.scoring import score_scan
@@ -1158,6 +1161,118 @@ def guest_has_pro(user_id: Optional[str]) -> bool:
         return bool(row and int(row[0] or 0) == 1)
     finally:
         conn.close()
+
+def _google_play_access_token() -> str:
+    sa_path = (os.getenv("GOOGLE_PLAY_SA_JSON") or "").strip()
+    if not sa_path or not os.path.exists(sa_path):
+        raise HTTPException(status_code=500, detail="GOOGLE_PLAY_SA_JSON is missing on server")
+
+    creds = service_account.Credentials.from_service_account_file(
+        sa_path,
+        scopes=["https://www.googleapis.com/auth/androidpublisher"],
+    )
+    creds.refresh(GoogleAuthRequest())
+    return creds.token
+
+def _google_play_verify_purchase(product_type: str, package_name: str, product_id: str, token: str) -> dict:
+    ptype = (product_type or "").strip().lower()
+    if ptype not in ("subs", "inapp"):
+        raise HTTPException(status_code=400, detail="productType must be 'subs' or 'inapp'")
+
+    package_name = (package_name or "").strip()
+    product_id = (product_id or "").strip()
+    token = (token or "").strip()
+    if not package_name or not product_id or not token:
+        raise HTTPException(status_code=400, detail="Missing packageName/productId/purchaseToken")
+
+    access_token = _google_play_access_token()
+    headers = {"Authorization": f"Bearer {access_token}"}
+    if ptype == "subs":
+        url = (
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/"
+            f"applications/{package_name}/purchases/subscriptions/{product_id}/tokens/{token}"
+        )
+    else:
+        url = (
+            "https://androidpublisher.googleapis.com/androidpublisher/v3/"
+            f"applications/{package_name}/purchases/products/{product_id}/tokens/{token}"
+        )
+
+    r = requests.get(url, headers=headers, timeout=20)
+    if r.status_code >= 400:
+        raise HTTPException(status_code=400, detail=f"Google verify failed: {r.status_code} {r.text[:300]}")
+    return r.json()
+
+def _dt_from_google_ms(ms: Any) -> Optional[datetime]:
+    if not ms:
+        return None
+    try:
+        return datetime.fromtimestamp(int(ms) / 1000, tz=timezone.utc)
+    except Exception:
+        return None
+
+def _active_from_google_purchase(product_type: str, data: dict) -> Tuple[bool, str, Optional[datetime]]:
+    ptype = (product_type or "").strip().lower()
+    if ptype == "subs":
+        expiry = _dt_from_google_ms(data.get("expiryTimeMillis"))
+        payment_state = data.get("paymentState")
+        active = bool(expiry and expiry > datetime.now(timezone.utc))
+        status = "active" if active else "expired"
+
+        if active and payment_state is not None:
+            try:
+                if int(payment_state) not in (1, 2):
+                    active = False
+                    status = "pending"
+            except Exception:
+                active = False
+                status = "unknown"
+
+        return active, status, expiry
+
+    purchase_state = data.get("purchaseState")
+    if purchase_state == 0:
+        return True, "active", None
+    if purchase_state == 2:
+        return False, "pending", None
+    return False, "canceled", None
+
+@app.post("/iap/google/guest/verify")
+async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
+    user_id = (
+        str(payload.get("userId") or "").strip()
+        or str(request.headers.get("x-user-id") or "").strip()
+        or str(request.headers.get("x_user_id") or "").strip()
+        or str(request.headers.get("user-id") or "").strip()
+    )
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing userId")
+
+    product_type = str(payload.get("productType") or "").strip().lower()
+    product_id = str(payload.get("productId") or "").strip()
+    package_name = str(payload.get("packageName") or "com.noytrix.app").strip()
+    purchase_token = str(payload.get("purchaseToken") or "").strip()
+
+    data = _google_play_verify_purchase(product_type, package_name, product_id, purchase_token)
+    active, status, expiry_dt = _active_from_google_purchase(product_type, data)
+
+    if active:
+        set_guest_pro(user_id, active=True, source=f"google_play:{product_id}")
+
+    return {
+        "ok": True,
+        "userId": user_id,
+        "active": guest_has_pro(user_id),
+        "googleActive": active,
+        "status": status,
+        "productType": product_type,
+        "productId": product_id,
+        "orderId": data.get("orderId"),
+        "expiryUtc": expiry_dt.isoformat() if expiry_dt else None,
+        "acknowledgementState": data.get("acknowledgementState"),
+        "purchaseState": data.get("purchaseState"),
+        "paymentState": data.get("paymentState"),
+    }
 
 @app.post("/iap/guest/activate")
 async def iap_guest_activate(request: Request, payload: dict = Body(...), lang: str | None = None):

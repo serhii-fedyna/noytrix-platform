@@ -113,7 +113,7 @@ async function syncGuestProOnServer(ent) {
       body: JSON.stringify({
         userId,
         hasPro,
-        source: "revenuecat_guest",
+        source: "google_play_guest",
       }),
     });
     const server = await response.json().catch(() => null);

@@ -1,23 +1,45 @@
-﻿import { Platform } from "react-native";
-import Purchases from "react-native-purchases";
-import Constants from "expo-constants";
+import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  fetchProducts,
+  finishTransaction,
+  getAvailablePurchases,
+  initConnection,
+  purchaseErrorListener,
+  purchaseUpdatedListener,
+  requestPurchase,
+} from "react-native-iap";
 import { logEvent } from "./analytics";
 
-
-
-const PKG_BOT = "bot_access";
-const PKG_PRO_6M = "$rc_six_month";
-const PKG_PRO_MONTH = "$rc_monthly";
-const PKG_PRO_YEARLY = "$rc_annual";
+const BACKEND = "https://noytrix.com";
+const PACKAGE_NAME = "com.noytrix.app";
 const INSTALL_UID_KEY = "noytrix.installUserId";
 
-let rcConfigured = false;
+const PRODUCT_IDS = {
+  proSubscription: "pro_access",
+  proLifetime: "prolifetime",
+  bot: "pro_ai_bot",
+};
 
-function getRcApiKey() {
-  const extra = Constants.expoConfig?.extra || Constants.manifest?.extra || {};
-  return extra.RC_ANDROID_API_KEY;
-}
+const PRODUCT_TYPES = {
+  [PRODUCT_IDS.proSubscription]: "subs",
+  [PRODUCT_IDS.proLifetime]: "inapp",
+  [PRODUCT_IDS.bot]: "inapp",
+};
+
+const PLAN_PRODUCT = {
+  m: PRODUCT_IDS.proSubscription,
+  h: PRODUCT_IDS.proSubscription,
+  l: PRODUCT_IDS.proSubscription,
+  bot: PRODUCT_IDS.bot,
+  lifetime: PRODUCT_IDS.proLifetime,
+};
+
+let iapConfigured = false;
+let cachedProducts = { products: [], subs: [] };
+let updateSub = null;
+let errorSub = null;
+let pendingPurchase = null;
 
 function makeRandomId() {
   return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -36,264 +58,345 @@ export async function getRevenueCatAppUserId() {
   }
 }
 
+async function persistPro(active, meta = {}) {
+  if (!active) return;
+  await AsyncStorage.setItem("isPro", "true");
+  await AsyncStorage.setItem("noytrix.isPro", "true");
+  await AsyncStorage.setItem("pro", "true");
+  await AsyncStorage.setItem("proActive", "true");
+  await AsyncStorage.setItem("subscription.pro", "true");
+  await AsyncStorage.setItem("iap.isPro", "true");
+  await AsyncStorage.setItem("entitlement.pro", "active");
+  await AsyncStorage.setItem("entitlement.id", "pro");
+  await AsyncStorage.setItem("entitlementId", "pro");
+  await AsyncStorage.setItem("noytrix_pro_flag", "1");
+  await AsyncStorage.setItem(
+    "iap.lastGooglePlayVerify",
+    JSON.stringify({ ...meta, active: true, updatedAt: Date.now() })
+  );
+}
 
+function productIdOf(purchase) {
+  return String(purchase?.productId || purchase?.id || "").trim();
+}
+
+function purchaseTokenOf(purchase) {
+  return String(purchase?.purchaseToken || purchase?.purchaseTokenAndroid || "").trim();
+}
+
+function normalizePurchaseResult(result) {
+  if (Array.isArray(result)) return result.find((p) => purchaseTokenOf(p)) || result[0] || null;
+  return result || null;
+}
+
+function isProProduct(productId) {
+  return productId === PRODUCT_IDS.proSubscription || productId === PRODUCT_IDS.proLifetime;
+}
+
+function entitlementFromProduct(productId) {
+  return {
+    proMonthly: isProProduct(productId),
+    pro6m: isProProduct(productId),
+    proYearly: isProProduct(productId),
+    bot: productId === PRODUCT_IDS.bot,
+  };
+}
+
+function chooseSubscriptionOffer(product, planId) {
+  const offers = product?.subscriptionOfferDetailsAndroid || [];
+  if (!offers.length) return null;
+
+  const patterns =
+    planId === "l"
+      ? ["year", "annual", "12", "1y"]
+      : planId === "h"
+        ? ["6", "half", "six"]
+        : ["month", "monthly", "1m"];
+
+  return (
+    offers.find((offer) => {
+      const haystack = [
+        offer?.basePlanId,
+        offer?.offerId,
+        ...(Array.isArray(offer?.offerTags) ? offer.offerTags : []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return patterns.some((p) => haystack.includes(p));
+    }) ||
+    offers[0] ||
+    null
+  );
+}
+
+async function serverStatus() {
+  const userId = await getRevenueCatAppUserId();
+  const response = await fetch(`${BACKEND}/iap/guest/status?userId=${encodeURIComponent(userId)}`, {
+    headers: { "X-User-Id": userId },
+  });
+  return response.json().catch(() => null);
+}
+
+async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
+  const userId = await getRevenueCatAppUserId();
+  const productId = forcedProductId || productIdOf(purchase);
+  const purchaseToken = purchaseTokenOf(purchase);
+  const productType = PRODUCT_TYPES[productId] || "inapp";
+
+  if (!productId || !purchaseToken) {
+    throw new Error("Google Play purchase token is missing. Try restore purchase.");
+  }
+
+  const response = await fetch(`${BACKEND}/iap/google/guest/verify`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Id": userId,
+    },
+    body: JSON.stringify({
+      userId,
+      packageName: PACKAGE_NAME,
+      productType,
+      productId,
+      purchaseToken,
+    }),
+  });
+
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body?.ok) {
+    const detail = body?.detail || body?.message || `Google Play verify failed (${response.status})`;
+    throw new Error(String(detail));
+  }
+
+  if (body.active || body.googleActive) {
+    await persistPro(true, { productId, productType, orderId: body.orderId, source: "google_play" });
+  }
+
+  return { ...entitlementFromProduct(productId), active: !!(body.active || body.googleActive), server: body };
+}
+
+function attachListeners() {
+  if (updateSub || errorSub) return;
+
+  updateSub = purchaseUpdatedListener(async (purchase) => {
+    try {
+      if (pendingPurchase?.resolve) {
+        pendingPurchase.resolve(purchase);
+        pendingPurchase = null;
+      }
+    } catch (e) {
+      console.log("[IAP] purchaseUpdatedListener error:", e);
+    }
+  });
+
+  errorSub = purchaseErrorListener((error) => {
+    console.log("[IAP] purchase error:", error);
+    if (pendingPurchase?.reject) {
+      pendingPurchase.reject(error);
+      pendingPurchase = null;
+    }
+  });
+}
 
 export async function iapInit() {
   try {
-    if (rcConfigured) return true;
-
-    const apiKey = getRcApiKey();
-
-    if (!apiKey) {
-      console.log("[RC] No RC_ANDROID_API_KEY in extra");
-      return false;
-    }
-
     if (Platform.OS !== "android") {
-      console.log("[RC] iapInit: non-android, skip");
+      console.log("[IAP] iapInit: non-android, skip");
       return false;
     }
-
-    console.log("[RC] configure Purchases with key =", apiKey.slice(0, 10) + "...");
-    const appUserID = await getRevenueCatAppUserId();
-    await Purchases.configure({ apiKey, appUserID });
-
-    rcConfigured = true;
-    console.log("[RC] Purchases configured OK", { appUserID });
+    if (!iapConfigured) {
+      await initConnection();
+      iapConfigured = true;
+    }
+    attachListeners();
     return true;
   } catch (e) {
-    console.log("[RC] iapInit error:", e);
+    console.log("[IAP] iapInit error:", e);
     return false;
   }
 }
 
 async function ensureInit() {
-  if (!rcConfigured) {
-    await iapInit();
-  }
+  const ok = await iapInit();
+  if (!ok) throw new Error("Google Play Billing is not available on this device.");
 }
-
-
-
-async function persistEntitlements(info) {
-  try {
-    const active = info?.entitlements?.active || {};
-    const hasPro = !!active.pro;
-    const hasBot = !!active.bot;
-
-    if (hasPro) {
-      await AsyncStorage.setItem("isPro", "true");
-      await AsyncStorage.setItem("noytrix.isPro", "true");
-      await AsyncStorage.setItem("pro", "true");
-      await AsyncStorage.setItem("proActive", "true");
-      await AsyncStorage.setItem("subscription.pro", "true");
-      await AsyncStorage.setItem("iap.isPro", "true");
-      await AsyncStorage.setItem("entitlement.pro", "active");
-      await AsyncStorage.setItem("entitlement.id", "pro");
-      await AsyncStorage.setItem("entitlementId", "pro");
-      await AsyncStorage.setItem("noytrix_pro_flag", "1");
-    }
-
-    await AsyncStorage.setItem("isBot", hasBot ? "true" : "false");
-    await AsyncStorage.setItem("iap.isBot", hasBot ? "true" : "false");
-    await AsyncStorage.setItem("entitlement.bot", hasBot ? "active" : "inactive");
-
-    try {
-      const debug = {
-        hasPro,
-        hasBot,
-        updatedAt: Date.now(),
-        appUserID: info?.originalAppUserId || info?.originalAppUserID || null,
-        currentAppUserID: await getRevenueCatAppUserId(),
-      };
-      await AsyncStorage.setItem("iap.lastCustomerInfo", JSON.stringify(debug));
-    } catch {}
-
-    console.log("[RC] persistEntitlements OK:", { hasPro, hasBot });
-  } catch (e) {
-    console.log("[RC] persistEntitlements error:", e);
-  }
-}
-
-
-
-async function getCurrentOffering() {
-  await ensureInit();
-
-  const offerings = await Purchases.getOfferings();
-  const current = offerings.current;
-
-  if (!current) {
-    throw new Error("No current offering configured in RevenueCat");
-  }
-
-  return current;
-}
-
-
 
 export async function loadIap() {
   try {
-    const offering = await getCurrentOffering();
-    const available = offering.availablePackages || [];
+    await ensureInit();
+    const [subs, products] = await Promise.all([
+      fetchProducts({ skus: [PRODUCT_IDS.proSubscription], type: "subs" }).catch((e) => {
+        console.log("[IAP] fetch subs error:", e);
+        return [];
+      }),
+      fetchProducts({ skus: [PRODUCT_IDS.proLifetime, PRODUCT_IDS.bot], type: "in-app" }).catch((e) => {
+        console.log("[IAP] fetch products error:", e);
+        return [];
+      }),
+    ]);
 
-    const products = [];
-    const subs = [];
-
-    available.forEach((pkg) => {
-      const sp = pkg.storeProduct || {};
-
-      const obj = {
-        productId: sp.identifier,
-        price: sp.price,
-        localizedPrice: sp.priceString,
-        currency: sp.currencyCode,
-        rcPackageId: pkg.identifier,
-      };
-
-      if (pkg.identifier === PKG_PRO_YEARLY) {
-        products.push(obj);
-      } else {
-        subs.push(obj);
-      }
+    cachedProducts = { products: products || [], subs: subs || [] };
+    console.log("[IAP] loadIap:", {
+      products: cachedProducts.products.map((p) => p.id || p.productId),
+      subs: cachedProducts.subs.map((p) => p.id || p.productId),
     });
-
-    console.log(
-      "[RC] loadIap products:",
-      products.map((p) => p.productId)
-    );
-    console.log(
-      "[RC] loadIap subs:",
-      subs.map((s) => s.productId)
-    );
-
-    return { products, subs };
+    return cachedProducts;
   } catch (e) {
-    console.log("[RC] loadIap error:", e);
+    console.log("[IAP] loadIap error:", e);
     return { products: [], subs: [] };
   }
 }
 
+async function waitForPurchaseResult(result) {
+  const immediate = normalizePurchaseResult(result);
+  if (immediate && purchaseTokenOf(immediate)) return immediate;
 
-
-async function buyPackageById(packageId) {
-  try {
-    const offering = await getCurrentOffering();
-    const pkg = (offering.availablePackages || []).find(
-      (p) => p.identifier === packageId
-    );
-
-    if (!pkg) {
-      throw new Error("Package " + packageId + " not found in offering");
-    }
-
-    console.log("[RC] purchasePackage:", packageId);
-    logEvent("rc_purchase_package_start", { package_id: packageId });
-    const res = await Purchases.purchasePackage(pkg);
-    console.log("[RC] purchase result:", res);
-    logEvent("rc_purchase_package_success", { package_id: packageId });
-
-    const info =
-      res?.customerInfo ||
-      res?.customerInfoResponse?.customerInfo ||
-      res?.purchaserInfo ||
-      null;
-
-    if (info) {
-      await persistEntitlements(info);
-    } else {
-      try {
-        const ci = await Purchases.getCustomerInfo();
-        await persistEntitlements(ci);
-      } catch {}
-    }
-
-    return res;
-  } catch (e) {
-    console.log("[RC] purchase error for", packageId, e);
-    logEvent("rc_purchase_package_error", { package_id: packageId, err: String(e?.message || e || "error") });
-    throw e;
-  }
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      if (pendingPurchase?.reject === reject) pendingPurchase = null;
+      reject(new Error("Google Play did not return a purchase yet. If payment completed, tap Restore purchase."));
+    }, 90000);
+    pendingPurchase = {
+      resolve: (purchase) => {
+        clearTimeout(timeout);
+        resolve(purchase);
+      },
+      reject: (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    };
+  });
 }
 
-// buy pro
+async function buyProduct(productId, planId = "m") {
+  await ensureInit();
+  if (!cachedProducts.subs.length && !cachedProducts.products.length) {
+    await loadIap();
+  }
+
+  const productType = PRODUCT_TYPES[productId] || "inapp";
+  const isSub = productType === "subs";
+  const product = isSub
+    ? cachedProducts.subs.find((p) => (p.id || p.productId) === productId)
+    : cachedProducts.products.find((p) => (p.id || p.productId) === productId);
+
+  logEvent("google_play_purchase_start", { product_id: productId, product_type: productType, plan: planId });
+
+  const userId = await getRevenueCatAppUserId();
+  const request =
+    isSub
+      ? {
+          type: "subs",
+          request: {
+            android: {
+              skus: [productId],
+              obfuscatedAccountIdAndroid: userId,
+              subscriptionOffers: chooseSubscriptionOffer(product, planId)
+                ? [{ sku: productId, offerToken: chooseSubscriptionOffer(product, planId).offerToken }]
+                : undefined,
+            },
+          },
+        }
+      : {
+          type: "in-app",
+          request: {
+            android: {
+              skus: [productId],
+              obfuscatedAccountIdAndroid: userId,
+            },
+          },
+        };
+
+  const result = await requestPurchase(request);
+  const purchase = await waitForPurchaseResult(result);
+  const verified = await verifyPurchaseOnServer(purchase, productId);
+
+  if (verified.active) {
+    await finishTransaction({ purchase, isConsumable: false }).catch((e) => {
+      console.log("[IAP] finishTransaction error:", e);
+    });
+  }
+
+  logEvent("google_play_purchase_verified", { product_id: productId, product_type: productType, active: !!verified.active });
+  return verified;
+}
+
 export async function buyProYearly() {
-  return buyPackageById(PKG_PRO_YEARLY);
+  return buyProduct(PLAN_PRODUCT.l, "l");
 }
 
 export async function buyProMonthly() {
-  return buyPackageById(PKG_PRO_MONTH);
+  return buyProduct(PLAN_PRODUCT.m, "m");
 }
 
 export async function buyPro6month() {
-  return buyPackageById(PKG_PRO_6M);
+  return buyProduct(PLAN_PRODUCT.h, "h");
 }
 
 export async function buyBot() {
-  return buyPackageById(PKG_BOT);
-}
-
-
-
-function mapCustomerInfoToEntitlements(info) {
-  const active = info?.entitlements?.active || {};
-
-  const hasPro = !!active.pro;
-  const hasBot = !!active.bot;
-
-  const ent = {
-    proMonthly: hasPro,
-    pro6m: hasPro,
-    proYearly: hasPro,
-    bot: hasBot,
-  };
-
-  console.log("[RC] mapped entitlements:", ent);
-  return ent;
+  return buyProduct(PLAN_PRODUCT.bot, "bot");
 }
 
 export async function restorePurchases() {
   try {
     await ensureInit();
-    console.log("[RC] restorePurchases...");
-    logEvent("rc_restore_start", {});
-    const info = await Purchases.restorePurchases();
+    logEvent("google_play_restore_start", {});
+    const purchases = await getAvailablePurchases();
+    let merged = { proMonthly: false, pro6m: false, proYearly: false, bot: false };
 
-    await persistEntitlements(info);
-    logEvent("rc_restore_success", {});
-    return mapCustomerInfoToEntitlements(info);
+    for (const purchase of purchases || []) {
+      const productId = productIdOf(purchase);
+      if (!PRODUCT_TYPES[productId]) continue;
+      try {
+        const verified = await verifyPurchaseOnServer(purchase, productId);
+        if (verified.active) {
+          merged = {
+            proMonthly: merged.proMonthly || verified.proMonthly,
+            pro6m: merged.pro6m || verified.pro6m,
+            proYearly: merged.proYearly || verified.proYearly,
+            bot: merged.bot || verified.bot,
+          };
+          await finishTransaction({ purchase, isConsumable: false }).catch((e) => {
+            console.log("[IAP] finish restored transaction error:", e);
+          });
+        }
+      } catch (e) {
+        console.log("[IAP] restore verify error:", e);
+      }
+    }
+
+    const status = await serverStatus().catch(() => null);
+    if (status?.active) {
+      await persistPro(true, { source: "google_play_restore_server_status" });
+      merged = { ...merged, proMonthly: true, pro6m: true, proYearly: true };
+    }
+
+    logEvent("google_play_restore_success", merged);
+    return merged;
   } catch (e) {
-    console.log("[RC] restorePurchases error:", e);
-    logEvent("rc_restore_error", { err: String(e?.message || e || "error") });
-
-    return {
-      proMonthly: false,
-      pro6m: false,
-      proYearly: false,
-      bot: false,
-    };
+    console.log("[IAP] restorePurchases error:", e);
+    logEvent("google_play_restore_error", { err: String(e?.message || e || "error") });
+    return { proMonthly: false, pro6m: false, proYearly: false, bot: false };
   }
 }
 
 export async function checkEntitlements() {
   try {
-    await ensureInit();
-    const info = await Purchases.getCustomerInfo();
+    const status = await serverStatus().catch(() => null);
+    if (status?.active) {
+      await persistPro(true, { source: "server_status" });
+      return { proMonthly: true, pro6m: true, proYearly: true, bot: false };
+    }
 
-    await persistEntitlements(info);
-    return mapCustomerInfoToEntitlements(info);
+    const restored = await restorePurchases();
+    if (restored.proMonthly || restored.pro6m || restored.proYearly || restored.bot) {
+      return restored;
+    }
   } catch (e) {
-    console.log("[RC] checkEntitlements error:", e);
-    return {
-      proMonthly: false,
-      pro6m: false,
-      proYearly: false,
-      bot: false,
-    };
+    console.log("[IAP] checkEntitlements error:", e);
   }
+
+  return { proMonthly: false, pro6m: false, proYearly: false, bot: false };
 }
-
-
-
-
-
