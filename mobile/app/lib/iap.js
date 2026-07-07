@@ -10,12 +10,30 @@ const PKG_BOT = "bot_access";
 const PKG_PRO_6M = "$rc_six_month";
 const PKG_PRO_MONTH = "$rc_monthly";
 const PKG_PRO_YEARLY = "$rc_annual";
+const INSTALL_UID_KEY = "noytrix.installUserId";
 
 let rcConfigured = false;
 
 function getRcApiKey() {
   const extra = Constants.expoConfig?.extra || Constants.manifest?.extra || {};
   return extra.RC_ANDROID_API_KEY;
+}
+
+function makeRandomId() {
+  return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export async function getRevenueCatAppUserId() {
+  try {
+    const existing = await AsyncStorage.getItem(INSTALL_UID_KEY);
+    if (existing && String(existing).trim()) return String(existing).trim();
+
+    const next = makeRandomId();
+    await AsyncStorage.setItem(INSTALL_UID_KEY, next);
+    return next;
+  } catch {
+    return makeRandomId();
+  }
 }
 
 
@@ -37,10 +55,11 @@ export async function iapInit() {
     }
 
     console.log("[RC] configure Purchases with key =", apiKey.slice(0, 10) + "...");
-    await Purchases.configure({ apiKey });
+    const appUserID = await getRevenueCatAppUserId();
+    await Purchases.configure({ apiKey, appUserID });
 
     rcConfigured = true;
-    console.log("[RC] Purchases configured OK");
+    console.log("[RC] Purchases configured OK", { appUserID });
     return true;
   } catch (e) {
     console.log("[RC] iapInit error:", e);
@@ -85,6 +104,7 @@ async function persistEntitlements(info) {
         hasBot,
         updatedAt: Date.now(),
         appUserID: info?.originalAppUserId || info?.originalAppUserID || null,
+        currentAppUserID: await getRevenueCatAppUserId(),
       };
       await AsyncStorage.setItem("iap.lastCustomerInfo", JSON.stringify(debug));
     } catch {}
@@ -245,25 +265,6 @@ export async function restorePurchases() {
   } catch (e) {
     console.log("[RC] restorePurchases error:", e);
     logEvent("rc_restore_error", { err: String(e?.message || e || "error") });
-
-    try {
-      const serverOrManualPro =
-        (await AsyncStorage.getItem("noytrix_pro_flag")) === "1" ||
-        (await AsyncStorage.getItem("pro.active")) === "true" ||
-        (await AsyncStorage.getItem("pro.isPro")) === "true";
-
-      if (!serverOrManualPro) {
-        await AsyncStorage.setItem("isPro", "false");
-        await AsyncStorage.setItem("noytrix.isPro", "false");
-        await AsyncStorage.setItem("pro", "false");
-        await AsyncStorage.setItem("proActive", "false");
-        await AsyncStorage.setItem("subscription.pro", "false");
-        await AsyncStorage.setItem("iap.isPro", "false");
-        await AsyncStorage.setItem("entitlement.pro", "inactive");
-        await AsyncStorage.setItem("entitlement.id", "");
-        await AsyncStorage.setItem("entitlementId", "");
-      }
-    } catch {}
 
     return {
       proMonthly: false,

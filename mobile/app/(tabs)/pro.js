@@ -22,6 +22,7 @@ import {
   buyProYearly,
   restorePurchases,
   checkEntitlements,
+  getRevenueCatAppUserId,
 } from "../lib/iap";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
@@ -43,7 +44,6 @@ const C = {
 };
 
 const BACKEND = "https://noytrix.com";
-const INSTALL_UID_KEY = "noytrix.installUserId";
 
 function showAppAlert(title, message) {
   Alert.alert(String(title || ""), String(message || ""));
@@ -62,20 +62,8 @@ const plans = [
 const usd = (n) => `$${Number(n).toFixed(2)}`;
 const LOCAL_PRICES = { m: 9.99, h: 49.99, l: 199.99 };
 
-function makeRandomId() {
-  return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 async function getOrCreateInstallUserId() {
-  try {
-    const existing = await AsyncStorage.getItem(INSTALL_UID_KEY);
-    if (existing && String(existing).trim()) return String(existing).trim();
-    const next = makeRandomId();
-    await AsyncStorage.setItem(INSTALL_UID_KEY, next);
-    return next;
-  } catch {
-    return makeRandomId();
-  }
+  return getRevenueCatAppUserId();
 }
 
 async function syncLocalProFlags(ent) {
@@ -116,7 +104,7 @@ async function syncGuestProOnServer(ent) {
     const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly);
     const userId = await getOrCreateInstallUserId();
 
-    await fetch(`${BACKEND}/iap/guest/activate`, {
+    const response = await fetch(`${BACKEND}/iap/guest/activate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -128,6 +116,19 @@ async function syncGuestProOnServer(ent) {
         source: "revenuecat_guest",
       }),
     });
+    const server = await response.json().catch(() => null);
+    if (server?.active) {
+      await AsyncStorage.setItem("isPro", "true");
+      await AsyncStorage.setItem("noytrix.isPro", "true");
+      await AsyncStorage.setItem("pro", "true");
+      await AsyncStorage.setItem("proActive", "true");
+      await AsyncStorage.setItem("subscription.pro", "true");
+      await AsyncStorage.setItem("iap.isPro", "true");
+      await AsyncStorage.setItem("entitlement.pro", "active");
+      await AsyncStorage.setItem("entitlement.id", "pro");
+      await AsyncStorage.setItem("entitlementId", "pro");
+      await AsyncStorage.setItem("noytrix_pro_flag", "1");
+    }
   } catch (e) {
     console.log("[PRO] syncGuestProOnServer error:", e);
   }

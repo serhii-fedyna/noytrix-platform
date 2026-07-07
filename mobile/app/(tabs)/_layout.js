@@ -28,7 +28,6 @@ export default function TabsLayout() {
     index: t("tabs.home"),
     pro: t("tabs.pro"),
     spot: t("tabs.spot"),
-    trading: t("tabs.trading"),
     profile: t("tabs.profile"),
   };
 
@@ -139,7 +138,7 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="trading"
-        options={{ title: t("tabs.trading") }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="profile"

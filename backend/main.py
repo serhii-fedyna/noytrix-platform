@@ -1173,6 +1173,18 @@ async def iap_guest_activate(request: Request, payload: dict = Body(...), lang: 
     has_pro = bool(payload.get("hasPro", True))
     source = str(payload.get("source") or "guest_iap").strip()
 
+    if not has_pro:
+        # RevenueCat can briefly return no active entitlement during app start,
+        # restore, network errors, or anonymous->stable appUserID transitions.
+        # A client-side false must not revoke a paid server-side PRO record.
+        return {
+            "ok": True,
+            "userId": user_id,
+            "active": guest_has_pro(user_id),
+            "ignored": True,
+            "reason": "client_false_does_not_revoke_pro",
+        }
+
     set_guest_pro(user_id, active=has_pro, source=source)
     return {"ok": True, "userId": user_id, "active": guest_has_pro(user_id)}
 

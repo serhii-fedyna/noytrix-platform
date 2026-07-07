@@ -2,7 +2,7 @@
   "expo": {
     "name": "Noytrix",
     "slug": "noytrix-s54",
-    "version": "1.0.80",
+    "version": "1.0.81",
     "scheme": "com.noytrix.app",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.noytrix.app",
-      "versionCode": 351,
+      "versionCode": 352,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-foreground.png",
@@ -90,7 +90,8 @@
       ],
       "expo-localization",
       "@react-native-firebase/app",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-font"
     ],
     "extra": {
       "eas": {
