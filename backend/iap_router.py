@@ -140,16 +140,6 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
                 active = False
                 status = "unknown"
 
-        # 2nd level: require acknowledgement if present
-        if active and ack_state is not None:
-            try:
-                if int(ack_state) == 0:
-                    active = False
-                    status = "unknown"
-            except Exception:
-                active = False
-                status = "unknown"
-
         # if canceled but still not expired -> keep active (normal behavior)
         # we store cancel_reason for analytics
 
@@ -169,16 +159,6 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
         else:
             active = False
             status = "canceled"
-
-        # 2nd level: require acknowledgement if present
-        if active and ack_state is not None:
-            try:
-                if int(ack_state) == 0:
-                    active = False
-                    status = "unknown"
-            except Exception:
-                active = False
-                status = "unknown"
 
         expiry_dt = None  # lifetime inapp => no expiry in db
 
