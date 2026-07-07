@@ -11,7 +11,7 @@ import {
 } from "react-native-iap";
 import { logEvent } from "./analytics";
 
-const BACKEND = "https://noytrix.com";
+const BACKEND = "https://api.noytrixapp.com";
 const PACKAGE_NAME = "com.noytrix.app";
 const INSTALL_UID_KEY = "noytrix.installUserId";
 

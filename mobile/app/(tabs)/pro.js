@@ -43,7 +43,7 @@ const C = {
   blue: "#9DB5FF",
 };
 
-const BACKEND = "https://noytrix.com";
+const BACKEND = "https://api.noytrixapp.com";
 
 function showAppAlert(title, message) {
   Alert.alert(String(title || ""), String(message || ""));
