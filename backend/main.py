@@ -1396,29 +1396,59 @@ def is_pro(user_id: Optional[str]) -> bool:
     if not uid_raw:
         return False
 
+    def _guest_pro_active(*ids: str) -> bool:
+        candidates = [str(x or "").strip() for x in ids if str(x or "").strip()]
+        if not candidates:
+            return False
+        try:
+            conn = _guest_pro_connect()
+            try:
+                q = ",".join(["?"] * len(candidates))
+                row = conn.execute(
+                    f"SELECT 1 FROM guest_pro WHERE is_active=1 AND user_id IN ({q}) LIMIT 1",
+                    candidates,
+                ).fetchone()
+                return bool(row)
+            finally:
+                conn.close()
+        except Exception:
+            return False
+
+    if _guest_pro_active(uid_raw, uid_raw.lower()):
+        return True
+
     try:
         conn = sqlite3.connect(str(APP_DB_PATH))
         cur = conn.cursor()
 
         try:
             uid_int = int(uid_raw)
-            cur.execute("SELECT plan FROM users WHERE id=?", (uid_int,))
+            cur.execute("SELECT id, email, nick, plan FROM users WHERE id=?", (uid_int,))
             row = cur.fetchone()
-            if row and str((row[0] or "")).strip().lower() == "pro":
+            if row and (
+                str((row[3] or "")).strip().lower() == "pro"
+                or _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower())
+            ):
                 conn.close()
                 return True
         except Exception:
             pass
 
-        cur.execute("SELECT plan FROM users WHERE lower(email)=lower(?)", (uid_raw,))
+        cur.execute("SELECT id, email, nick, plan FROM users WHERE lower(email)=lower(?)", (uid_raw,))
         row = cur.fetchone()
-        if row and str((row[0] or "")).strip().lower() == "pro":
+        if row and (
+            str((row[3] or "")).strip().lower() == "pro"
+            or _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower())
+        ):
             conn.close()
             return True
 
-        cur.execute("SELECT plan FROM users WHERE lower(nick)=lower(?)", (uid_raw,))
+        cur.execute("SELECT id, email, nick, plan FROM users WHERE lower(nick)=lower(?)", (uid_raw,))
         row = cur.fetchone()
-        if row and str((row[0] or "")).strip().lower() == "pro":
+        if row and (
+            str((row[3] or "")).strip().lower() == "pro"
+            or _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower())
+        ):
             conn.close()
             return True
 
