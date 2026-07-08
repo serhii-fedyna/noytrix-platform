@@ -112,29 +112,43 @@ export function chooseSubscriptionOffer(product, planId) {
   const offers = product?.subscriptionOfferDetailsAndroid || [];
   if (!offers.length) return null;
 
+  const offerText = (offer) =>
+    [
+      offer?.basePlanId,
+      offer?.offerId,
+      ...(Array.isArray(offer?.offerTags) ? offer.offerTags : []),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
   const exactBasePlan = SUBSCRIPTION_BASE_PLAN[planId];
   if (exactBasePlan) {
     const exact = offers.find((offer) => String(offer?.basePlanId || "").trim() === exactBasePlan);
     if (exact) return exact;
   }
 
-  const patterns =
-    planId === "l"
-      ? ["year", "annual", "12", "1y"]
-      : planId === "h"
-        ? ["6", "half", "six"]
-        : ["month", "monthly", "1m", "pro"];
+  if (planId === "m") {
+    const monthly = offers.find((offer) => {
+      const haystack = offerText(offer);
+      const isLongPlan =
+        haystack.includes("6") ||
+        haystack.includes("half") ||
+        haystack.includes("six") ||
+        haystack.includes("year") ||
+        haystack.includes("annual") ||
+        haystack.includes("12") ||
+        haystack.includes("1y");
+      return !isLongPlan && (haystack.includes("month") || haystack.includes("monthly") || haystack.includes("1m") || haystack.includes("pro"));
+    });
+    if (monthly) return monthly;
+  }
+
+  const patterns = planId === "l" ? ["year", "annual", "12", "1y"] : ["6", "half", "six"];
 
   return (
     offers.find((offer) => {
-      const haystack = [
-        offer?.basePlanId,
-        offer?.offerId,
-        ...(Array.isArray(offer?.offerTags) ? offer.offerTags : []),
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
+      const haystack = offerText(offer);
       return patterns.some((p) => haystack.includes(p));
     }) ||
     offers[0] ||
@@ -269,7 +283,9 @@ async function requestPurchaseAndWait(request) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (pendingPurchase?.reject === reject) pendingPurchase = null;
-      reject(new Error("Google Play purchase was not completed. If you closed the payment window, try again or tap Restore purchase."));
+      const error = new Error("purchase_cancelled");
+      error.code = "E_USER_CANCELLED";
+      reject(error);
     }, 90000);
 
     pendingPurchase = {
@@ -317,6 +333,13 @@ async function buyProduct(productId, planId = "m") {
   logEvent("google_play_purchase_start", { product_id: productId, product_type: productType, plan: planId });
 
   const userId = await getRevenueCatAppUserId();
+  const subscriptionOffer = isSub ? chooseSubscriptionOffer(product, planId) : null;
+  logEvent("google_play_offer_selected", {
+    product_id: productId,
+    plan: planId,
+    base_plan_id: subscriptionOffer?.basePlanId || "",
+    has_offer_token: !!subscriptionOffer?.offerToken,
+  });
   const request =
     isSub
       ? {
@@ -325,8 +348,8 @@ async function buyProduct(productId, planId = "m") {
             android: {
               skus: [productId],
               obfuscatedAccountIdAndroid: userId,
-              subscriptionOffers: chooseSubscriptionOffer(product, planId)
-                ? [{ sku: productId, offerToken: chooseSubscriptionOffer(product, planId).offerToken }]
+              subscriptionOffers: subscriptionOffer?.offerToken
+                ? [{ sku: productId, offerToken: subscriptionOffer.offerToken }]
                 : undefined,
             },
           },

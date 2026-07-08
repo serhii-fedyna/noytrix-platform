@@ -52,7 +52,14 @@ function showAppAlert(title, message) {
 
 function isUserPurchaseCancel(err) {
   const text = String(err?.code || err?.message || err || "").toLowerCase();
-  return text.includes("cancel") || text.includes("user_canceled") || text.includes("user_cancelled");
+  return (
+    text.includes("cancel") ||
+    text.includes("user_canceled") ||
+    text.includes("user_cancelled") ||
+    text.includes("purchase_cancelled") ||
+    text.includes("not completed") ||
+    text.includes("closed the payment")
+  );
 }
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -118,6 +125,8 @@ async function syncLocalProFlags(ent) {
 async function syncGuestProOnServer(ent) {
   try {
     const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly);
+    if (!hasPro) return;
+
     const userId = await getOrCreateInstallUserId();
 
     const response = await fetch(`${BACKEND}/iap/guest/activate`, {
@@ -247,6 +256,7 @@ export default function ProScreen() {
       console.log("handleBuy error", err);
       logEvent("purchase_error", { screen: "pro", plan: planId, price_label: priceFor(planId), err: String(err?.message || err || "error") });
       if (isUserPurchaseCancel(err)) {
+        logEvent("purchase_cancelled", { screen: "pro", plan: planId, price_label: priceFor(planId) });
         return;
       }
       showAppAlert(t("pro.alerts.errorTitle"), err?.message || t("pro.alerts.errorFallback"));
@@ -265,7 +275,13 @@ export default function ProScreen() {
       await syncGuestProOnServer(e);
       logEvent("restore_success", { screen: "pro", pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
 
-      showAppAlert(t("pro.restoreTitle", "Restore"), t("pro.restoreSuccess", "Purchases restored."));
+      const restored = !!(e?.proMonthly || e?.pro6m || e?.proYearly);
+      showAppAlert(
+        t("pro.restoreTitle", "Restore"),
+        restored
+          ? t("pro.restoreSuccess", "Purchases restored.")
+          : t("pro.restoreEmpty", "No active Google Play purchase was found for this account.")
+      );
     } catch (err) {
       console.log("handleRestore error", err);
       logEvent("restore_error", { screen: "pro", err: String(err?.message || err || "error") });
