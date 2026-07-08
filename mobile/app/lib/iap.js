@@ -35,6 +35,12 @@ const PLAN_PRODUCT = {
   lifetime: PRODUCT_IDS.proLifetime,
 };
 
+const SUBSCRIPTION_BASE_PLAN = {
+  m: "pro",
+  h: "pro6month",
+  l: "pro-1year",
+};
+
 let iapConfigured = false;
 let cachedProducts = { products: [], subs: [] };
 let updateSub = null;
@@ -106,12 +112,18 @@ export function chooseSubscriptionOffer(product, planId) {
   const offers = product?.subscriptionOfferDetailsAndroid || [];
   if (!offers.length) return null;
 
+  const exactBasePlan = SUBSCRIPTION_BASE_PLAN[planId];
+  if (exactBasePlan) {
+    const exact = offers.find((offer) => String(offer?.basePlanId || "").trim() === exactBasePlan);
+    if (exact) return exact;
+  }
+
   const patterns =
     planId === "l"
       ? ["year", "annual", "12", "1y"]
       : planId === "h"
         ? ["6", "half", "six"]
-        : ["month", "monthly", "1m"];
+        : ["month", "monthly", "1m", "pro"];
 
   return (
     offers.find((offer) => {
@@ -248,25 +260,45 @@ export async function loadIap() {
   }
 }
 
-async function waitForPurchaseResult(result) {
-  const immediate = normalizePurchaseResult(result);
-  if (immediate && purchaseTokenOf(immediate)) return immediate;
+async function requestPurchaseAndWait(request) {
+  if (pendingPurchase?.reject) {
+    pendingPurchase.reject(new Error("Previous purchase request was replaced."));
+    pendingPurchase = null;
+  }
 
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (pendingPurchase?.reject === reject) pendingPurchase = null;
-      reject(new Error("Google Play did not return a purchase yet. If payment completed, tap Restore purchase."));
+      reject(new Error("Google Play purchase was not completed. If you closed the payment window, try again or tap Restore purchase."));
     }, 90000);
+
     pendingPurchase = {
       resolve: (purchase) => {
         clearTimeout(timeout);
+        pendingPurchase = null;
         resolve(purchase);
       },
       reject: (error) => {
         clearTimeout(timeout);
+        pendingPurchase = null;
         reject(error);
       },
     };
+
+    requestPurchase(request)
+      .then((result) => {
+        const immediate = normalizePurchaseResult(result);
+        if (immediate && purchaseTokenOf(immediate) && pendingPurchase?.resolve) {
+          pendingPurchase.resolve(immediate);
+        }
+      })
+      .catch((error) => {
+        if (pendingPurchase?.reject) {
+          pendingPurchase.reject(error);
+        } else {
+          reject(error);
+        }
+      });
   });
 }
 
@@ -309,8 +341,7 @@ async function buyProduct(productId, planId = "m") {
           },
         };
 
-  const result = await requestPurchase(request);
-  const purchase = await waitForPurchaseResult(result);
+  const purchase = await requestPurchaseAndWait(request);
   const verified = await verifyPurchaseOnServer(purchase, productId);
 
   if (verified.active) {

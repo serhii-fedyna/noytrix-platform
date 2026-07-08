@@ -50,6 +50,11 @@ function showAppAlert(title, message) {
   Alert.alert(String(title || ""), String(message || ""));
 }
 
+function isUserPurchaseCancel(err) {
+  const text = String(err?.code || err?.message || err || "").toLowerCase();
+  return text.includes("cancel") || text.includes("user_canceled") || text.includes("user_cancelled");
+}
+
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -241,6 +246,9 @@ export default function ProScreen() {
     } catch (err) {
       console.log("handleBuy error", err);
       logEvent("purchase_error", { screen: "pro", plan: planId, price_label: priceFor(planId), err: String(err?.message || err || "error") });
+      if (isUserPurchaseCancel(err)) {
+        return;
+      }
       showAppAlert(t("pro.alerts.errorTitle"), err?.message || t("pro.alerts.errorFallback"));
     } finally {
       setLoading(false);
