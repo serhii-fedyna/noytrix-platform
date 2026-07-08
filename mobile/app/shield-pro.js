@@ -716,7 +716,7 @@ function explainBackendMessage(raw, lang) {
   if (!s) {
     return pickLang(
       lang,
-      "",
+      "Сервер не вернул данные для этой проверки. Попробуй еще раз через несколько секунд.",
       "The server did not return data for this check. Try again in a few seconds."
     );
   }
@@ -724,7 +724,7 @@ function explainBackendMessage(raw, lang) {
   if (s.includes("429") || s.includes("quota") || s.includes("limit")) {
     return pickLang(
       lang,
-      "",
+      "Сервер вернул лимит проверки. Для PRO этого быть не должно, попробуй открыть профиль и восстановить покупку.",
       "The server unexpectedly returned a rate-limit response. This should not happen for PRO."
     );
   }
@@ -732,7 +732,7 @@ function explainBackendMessage(raw, lang) {
   if (s.includes("403") || s.includes("forbidden") || s.includes("app key")) {
     return pickLang(
       lang,
-      "",
+      "Проверка сейчас недоступна из-за ограничения доступа. Перезапусти приложение и попробуй снова.",
       "The check is currently unavailable because of access restrictions. Reopen the app and try again."
     );
   }
@@ -740,7 +740,7 @@ function explainBackendMessage(raw, lang) {
   if (s.includes("network request failed") || s.includes("failed to fetch") || s.includes("fetch")) {
     return pickLang(
       lang,
-      "",
+      "Не удалось подключиться к серверу. Проверь интернет и попробуй снова.",
       "We could not reach the server. Check your connection and try again."
     );
   }
@@ -748,7 +748,7 @@ function explainBackendMessage(raw, lang) {
   if (s.includes("timeout") || s.includes("aborted")) {
     return pickLang(
       lang,
-      "",
+      "Сервер отвечал слишком долго. Попробуй еще раз немного позже.",
       "The server took too long to respond. Please try again a bit later."
     );
   }
@@ -756,7 +756,7 @@ function explainBackendMessage(raw, lang) {
   if (s.includes("http 500") || s.includes("scan failed")) {
     return pickLang(
       lang,
-      "",
+      "Сервер не смог завершить проверку прямо сейчас. Попробуй еще раз позже.",
       "The server could not complete the check right now. Please try again later."
     );
   }
@@ -764,14 +764,14 @@ function explainBackendMessage(raw, lang) {
   if (s.includes("invalid json")) {
     return pickLang(
       lang,
-      "",
+      "Сервер вернул неполный ответ. Запусти проверку еще раз.",
       "The server returned an incomplete response. Please run the check again."
     );
   }
 
   return pickLang(
     lang,
-    "",
+    "Проверку не удалось завершить прямо сейчас. Попробуй еще раз через несколько секунд.",
     "The check could not be completed right now. Please try again in a few seconds."
   );
 }
@@ -2008,7 +2008,37 @@ ${uri}`,
         throw new Error(String(backend?.detail || `HTTP ${res.status}`));
       }
 
-      const normalized = normalizeScanReport(backend, currentLang);
+      let normalized = null;
+      try {
+        normalized = normalizeScanReport(backend, currentLang);
+      } catch {
+        normalized = {
+          input: backend?.input || raw,
+          normalized_input: backend?.normalized_input || raw,
+          kind: detectKind(backend?.kind || backend?.input || raw),
+          score: Number(backend?.score || 0) || 0,
+          level: String(backend?.level || "unknown").toLowerCase(),
+          verdictLabel:
+            backend?.ai_verdict_localized ||
+            backend?.verdict_localized ||
+            backend?.ai_verdict ||
+            backend?.verdict ||
+            "",
+          sources: Array.isArray(backend?.sources) ? backend.sources : [],
+          evidenceList: Array.isArray(backend?.evidence) ? backend.evidence : [],
+          scoring: backend?.scoring || {},
+          community: backend?.community || {},
+          details: backend?.details || {},
+          backendDetails: {},
+          quota: backend?.quota || null,
+          what_can_happen: backend?.what_can_happen || "",
+          worst_case: backend?.worst_case || "",
+          permissions_summary: backend?.permissions_summary || null,
+          risk_reasons: Array.isArray(backend?.risk_reasons) ? backend.risk_reasons : [],
+          confirmedRedFlag: !!backend?.confirmed_red_flag,
+        };
+      }
+      if (!normalized) throw new Error("empty_scan_result");
       setOut(normalized);
 
       const uv = backend?.user_vote || backend?.vote || null;

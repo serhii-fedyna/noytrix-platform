@@ -1792,67 +1792,137 @@ def _scan_client_safe_response(data: dict) -> dict:
     if not isinstance(data, dict):
         return data
 
-    safe = dict(data)
-    safe.pop("raw", None)
+    def primitive(value):
+        return value is None or isinstance(value, (str, int, float, bool))
+
+    def primitive_dict(value, keys):
+        if not isinstance(value, dict):
+            return {}
+        return {k: value.get(k) for k in keys if primitive(value.get(k))}
+
+    scalar_keys = (
+        "ok",
+        "version",
+        "engine",
+        "latency_ms",
+        "input",
+        "normalized_input",
+        "kind",
+        "score",
+        "internal_score",
+        "external_score",
+        "internal_level",
+        "external_level",
+        "internal_red_flag",
+        "external_red_flag",
+        "internal_only",
+        "confidence",
+        "confidence_score",
+        "level",
+        "verdict",
+        "risk_type",
+        "cached",
+        "cache_source",
+        "summary",
+        "what_can_happen",
+        "worst_case",
+        "how_it_works",
+        "recommended_action",
+        "honeypot_verdict",
+        "honeypot_status",
+        "honeypot_risk",
+        "confirmed_red_flag",
+        "isPro",
+    )
+    safe = {k: data.get(k) for k in scalar_keys if primitive(data.get(k))}
 
     for key in (
-        "ai_investigation",
-        "multi_chain_intelligence",
-        "runtime_contract",
-        "graph",
-        "reputation",
-        "threat_memory",
+        "ai_verdict",
+        "ai_verdict_en",
+        "ai_verdict_ru",
+        "ai_verdict_localized",
+        "verdict_en",
+        "verdict_ru",
+        "verdict_localized",
+        "kind_localized",
     ):
-        safe.pop(key, None)
+        if primitive(data.get(key)):
+            safe[key] = data.get(key)
 
-    details = safe.get("details")
-    if isinstance(details, dict):
-        compact_details = dict(details)
-        for key in (
-            "internal_verdict",
-            "ai_investigation",
-            "multi_chain_intelligence",
-            "runtime_contract",
-            "graph",
-            "reputation",
-            "threat_memory",
-            "evidence_trace",
-        ):
-            compact_details.pop(key, None)
+    quota = data.get("quota")
+    safe["quota"] = primitive_dict(quota, ("limit", "used", "left", "is_pro", "plan"))
+    if not safe["quota"]:
+        safe["quota"] = {"limit": 999999, "used": 0, "left": 999999, "is_pro": bool(data.get("isPro"))}
+    if data.get("isPro"):
+        safe["quota"]["limit"] = safe["quota"].get("limit") or 999999
+        safe["quota"]["used"] = safe["quota"].get("used") or 0
+        safe["quota"]["left"] = safe["quota"].get("left") or 999999
+        safe["quota"]["is_pro"] = True
+        safe["quota"]["plan"] = safe["quota"].get("plan") or "PRO"
 
-        token = compact_details.get("token")
-        if isinstance(token, dict):
-            compact_token = dict(token)
-            for key in ("raw", "market_data", "pairs", "holders", "transactions", "links", "socials"):
-                value = compact_token.get(key)
-                if isinstance(value, (dict, list)):
-                    compact_token.pop(key, None)
-            compact_details["token"] = compact_token
+    scoring = data.get("scoring")
+    safe["scoring"] = primitive_dict(
+        scoring,
+        (
+            "internal_confirmed_signals",
+            "external_confirmed_signals",
+            "confirmed_external_signals",
+            "heuristics",
+            "page_content",
+            "community_votes",
+        ),
+    )
 
-        top = compact_details.get("top_score_contributors")
-        if isinstance(top, list):
-            compact_details["top_score_contributors"] = top[:8]
+    community = data.get("community")
+    safe["community"] = primitive_dict(
+        community,
+        ("community_verdict", "safe_votes", "scam_votes", "total_users", "immunity_score"),
+    )
 
-        hard = compact_details.get("hard_evidence_codes")
-        if isinstance(hard, list):
-            compact_details["hard_evidence_codes"] = hard[:20]
+    permissions = data.get("permissions_summary")
+    if isinstance(permissions, dict):
+        safe["permissions_summary"] = primitive_dict(
+            permissions,
+            ("can_spend", "unlimited", "spend_limit", "revoke_difficulty", "summary"),
+        )
+        tokens = permissions.get("tokens")
+        if isinstance(tokens, list):
+            safe["permissions_summary"]["tokens"] = [str(t) for t in tokens[:8]]
+    else:
+        safe["permissions_summary"] = {
+            "can_spend": False,
+            "unlimited": False,
+            "tokens": [],
+            "spend_limit": None,
+            "revoke_difficulty": "unknown",
+            "summary": "",
+        }
 
-        safe["details"] = compact_details
+    stolen = data.get("what_can_be_stolen")
+    safe["what_can_be_stolen"] = [str(x) for x in stolen[:12]] if isinstance(stolen, list) else []
 
-    token = safe.get("token")
-    if isinstance(token, dict):
-        compact_token = dict(token)
-        for key in ("raw", "market_data", "pairs", "holders", "transactions", "links", "socials"):
-            value = compact_token.get(key)
-            if isinstance(value, (dict, list)):
-                compact_token.pop(key, None)
-        safe["token"] = compact_token
+    reasons = data.get("risk_reasons")
+    safe["risk_reasons"] = [str(x) for x in reasons[:12]] if isinstance(reasons, list) else []
 
-    if isinstance(safe.get("sources"), list):
-        compact_sources = []
-        for src in safe["sources"][:20]:
+    evidence = []
+    if isinstance(data.get("evidence"), list):
+        for item in data["evidence"][:12]:
+            if isinstance(item, dict):
+                evidence.append(
+                    {
+                        k: item.get(k)
+                        for k in ("source", "code", "severity", "text", "label", "message")
+                        if primitive(item.get(k))
+                    }
+                )
+            elif primitive(item):
+                evidence.append({"text": str(item)})
+    safe["evidence"] = evidence
+
+    sources = []
+    if isinstance(data.get("sources"), list):
+        for src in data["sources"][:12]:
             if not isinstance(src, dict):
-                compact_sources.append(src)
                 continue
             item = {
                 "name": src.get("name") or src.get("source"),
@@ -1863,20 +1933,44 @@ def _scan_client_safe_response(data: dict) -> dict:
             }
             details_value = src.get("details")
             if isinstance(details_value, dict):
-                item["details"] = {
-                    k: v
-                    for k, v in details_value.items()
-                    if k in {"status_code", "configured", "analysis_stats", "risk", "chain", "chain_id", "address"}
-                    and not isinstance(v, (dict, list))
-                }
-            compact_sources.append({k: v for k, v in item.items() if v is not None})
-        safe["sources"] = compact_sources
-    if isinstance(safe.get("evidence"), list):
-        safe["evidence"] = safe["evidence"][:30]
-    if isinstance(safe.get("risk_reasons"), list):
-        safe["risk_reasons"] = safe["risk_reasons"][:20]
-    if isinstance(safe.get("what_can_be_stolen"), list):
-        safe["what_can_be_stolen"] = safe["what_can_be_stolen"][:20]
+                item["details"] = primitive_dict(
+                    details_value,
+                    ("status_code", "configured", "risk", "chain", "chain_id", "address"),
+                )
+            sources.append({k: v for k, v in item.items() if primitive(v) or isinstance(v, dict)})
+    safe["sources"] = sources
+
+    raw_details = data.get("details") if isinstance(data.get("details"), dict) else {}
+    details = {
+        "page": primitive_dict(raw_details.get("page"), ("domain", "final_url", "status_code", "title")),
+        "noytrix_scam_database": primitive_dict(
+            raw_details.get("noytrix_scam_database"),
+            ("matched", "match", "source", "reason", "status", "label"),
+        ),
+        "false_positive_safety_gate": primitive_dict(
+            raw_details.get("false_positive_safety_gate"),
+            ("applied", "reason", "trusted_domain", "downgraded"),
+        ),
+        "token": None,
+    }
+
+    top = raw_details.get("top_score_contributors")
+    if isinstance(top, list):
+        details["top_score_contributors"] = []
+        for item in top[:8]:
+            if isinstance(item, dict):
+                details["top_score_contributors"].append(
+                    {k: item.get(k) for k in ("source", "code", "score", "label", "reason") if primitive(item.get(k))}
+                )
+            elif primitive(item):
+                details["top_score_contributors"].append({"label": str(item)})
+    else:
+        details["top_score_contributors"] = []
+
+    hard = raw_details.get("hard_evidence_codes")
+    details["hard_evidence_codes"] = [str(x) for x in hard[:20]] if isinstance(hard, list) else []
+    details["hard_evidence_found"] = bool(raw_details.get("hard_evidence_found"))
+    safe["details"] = details
 
     return safe
 
