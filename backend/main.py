@@ -1162,6 +1162,34 @@ def guest_has_pro(user_id: Optional[str]) -> bool:
     finally:
         conn.close()
 
+def _payload_bool(payload: dict, keys: list[str]) -> Optional[bool]:
+    for key in keys:
+        if key not in payload:
+            continue
+        value = payload.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "y", "active", "pro", "premium"}:
+                return True
+            if normalized in {"0", "false", "no", "n", "inactive", "free"}:
+                return False
+    return None
+
+def _iap_status_payload(user_id: Optional[str]) -> dict:
+    active = guest_has_pro(user_id)
+    return {
+        "ok": True,
+        "userId": (str(user_id or "").strip() or None),
+        "active": active,
+        "isPro": active,
+        "pro": active,
+        "plan": "PRO" if active else "FREE",
+    }
+
 def _google_play_access_token() -> str:
     sa_path = (os.getenv("GOOGLE_PLAY_SA_JSON") or "").strip()
     if not sa_path or not os.path.exists(sa_path):
@@ -1285,23 +1313,24 @@ async def iap_guest_activate(request: Request, payload: dict = Body(...), lang: 
     if not user_id:
         raise HTTPException(status_code=400, detail="Missing userId")
 
-    has_pro = bool(payload.get("hasPro", True))
+    has_pro = _payload_bool(payload, ["hasPro", "isPro", "active", "pro", "premium", "entitlementActive"])
+    if has_pro is None:
+        has_pro = True
     source = str(payload.get("source") or "guest_iap").strip()
 
     if not has_pro:
         # RevenueCat can briefly return no active entitlement during app start,
         # restore, network errors, or anonymous->stable appUserID transitions.
         # A client-side false must not revoke a paid server-side PRO record.
-        return {
-            "ok": True,
-            "userId": user_id,
-            "active": guest_has_pro(user_id),
+        out = _iap_status_payload(user_id)
+        out.update({
             "ignored": True,
             "reason": "client_false_does_not_revoke_pro",
-        }
+        })
+        return out
 
     set_guest_pro(user_id, active=has_pro, source=source)
-    return {"ok": True, "userId": user_id, "active": guest_has_pro(user_id)}
+    return _iap_status_payload(user_id)
 
 @app.get("/iap/guest/status")
 async def iap_guest_status(request: Request, userId: str | None = None):
@@ -1311,7 +1340,7 @@ async def iap_guest_status(request: Request, userId: str | None = None):
         or str(request.headers.get("x_user_id") or "").strip()
         or str(request.headers.get("user-id") or "").strip()
     )
-    return {"ok": True, "userId": uid or None, "active": guest_has_pro(uid)}
+    return _iap_status_payload(uid)
 
 # =========================================================
 # QUOTA
