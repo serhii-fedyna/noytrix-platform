@@ -787,8 +787,8 @@ function normalizeScanReport(raw, currentLang) {
   const score = Number(raw.score || 0) || 0;
   const level = String(raw.level || "safe").toLowerCase();
   const details = raw.details || {};
-  const token = details.token || {};
-  const honeypot = token.honeypot || null;
+  const token = hasObjectData(details.token) ? details.token : null;
+  const honeypot = token?.honeypot || null;
   const topContributors = Array.isArray(details.top_score_contributors) ? details.top_score_contributors : [];
 
   return {
@@ -2072,7 +2072,7 @@ ${uri}`,
         };
       }
       if (!normalized) throw new Error("empty_scan_result");
-      setOut(normalized);
+      setOut(backend);
 
       const uv = backend?.user_vote || backend?.vote || null;
       if (uv === "scam" || uv === "safe") setMyVote(uv);

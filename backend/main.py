@@ -1795,64 +1795,63 @@ def _scan_client_safe_response(data: dict) -> dict:
     def primitive(value):
         return value is None or isinstance(value, (str, int, float, bool))
 
-    def primitive_dict(value, keys):
-        if not isinstance(value, dict):
-            return {}
-        return {k: value.get(k) for k in keys if primitive(value.get(k))}
+    def text_value(*values):
+        for value in values:
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
 
-    scalar_keys = (
-        "ok",
-        "version",
-        "engine",
-        "latency_ms",
-        "input",
-        "normalized_input",
-        "kind",
-        "score",
-        "internal_score",
-        "external_score",
-        "internal_level",
-        "external_level",
-        "internal_red_flag",
-        "external_red_flag",
-        "internal_only",
-        "confidence",
-        "confidence_score",
-        "level",
-        "verdict",
-        "risk_type",
-        "cached",
-        "cache_source",
-        "summary",
-        "what_can_happen",
-        "worst_case",
-        "how_it_works",
-        "recommended_action",
-        "honeypot_verdict",
-        "honeypot_status",
-        "honeypot_risk",
-        "confirmed_red_flag",
-        "isPro",
+    score = int(data.get("score") or 0)
+    level = text_value(data.get("level"), data.get("verdict"), "safe").lower()
+    kind = text_value(data.get("kind"), data.get("risk_type"), "text").lower()
+    verdict = text_value(
+        data.get("verdict_localized"),
+        data.get("ai_verdict_localized"),
+        data.get("verdict_ru"),
+        data.get("ai_verdict_ru"),
+        data.get("verdict_en"),
+        data.get("ai_verdict_en"),
+        data.get("verdict"),
+        data.get("level"),
+        level,
     )
-    safe = {k: data.get(k) for k in scalar_keys if primitive(data.get(k))}
 
-    for key in (
-        "ai_verdict",
-        "ai_verdict_en",
-        "ai_verdict_ru",
-        "ai_verdict_localized",
-        "verdict_en",
-        "verdict_ru",
-        "verdict_localized",
-        "kind_localized",
-    ):
-        if primitive(data.get(key)):
-            safe[key] = data.get(key)
+    safe = {
+        "ok": True,
+        "version": "v1",
+        "engine": "noytrix_security_core",
+        "input": text_value(data.get("input"), data.get("normalized_input")),
+        "normalized_input": text_value(data.get("normalized_input"), data.get("input")),
+        "kind": kind,
+        "score": score,
+        "level": level,
+        "verdict": verdict or level,
+        "risk_type": kind,
+        "confidence": int(data.get("confidence") or data.get("confidence_score") or 0),
+        "confidence_score": int(data.get("confidence_score") or data.get("confidence") or 0),
+        "isPro": bool(data.get("isPro")),
+        "confirmed_red_flag": bool(data.get("confirmed_red_flag")),
+        "ai_verdict": verdict or level,
+        "ai_verdict_en": text_value(data.get("ai_verdict_en"), data.get("verdict_en"), verdict, level),
+        "ai_verdict_ru": text_value(data.get("ai_verdict_ru"), data.get("verdict_ru"), verdict, level),
+        "ai_verdict_localized": verdict or level,
+        "verdict_localized": verdict or level,
+        "what_can_happen": text_value(data.get("what_can_happen")),
+        "worst_case": text_value(data.get("worst_case")),
+        "summary": text_value(data.get("summary")),
+    }
 
     quota = data.get("quota")
-    safe["quota"] = primitive_dict(quota, ("limit", "used", "left", "is_pro", "plan"))
-    if not safe["quota"]:
-        safe["quota"] = {"limit": 999999, "used": 0, "left": 999999, "is_pro": bool(data.get("isPro"))}
+    if isinstance(quota, dict):
+        safe["quota"] = {
+            "limit": int(quota.get("limit") or 999999),
+            "used": int(quota.get("used") or 0),
+            "left": int(quota.get("left") or 999999),
+            "is_pro": bool(quota.get("is_pro") or data.get("isPro")),
+            "plan": text_value(quota.get("plan"), "PRO" if data.get("isPro") else "Free"),
+        }
+    else:
+        safe["quota"] = {"limit": 999999, "used": 0, "left": 999999, "is_pro": bool(data.get("isPro")), "plan": "PRO" if data.get("isPro") else "Free"}
     if data.get("isPro"):
         safe["quota"]["limit"] = safe["quota"].get("limit") or 999999
         safe["quota"]["used"] = safe["quota"].get("used") or 0
@@ -1860,116 +1859,54 @@ def _scan_client_safe_response(data: dict) -> dict:
         safe["quota"]["is_pro"] = True
         safe["quota"]["plan"] = safe["quota"].get("plan") or "PRO"
 
-    scoring = data.get("scoring")
-    safe["scoring"] = primitive_dict(
-        scoring,
-        (
-            "internal_confirmed_signals",
-            "external_confirmed_signals",
-            "confirmed_external_signals",
-            "heuristics",
-            "page_content",
-            "community_votes",
-        ),
-    )
+    safe["scoring"] = {
+        "internal_confirmed_signals": 0,
+        "external_confirmed_signals": 0,
+        "confirmed_external_signals": 0,
+        "heuristics": 0,
+        "page_content": 0,
+        "community_votes": 0,
+    }
+    if isinstance(data.get("scoring"), dict):
+        for key in safe["scoring"]:
+            value = data["scoring"].get(key)
+            safe["scoring"][key] = int(value or 0) if primitive(value) else 0
 
-    community = data.get("community")
-    safe["community"] = primitive_dict(
-        community,
-        ("community_verdict", "safe_votes", "scam_votes", "total_users", "immunity_score"),
-    )
-
-    permissions = data.get("permissions_summary")
-    if isinstance(permissions, dict):
-        safe["permissions_summary"] = primitive_dict(
-            permissions,
-            ("can_spend", "unlimited", "spend_limit", "revoke_difficulty", "summary"),
-        )
-        tokens = permissions.get("tokens")
-        if isinstance(tokens, list):
-            safe["permissions_summary"]["tokens"] = [str(t) for t in tokens[:8]]
-    else:
-        safe["permissions_summary"] = {
-            "can_spend": False,
-            "unlimited": False,
-            "tokens": [],
-            "spend_limit": None,
-            "revoke_difficulty": "unknown",
-            "summary": "",
-        }
-
-    stolen = data.get("what_can_be_stolen")
-    safe["what_can_be_stolen"] = [str(x) for x in stolen[:12]] if isinstance(stolen, list) else []
-
-    reasons = data.get("risk_reasons")
-    safe["risk_reasons"] = [str(x) for x in reasons[:12]] if isinstance(reasons, list) else []
+    safe["community"] = {
+        "community_verdict": "unknown",
+        "safe_votes": 0,
+        "scam_votes": 0,
+        "total_users": 0,
+        "immunity_score": 0,
+    }
 
     evidence = []
     if isinstance(data.get("evidence"), list):
-        for item in data["evidence"][:12]:
+        for item in data["evidence"][:6]:
             if isinstance(item, dict):
-                evidence.append(
-                    {
-                        k: item.get(k)
-                        for k in ("source", "code", "severity", "text", "label", "message")
-                        if primitive(item.get(k))
-                    }
-                )
+                evidence.append({
+                    "source": text_value(item.get("source")),
+                    "code": text_value(item.get("code"), item.get("label"), "signal"),
+                    "severity": int(item.get("severity") or 0),
+                    "text": text_value(item.get("text"), item.get("message"), item.get("label"), item.get("code")),
+                })
             elif primitive(item):
                 evidence.append({"text": str(item)})
     safe["evidence"] = evidence
 
     sources = []
     if isinstance(data.get("sources"), list):
-        for src in data["sources"][:12]:
+        for src in data["sources"][:6]:
             if not isinstance(src, dict):
                 continue
-            item = {
-                "name": src.get("name") or src.get("source"),
-                "source": src.get("source") or src.get("name"),
-                "status": src.get("status"),
-                "verdict": src.get("verdict"),
-                "status_text": src.get("status_text"),
-            }
-            details_value = src.get("details")
-            if isinstance(details_value, dict):
-                item["details"] = primitive_dict(
-                    details_value,
-                    ("status_code", "configured", "risk", "chain", "chain_id", "address"),
-                )
-            sources.append({k: v for k, v in item.items() if primitive(v) or isinstance(v, dict)})
+            sources.append({
+                "name": text_value(src.get("name"), src.get("source"), "source"),
+                "source": text_value(src.get("source"), src.get("name"), "source"),
+                "status": text_value(src.get("status"), "no_data"),
+                "verdict": text_value(src.get("verdict"), "unknown"),
+                "status_text": text_value(src.get("status_text")),
+            })
     safe["sources"] = sources
-
-    raw_details = data.get("details") if isinstance(data.get("details"), dict) else {}
-    details = {
-        "page": primitive_dict(raw_details.get("page"), ("domain", "final_url", "status_code", "title")),
-        "noytrix_scam_database": primitive_dict(
-            raw_details.get("noytrix_scam_database"),
-            ("matched", "match", "source", "reason", "status", "label"),
-        ),
-        "false_positive_safety_gate": primitive_dict(
-            raw_details.get("false_positive_safety_gate"),
-            ("applied", "reason", "trusted_domain", "downgraded"),
-        ),
-    }
-
-    top = raw_details.get("top_score_contributors")
-    if isinstance(top, list):
-        details["top_score_contributors"] = []
-        for item in top[:8]:
-            if isinstance(item, dict):
-                details["top_score_contributors"].append(
-                    {k: item.get(k) for k in ("source", "code", "score", "label", "reason") if primitive(item.get(k))}
-                )
-            elif primitive(item):
-                details["top_score_contributors"].append({"label": str(item)})
-    else:
-        details["top_score_contributors"] = []
-
-    hard = raw_details.get("hard_evidence_codes")
-    details["hard_evidence_codes"] = [str(x) for x in hard[:20]] if isinstance(hard, list) else []
-    details["hard_evidence_found"] = bool(raw_details.get("hard_evidence_found"))
-    safe["details"] = details
 
     return safe
 
