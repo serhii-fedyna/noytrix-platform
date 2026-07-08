@@ -23,6 +23,7 @@ import {
   restorePurchases,
   checkEntitlements,
   getRevenueCatAppUserId,
+  chooseSubscriptionOffer,
 } from "../lib/iap";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
@@ -61,6 +62,16 @@ const plans = [
 
 const usd = (n) => `$${Number(n).toFixed(2)}`;
 const LOCAL_PRICES = { m: 9.99, h: 49.99, l: 199.99 };
+
+function normalizeProductId(product) {
+  return String(product?.id || product?.productId || "").trim();
+}
+
+function priceFromOffer(offer) {
+  const phases = offer?.pricingPhases?.pricingPhaseList || [];
+  const recurring = phases.find((p) => Number(p?.recurrenceMode) === 1) || phases[phases.length - 1] || phases[0];
+  return recurring?.formattedPrice || "";
+}
 
 async function getOrCreateInstallUserId() {
   return getRevenueCatAppUserId();
@@ -142,7 +153,7 @@ export default function ProScreen() {
     pro6m: false,
     proYearly: false,
   });
-  const [subs, setSubs] = useState([]);
+  const [storeProducts, setStoreProducts] = useState({ products: [], subs: [] });
 
   const { t } = useTranslation();
 
@@ -157,11 +168,18 @@ export default function ProScreen() {
     setOpenFaq((prev) => (prev === i ? -1 : i));
   };
 
-  const priceFor = useCallback((planId) => {
-    const base = LOCAL_PRICES[planId];
-    if (!base) return "";
-    return usd(base);
-  }, []);
+  const priceFor = useCallback(
+    (planId) => {
+      const subscription = (storeProducts.subs || []).find((p) => normalizeProductId(p) === "pro_access") || (storeProducts.subs || [])[0];
+      const offerPrice = priceFromOffer(chooseSubscriptionOffer(subscription, planId));
+      if (offerPrice) return offerPrice;
+
+      const base = LOCAL_PRICES[planId];
+      if (!base) return "";
+      return usd(base);
+    },
+    [storeProducts]
+  );
 
   const cardChrome = useCallback(
     () => ({
@@ -182,10 +200,13 @@ export default function ProScreen() {
     (async () => {
       try {
         await iapInit();
-        const { subs: subsList } = await loadIap();
-        setSubs(subsList || []);
+        const loaded = await loadIap();
+        setStoreProducts({
+          products: loaded?.products || [],
+          subs: loaded?.subs || [],
+        });
 
-        const e = await checkEntitlements();
+        const e = await checkEntitlements({ skipRestore: true });
         setEnt(e);
         await syncLocalProFlags(e);
         await syncGuestProOnServer(e);
@@ -199,7 +220,7 @@ export default function ProScreen() {
 
   const handleBuy = async (planId) => {
     try {
-      logEvent("purchase_start", { screen: "pro", plan: planId, price_usd: LOCAL_PRICES[planId] || 0, currency: "USD" });
+      logEvent("purchase_start", { screen: "pro", plan: planId, price_label: priceFor(planId) });
       setLoading(true);
 
       if (planId === "m") {
@@ -214,12 +235,12 @@ export default function ProScreen() {
       setEnt(e);
       await syncLocalProFlags(e);
       await syncGuestProOnServer(e);
-      logEvent("purchase_success", { screen: "pro", plan: planId, price_usd: LOCAL_PRICES[planId] || 0, currency: "USD", pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
+      logEvent("purchase_success", { screen: "pro", plan: planId, price_label: priceFor(planId), pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
 
       showAppAlert(t("pro.alerts.purchaseTitle"), t("pro.alerts.purchaseBody"));
     } catch (err) {
       console.log("handleBuy error", err);
-      logEvent("purchase_error", { screen: "pro", plan: planId, price_usd: LOCAL_PRICES[planId] || 0, currency: "USD", err: String(err?.message || err || "error") });
+      logEvent("purchase_error", { screen: "pro", plan: planId, price_label: priceFor(planId), err: String(err?.message || err || "error") });
       showAppAlert(t("pro.alerts.errorTitle"), err?.message || t("pro.alerts.errorFallback"));
     } finally {
       setLoading(false);
@@ -404,9 +425,8 @@ export default function ProScreen() {
                         isActive && { backgroundColor: "rgba(255,255,255,0.10)" },
                         loading && { opacity: 0.6 },
                       ]}
-                      onPress={() => !loading && handleBuy(p.id)}
+                      onPress={() => handleBuy(p.id)}
                       activeOpacity={0.9}
-                      disabled={loading}
                     >
                       <Text style={[s.buyText, isActive ? { color: C.text } : { color: C.black }]}>
                         {labelForPlan(p.id)}
@@ -431,7 +451,6 @@ export default function ProScreen() {
                 style={s.restoreBtn}
                 onPress={handleRestore}
                 activeOpacity={0.85}
-                disabled={loading}
               >
                 <Ionicons name="refresh-outline" size={15} color={C.sub} style={{ marginRight: 6 }} />
                 <Text style={s.restoreText}>{t("pro.restoreButton", "Restore purchase")}</Text>
@@ -554,7 +573,6 @@ export default function ProScreen() {
                     style={s.ctaBtn}
                     onPress={() => handleBuy("m")}
                     activeOpacity={0.9}
-                    disabled={loading}
                   >
                     <Text style={s.ctaText}>{t("pro.join.ctaBuy", "Get full protection")}</Text>
                   </TouchableOpacity>

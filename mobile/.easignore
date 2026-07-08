@@ -1,6 +1,11 @@
 # Dependencies
 node_modules/
 
+# Local editor/repository metadata
+.git/
+.vscode/
+.idea/
+
 # Local env files and secrets
 .env*
 .*.env
@@ -14,6 +19,7 @@ node_modules/
 
 # Build and generated output
 android/.gradle/
+android/.cxx/
 android/build/
 android/app/build/
 ios/build/
@@ -31,6 +37,7 @@ npm-debug.*
 yarn-debug.*
 yarn-error.*
 .metro-health-check*
+*.tmp
 
 # Archives
 *.tar.gz

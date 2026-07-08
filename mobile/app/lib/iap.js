@@ -102,7 +102,7 @@ function entitlementFromProduct(productId) {
   };
 }
 
-function chooseSubscriptionOffer(product, planId) {
+export function chooseSubscriptionOffer(product, planId) {
   const offers = product?.subscriptionOfferDetailsAndroid || [];
   if (!offers.length) return null;
 
@@ -382,12 +382,16 @@ export async function restorePurchases() {
   }
 }
 
-export async function checkEntitlements() {
+export async function checkEntitlements(options = {}) {
   try {
     const status = await serverStatus().catch(() => null);
     if (status?.active) {
       await persistPro(true, { source: "server_status" });
       return { proMonthly: true, pro6m: true, proYearly: true, bot: false };
+    }
+
+    if (options?.skipRestore) {
+      return { proMonthly: false, pro6m: false, proYearly: false, bot: false };
     }
 
     const restored = await restorePurchases();
