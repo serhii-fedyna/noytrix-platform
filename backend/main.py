@@ -1951,7 +1951,6 @@ def _scan_client_safe_response(data: dict) -> dict:
             raw_details.get("false_positive_safety_gate"),
             ("applied", "reason", "trusted_domain", "downgraded"),
         ),
-        "token": None,
     }
 
     top = raw_details.get("top_score_contributors")

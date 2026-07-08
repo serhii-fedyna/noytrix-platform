@@ -313,6 +313,10 @@ function safeText(v) {
   }
 }
 
+function hasObjectData(v) {
+  return !!v && typeof v === "object" && !Array.isArray(v) && Object.keys(v).length > 0;
+}
+
 function detectKind(raw) {
   const x = String(raw || "").trim();
   if (!x) return "text";
@@ -1817,7 +1821,36 @@ export default function ShieldPro() {
   const toggle = (k) => setExpanded((s) => ({ ...s, [k]: !s[k] }));
 
   const shareShotRef = useRef(null);
-  const normalizedOut = useMemo(() => normalizeScanReport(out, currentLang), [out, currentLang]);
+  const normalizedOut = useMemo(() => {
+    try {
+      return normalizeScanReport(out, currentLang);
+    } catch {
+      if (!out || typeof out !== "object") return null;
+      return {
+        input: out?.input || input,
+        normalized_input: out?.normalized_input || out?.input || input,
+        kind: normalizeKind(out?.kind, out?.input || input),
+        score: Number(out?.score || 0) || 0,
+        level: String(out?.level || "unknown").toLowerCase(),
+        kindLabel: formatKindLabel(out?.kind, out?.kind_localized, currentLang),
+        levelLabel: formatLevelLabel(out?.level, currentLang),
+        verdictLabel: out?.verdictLabel || out?.ai_verdict_localized || out?.verdict_localized || out?.ai_verdict || out?.verdict || "",
+        aiVerdictLabel: out?.aiVerdictLabel || out?.ai_verdict_localized || out?.ai_verdict || null,
+        sources: Array.isArray(out?.sources) ? out.sources : [],
+        evidenceList: Array.isArray(out?.evidenceList) ? out.evidenceList : Array.isArray(out?.evidence) ? out.evidence : [],
+        scoring: out?.scoring || {},
+        community: out?.community || {},
+        details: out?.details || {},
+        backendDetails: out?.backendDetails || {},
+        quota: out?.quota || null,
+        what_can_happen: out?.what_can_happen || "",
+        worst_case: out?.worst_case || "",
+        permissions_summary: out?.permissions_summary || null,
+        risk_reasons: Array.isArray(out?.risk_reasons) ? out.risk_reasons : [],
+        confirmedRedFlag: !!out?.confirmed_red_flag || !!out?.confirmedRedFlag,
+      };
+    }
+  }, [out, currentLang, input]);
 
   const verdictText = normalizedOut?.verdictLabel || "";
   const verdictColor = levelColor(normalizedOut?.level);
@@ -2676,7 +2709,7 @@ ${uri}`,
               </BlurCard>
             )}
 
-            {!!normalizedOut?.token && (
+            {hasObjectData(normalizedOut?.token) && (
               <BlurCard>
                 <SectionHeader
                   title={tx("shieldPro.token.title", pickLang(currentLang, "", "Token data"))}
