@@ -2566,14 +2566,6 @@ ${uri}`,
               )}
             </BlurCard>
 
-	            <InvestigationMapCard
-	              report={normalizedOut}
-	              currentLang={currentLang}
-	              tx={tx}
-	              expanded={expanded.investigation}
-	              onPress={() => toggle("investigation")}
-	            />
-
 	            <BackendIntelCard report={normalizedOut} currentLang={currentLang} tx={tx} />
 
             <BlurCard>
