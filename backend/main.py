@@ -1788,6 +1788,98 @@ def _profile_plan(uid: Optional[str]) -> str:
     p = str(row.get("plan") or "").strip().lower()
     return p if p else "free"
 
+def _scan_client_safe_response(data: dict) -> dict:
+    if not isinstance(data, dict):
+        return data
+
+    safe = dict(data)
+    safe.pop("raw", None)
+
+    for key in (
+        "ai_investigation",
+        "multi_chain_intelligence",
+        "runtime_contract",
+        "graph",
+        "reputation",
+        "threat_memory",
+    ):
+        safe.pop(key, None)
+
+    details = safe.get("details")
+    if isinstance(details, dict):
+        compact_details = dict(details)
+        for key in (
+            "internal_verdict",
+            "ai_investigation",
+            "multi_chain_intelligence",
+            "runtime_contract",
+            "graph",
+            "reputation",
+            "threat_memory",
+            "evidence_trace",
+        ):
+            compact_details.pop(key, None)
+
+        token = compact_details.get("token")
+        if isinstance(token, dict):
+            compact_token = dict(token)
+            for key in ("raw", "market_data", "pairs", "holders", "transactions", "links", "socials"):
+                value = compact_token.get(key)
+                if isinstance(value, (dict, list)):
+                    compact_token.pop(key, None)
+            compact_details["token"] = compact_token
+
+        top = compact_details.get("top_score_contributors")
+        if isinstance(top, list):
+            compact_details["top_score_contributors"] = top[:8]
+
+        hard = compact_details.get("hard_evidence_codes")
+        if isinstance(hard, list):
+            compact_details["hard_evidence_codes"] = hard[:20]
+
+        safe["details"] = compact_details
+
+    token = safe.get("token")
+    if isinstance(token, dict):
+        compact_token = dict(token)
+        for key in ("raw", "market_data", "pairs", "holders", "transactions", "links", "socials"):
+            value = compact_token.get(key)
+            if isinstance(value, (dict, list)):
+                compact_token.pop(key, None)
+        safe["token"] = compact_token
+
+    if isinstance(safe.get("sources"), list):
+        compact_sources = []
+        for src in safe["sources"][:20]:
+            if not isinstance(src, dict):
+                compact_sources.append(src)
+                continue
+            item = {
+                "name": src.get("name") or src.get("source"),
+                "source": src.get("source") or src.get("name"),
+                "status": src.get("status"),
+                "verdict": src.get("verdict"),
+                "status_text": src.get("status_text"),
+            }
+            details_value = src.get("details")
+            if isinstance(details_value, dict):
+                item["details"] = {
+                    k: v
+                    for k, v in details_value.items()
+                    if k in {"status_code", "configured", "analysis_stats", "risk", "chain", "chain_id", "address"}
+                    and not isinstance(v, (dict, list))
+                }
+            compact_sources.append({k: v for k, v in item.items() if v is not None})
+        safe["sources"] = compact_sources
+    if isinstance(safe.get("evidence"), list):
+        safe["evidence"] = safe["evidence"][:30]
+    if isinstance(safe.get("risk_reasons"), list):
+        safe["risk_reasons"] = safe["risk_reasons"][:20]
+    if isinstance(safe.get("what_can_be_stolen"), list):
+        safe["what_can_be_stolen"] = safe["what_can_be_stolen"][:20]
+
+    return safe
+
 def _clamp(n: float, a: float, b: float) -> float:
     return max(a, min(b, n))
 
@@ -7505,7 +7597,7 @@ async def scan(
             "revoke_difficulty": "unknown"
         }
 
-        return data
+        return _scan_client_safe_response(data)
     except HTTPException:
         raise
     except Exception as e:
