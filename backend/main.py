@@ -1113,10 +1113,14 @@ def init_guest_pro_db():
               user_id TEXT PRIMARY KEY,
               is_active INTEGER NOT NULL DEFAULT 1,
               source TEXT,
-              updated_at TEXT NOT NULL
+              updated_at TEXT NOT NULL,
+              expires_at TEXT
             );
             """
         )
+        cols = {row[1] for row in cur.execute("PRAGMA table_info(guest_pro)").fetchall()}
+        if "expires_at" not in cols:
+            cur.execute("ALTER TABLE guest_pro ADD COLUMN expires_at TEXT")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_pro_active ON guest_pro(is_active)")
         conn.commit()
     finally:
@@ -1124,7 +1128,7 @@ def init_guest_pro_db():
 
 init_guest_pro_db()
 
-def set_guest_pro(user_id: str, active: bool = True, source: str = "guest_iap") -> None:
+def set_guest_pro(user_id: str, active: bool = True, source: str = "guest_iap", expires_at: str | None = None) -> None:
     uid = (user_id or "").strip()
     if not uid:
         return
@@ -1134,14 +1138,15 @@ def set_guest_pro(user_id: str, active: bool = True, source: str = "guest_iap") 
         cur = conn.cursor()
         cur.execute(
             """
-            INSERT INTO guest_pro(user_id, is_active, source, updated_at)
-            VALUES(?,?,?,?)
+            INSERT INTO guest_pro(user_id, is_active, source, updated_at, expires_at)
+            VALUES(?,?,?,?,?)
             ON CONFLICT(user_id) DO UPDATE SET
               is_active=excluded.is_active,
               source=excluded.source,
-              updated_at=excluded.updated_at
+              updated_at=excluded.updated_at,
+              expires_at=excluded.expires_at
             """,
-            (uid, 1 if active else 0, (source or "guest_iap"), now_iso),
+            (uid, 1 if active else 0, (source or "guest_iap"), now_iso, expires_at),
         )
         conn.commit()
     finally:
@@ -1155,10 +1160,22 @@ def guest_has_pro(user_id: Optional[str]) -> bool:
     try:
         cur = conn.cursor()
         row = cur.execute(
-            "SELECT is_active FROM guest_pro WHERE user_id=? LIMIT 1",
+            "SELECT is_active, expires_at FROM guest_pro WHERE user_id=? LIMIT 1",
             (uid,),
         ).fetchone()
-        return bool(row and int(row[0] or 0) == 1)
+        if not row or int(row[0] or 0) != 1:
+            return False
+        expires_at = str(row[1] or "").strip()
+        if expires_at:
+            try:
+                expiry = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+                if expiry.tzinfo is None:
+                    expiry = expiry.replace(tzinfo=timezone.utc)
+                if expiry <= datetime.now(timezone.utc):
+                    return False
+            except Exception:
+                return False
+        return True
     finally:
         conn.close()
 
@@ -1181,6 +1198,18 @@ def _payload_bool(payload: dict, keys: list[str]) -> Optional[bool]:
 
 def _iap_status_payload(user_id: Optional[str]) -> dict:
     active = guest_has_pro(user_id)
+    expires_at = None
+    uid = str(user_id or "").strip()
+    if uid:
+        try:
+            conn = _guest_pro_connect()
+            try:
+                row = conn.execute("SELECT expires_at FROM guest_pro WHERE user_id=? LIMIT 1", (uid,)).fetchone()
+                expires_at = str(row[0] or "").strip() or None if row else None
+            finally:
+                conn.close()
+        except Exception:
+            expires_at = None
     return {
         "ok": True,
         "userId": (str(user_id or "").strip() or None),
@@ -1188,6 +1217,7 @@ def _iap_status_payload(user_id: Optional[str]) -> dict:
         "isPro": active,
         "pro": active,
         "plan": "PRO" if active else "FREE",
+        "expiresAt": expires_at,
     }
 
 def _google_play_access_token() -> str:
@@ -1285,7 +1315,12 @@ async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
     active, status, expiry_dt = _active_from_google_purchase(product_type, data)
 
     if active:
-        set_guest_pro(user_id, active=True, source=f"google_play:{product_id}")
+        set_guest_pro(
+            user_id,
+            active=True,
+            source=f"google_play:{product_id}",
+            expires_at=expiry_dt.isoformat() if expiry_dt else None,
+        )
 
     return {
         "ok": True,
