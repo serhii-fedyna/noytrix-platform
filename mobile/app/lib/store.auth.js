@@ -11,6 +11,7 @@ import {
   clearAuth as apiClearAuth,
   me as apiMe,
 } from "./authApi";
+import { identifyTikTokUser, logEvent, logoutTikTokUser } from "./analytics";
 
 function enhanceUser(user) {
   if (!user) return null;
@@ -53,6 +54,10 @@ export const useAuthStore = create((set, get) => ({
         isReady: true,
         avatarUri: avatarUri || null,
       });
+      if (isAuth && user) {
+        await identifyTikTokUser(user);
+        await logEvent("auth_identify", { email: user.email || "", source: "app_reopen" });
+      }
     } catch {
       set({ user: null, isAuth: false, isReady: true, avatarUri: null });
     }
@@ -66,6 +71,9 @@ export const useAuthStore = create((set, get) => ({
   login: async ({ email, password }) => {
     await apiLogin({ email, password }); 
     await get().init();
+    const user = get().user;
+    await identifyTikTokUser(user || { email });
+    await logEvent("login_success", { email: user?.email || email || "" });
     return get().user;
   },
 
@@ -74,6 +82,9 @@ export const useAuthStore = create((set, get) => ({
   registerVerify: async (payload) => {
     await apiRegisterVerify(payload); 
     await get().init();
+    const user = get().user;
+    await identifyTikTokUser(user || { email: payload?.email, nick: payload?.nick });
+    await logEvent("registration_success", { email: user?.email || payload?.email || "" });
     return get().user;
   },
 
@@ -88,6 +99,7 @@ export const useAuthStore = create((set, get) => ({
   },
 
   logout: async () => {
+    await logoutTikTokUser();
     await apiClearAuth(); 
     await AsyncStorage.multiRemove([AVATAR_KEY]);
     set({ user: null, isAuth: false, avatarUri: null });

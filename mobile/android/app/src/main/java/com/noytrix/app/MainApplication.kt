@@ -2,6 +2,7 @@ package com.noytrix.app
 
 import android.app.Application
 import android.content.res.Configuration
+import android.util.Log
 
 import com.facebook.react.PackageList
 import com.facebook.react.ReactApplication
@@ -12,6 +13,7 @@ import com.facebook.react.ReactHost
 import com.facebook.react.common.ReleaseLevel
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint
 import com.facebook.react.defaults.DefaultReactNativeHost
+import com.tiktok.TikTokBusinessSdk
 
 import expo.modules.ApplicationLifecycleDispatcher
 import expo.modules.ReactNativeHostWrapper
@@ -25,6 +27,7 @@ class MainApplication : Application(), ReactApplication {
             PackageList(this).packages.apply {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
+              add(TikTokEventsPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
@@ -45,8 +48,24 @@ class MainApplication : Application(), ReactApplication {
     } catch (e: IllegalArgumentException) {
       ReleaseLevel.STABLE
     }
+    initTikTokBusinessSdk()
     loadReactNative(this)
     ApplicationLifecycleDispatcher.onApplicationCreate(this)
+  }
+
+  private fun initTikTokBusinessSdk() {
+    try {
+      val config = TikTokBusinessSdk.TTConfig(this, BuildConfig.TIKTOK_APP_SECRET)
+        .setAppId(BuildConfig.APPLICATION_ID)
+        .setTTAppId(BuildConfig.TIKTOK_APP_ID)
+        .setLogLevel(if (BuildConfig.DEBUG) TikTokBusinessSdk.LogLevel.INFO else TikTokBusinessSdk.LogLevel.NONE)
+        .enableAutoIapTrack()
+
+      TikTokBusinessSdk.initializeSdk(config)
+      TikTokBusinessSdk.startTrack()
+    } catch (e: Throwable) {
+      Log.w("NoytrixTikTok", "TikTok Business SDK init failed", e)
+    }
   }
 
   override fun onConfigurationChanged(newConfig: Configuration) {

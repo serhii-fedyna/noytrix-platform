@@ -92,10 +92,12 @@ android {
         applicationId 'com.noytrix.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 356
+        versionCode 357
         versionName "1.0.81"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
+        buildConfigField "String", "TIKTOK_APP_ID", "\"7661341234656493588\""
+        buildConfigField "String", "TIKTOK_APP_SECRET", "\"TT8TFnwaG71yWAtslqUD6kAgC6bbRCnk\""
     }
     signingConfigs {
         debug {
@@ -137,6 +139,10 @@ android {
     androidResources {
         ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
     }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
 }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
@@ -162,6 +168,10 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    implementation 'com.github.tiktok:tiktok-business-android-sdk:1.5.0'
+    implementation 'androidx.lifecycle:lifecycle-process:2.3.1'
+    implementation 'androidx.lifecycle:lifecycle-common-java8:2.3.1'
+    implementation 'com.android.installreferrer:installreferrer:2.2'
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
