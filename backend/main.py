@@ -220,6 +220,12 @@ def get_lang(request: Request | None, lang_q: str | None) -> str:
     if lang_q:
         return _norm_lang(lang_q)
     if request:
+        query_lang = request.query_params.get("lang") or request.query_params.get("language")
+        if query_lang:
+            return _norm_lang(query_lang)
+        header_lang = request.headers.get("x-lang") or request.headers.get("x-language")
+        if header_lang:
+            return _norm_lang(header_lang)
         return _lang_from_accept_language(request.headers.get("accept-language"))
     return "en"
 
