@@ -256,16 +256,12 @@ def _compact_context(ctx: Dict[str, Any], max_chars: int = 14000) -> str:
     return text[:max_chars] + "...TRUNCATED"
 
 
-def _fallback_ai_security_explanation(
-    verdict: Dict[str, Any],
+def _ai_explanation_unavailable(
     lang: str = "en",
     mode: str = "detailed",
     reason: str | None = None,
     model: str | None = None,
 ) -> Dict[str, Any]:
-    """Deterministic user-facing explanation when OpenAI is unavailable."""
-
-    ctx = build_ai_explanation_context(verdict)
     lang = str(lang or "en").lower()
     if lang.startswith("ru"):
         lang = "ru"
@@ -274,138 +270,33 @@ def _fallback_ai_security_explanation(
     else:
         lang = "en"
 
-    level = str(ctx.get("level") or verdict.get("level") or "safe").lower()
-    score = int(ctx.get("score") or verdict.get("score") or 0)
-    kind = str(ctx.get("kind") or verdict.get("kind") or "object").lower()
-    evidence = ctx.get("evidence") if isinstance(ctx.get("evidence"), list) else []
-    sources = ctx.get("sources") if isinstance(ctx.get("sources"), list) else []
-    evidence_texts = []
-    for item in evidence[:3]:
-        if isinstance(item, dict):
-            text = item.get("text") or item.get("description") or item.get("code") or item.get("source")
-            if text:
-                evidence_texts.append(str(text).strip())
-    source_names = []
-    for item in sources[:4]:
-        if isinstance(item, dict):
-            name = item.get("name") or item.get("source")
-            status = item.get("status")
-            if name:
-                source_names.append(f"{name}: {status}" if status else str(name))
-
-    risky = level in {"critical", "danger", "high", "suspicious"} or score >= 55
-
-    labels = {
-        "en": {
-            "critical": "Critical risk",
-            "danger": "Danger",
-            "high": "High risk",
-            "suspicious": "Suspicious",
-            "safe": "No confirmed threat",
-            "short_bad": "Noytrix sees real risk signals for this {kind}; do not connect a wallet, sign anything, or send funds until you verify the official source.",
-            "short_safe": "Noytrix did not find confirmed scam evidence for this {kind}, but every future wallet signature still needs a separate check.",
-            "details_bad": "The backend verdict is {level} with score {score}/100. The strongest signals are: {evidence}.",
-            "details_safe": "The backend verdict is {level} with score {score}/100. Current sources did not confirm a threat; checked signals include: {sources}.",
-            "no_evidence": "no strong evidence item was returned",
-            "no_sources": "source details are limited",
-            "risk1": "A fake site or contract may try to make you connect a wallet or sign a harmful action.",
-            "risk2": "If you approve spending, tokens may be moved later without another obvious warning.",
-            "action_bad": "Do not sign or approve anything here; open the official project domain manually and re-check.",
-            "action_safe": "Continue only with normal caution and scan each future signature or approval separately.",
-            "confidence_bad": "Confidence comes from backend score, level, evidence, and source statuses; OpenAI wording is currently using deterministic fallback.",
-            "confidence_safe": "A clean result means no confirmed evidence was found now, not a permanent safety guarantee.",
-            "hidden_bad": "The dangerous part can be hidden inside a wallet popup, approval, redirect, or contract call.",
-            "hidden_safe": "No hidden wallet action was confirmed by the current backend data.",
-            "intent_bad": "The likely attacker goal is to get wallet approval, trust, funds, tokens, NFTs, or access.",
-            "intent_safe": "No attacker intent was confirmed from the current data.",
-            "loss_bad": "The user could lose funds or tokens if they connect, approve, or sign the wrong action.",
-            "loss_safe": "No direct loss path was confirmed, but future signing actions can change the risk.",
-        },
-        "ru": {
-            "critical": "Критический риск",
-            "danger": "Опасно",
-            "high": "Высокий риск",
-            "suspicious": "Подозрительно",
-            "safe": "Подтверждённой угрозы нет",
-            "short_bad": "Noytrix видит реальные риск-сигналы для этого объекта; не подключай кошелёк, ничего не подписывай и не отправляй средства, пока не проверишь официальный источник.",
-            "short_safe": "Noytrix не нашёл подтверждённых признаков скама для этого объекта, но каждую будущую подпись кошелька всё равно нужно проверять отдельно.",
-            "details_bad": "Backend verdict: {level}, score {score}/100. Самые сильные сигналы: {evidence}.",
-            "details_safe": "Backend verdict: {level}, score {score}/100. Текущие источники не подтвердили угрозу; проверенные сигналы: {sources}.",
-            "no_evidence": "сильные evidence-сигналы не вернулись",
-            "no_sources": "детали источников ограничены",
-            "risk1": "Фейковый сайт или контракт может пытаться заставить подключить кошелёк или подписать вредное действие.",
-            "risk2": "Если выдать approve на списание, токены могут быть уведены позже без очевидного предупреждения.",
-            "action_bad": "Не подписывай и не подтверждай ничего здесь; открой официальный домен вручную и проверь ещё раз.",
-            "action_safe": "Продолжай только с обычной осторожностью и отдельно проверяй каждую будущую подпись или approve.",
-            "confidence_bad": "Вывод основан на backend score, уровне риска, evidence и статусах источников; сейчас используется deterministic fallback вместо OpenAI.",
-            "confidence_safe": "Чистый результат означает, что сейчас нет подтверждённых evidence, а не вечную гарантию безопасности.",
-            "hidden_bad": "Опасная часть может быть скрыта внутри wallet popup, approve, редиректа или вызова контракта.",
-            "hidden_safe": "Текущие backend-данные не подтвердили скрытое действие кошелька.",
-            "intent_bad": "Вероятная цель атакующего: получить approve, доверие, средства, токены, NFT или доступ.",
-            "intent_safe": "По текущим данным намерение атакующего не подтверждено.",
-            "loss_bad": "Пользователь может потерять средства или токены, если подключит кошелёк, выдаст approve или подпишет вредное действие.",
-            "loss_safe": "Прямой сценарий потери не подтверждён, но будущие подписи могут изменить риск.",
-        },
-        "uk": {
-            "critical": "Критичний ризик",
-            "danger": "Небезпечно",
-            "high": "Високий ризик",
-            "suspicious": "Підозріло",
-            "safe": "Підтвердженої загрози немає",
-            "short_bad": "Noytrix бачить реальні ризик-сигнали для цього об’єкта; не підключай гаманець, нічого не підписуй і не надсилай кошти, доки не перевіриш офіційне джерело.",
-            "short_safe": "Noytrix не знайшов підтверджених ознак скаму для цього об’єкта, але кожен майбутній підпис гаманця все одно потрібно перевіряти окремо.",
-            "details_bad": "Backend verdict: {level}, score {score}/100. Найсильніші сигнали: {evidence}.",
-            "details_safe": "Backend verdict: {level}, score {score}/100. Поточні джерела не підтвердили загрозу; перевірені сигнали: {sources}.",
-            "no_evidence": "сильні evidence-сигнали не повернулися",
-            "no_sources": "деталі джерел обмежені",
-            "risk1": "Фейковий сайт або контракт може намагатися змусити підключити гаманець чи підписати шкідливу дію.",
-            "risk2": "Якщо видати approve на списання, токени можуть бути виведені пізніше без очевидного попередження.",
-            "action_bad": "Не підписуй і не підтверджуй нічого тут; відкрий офіційний домен вручну та перевір ще раз.",
-            "action_safe": "Продовжуй лише зі звичайною обережністю та окремо перевіряй кожен майбутній підпис або approve.",
-            "confidence_bad": "Висновок оснований на backend score, рівні ризику, evidence і статусах джерел; зараз використовується deterministic fallback замість OpenAI.",
-            "confidence_safe": "Чистий результат означає, що зараз немає підтверджених evidence, а не постійну гарантію безпеки.",
-            "hidden_bad": "Небезпечна частина може бути прихована всередині wallet popup, approve, редиректу або виклику контракту.",
-            "hidden_safe": "Поточні backend-дані не підтвердили приховану дію гаманця.",
-            "intent_bad": "Ймовірна ціль атакувальника: отримати approve, довіру, кошти, токени, NFT або доступ.",
-            "intent_safe": "За поточними даними намір атакувальника не підтверджений.",
-            "loss_bad": "Користувач може втратити кошти або токени, якщо підключить гаманець, видасть approve або підпише шкідливу дію.",
-            "loss_safe": "Прямий сценарій втрати не підтверджений, але майбутні підписи можуть змінити ризик.",
-        },
-    }[lang]
-
-    severity_label = labels.get(level) or labels["safe"]
-    evidence_summary = "; ".join(evidence_texts) if evidence_texts else labels["no_evidence"]
-    source_summary = "; ".join(source_names) if source_names else labels["no_sources"]
-    short = (labels["short_bad"] if risky else labels["short_safe"]).format(kind=kind)
-    details = (labels["details_bad"] if risky else labels["details_safe"]).format(
-        level=severity_label,
-        score=score,
-        evidence=evidence_summary,
-        sources=source_summary,
-    )
-    structured = {
-        "short": short,
-        "details": details,
-        "risks": [labels["risk1"], labels["risk2"]] if risky else [],
-        "actions": [labels["action_bad"] if risky else labels["action_safe"]],
-        "confidence_note": labels["confidence_bad"] if risky else labels["confidence_safe"],
-        "severity_label": severity_label,
-        "next_step_priority": labels["action_bad"] if risky else labels["action_safe"],
-        "attack_scenario": details if risky else "",
-        "hidden_danger": labels["hidden_bad"] if risky else labels["hidden_safe"],
-        "attacker_intent": labels["intent_bad"] if risky else labels["intent_safe"],
-        "loss_scenario": labels["loss_bad"] if risky else labels["loss_safe"],
+    messages = {
+        "en": "AI explanation is temporarily unavailable. Please try again later.",
+        "ru": "AI-?????????? ???????? ??????????. ?????????? ????????? ?????.",
+        "uk": "AI-????????? ????????? ??????????. ????????? ????????? ???????.",
     }
-    structured = validate_ai_explanation_output(structured, ctx)
+    text = messages[lang]
+    structured = {
+        "short": text,
+        "details": text,
+        "risks": [],
+        "actions": [],
+        "confidence_note": text,
+        "severity_label": "",
+        "next_step_priority": text,
+        "attack_scenario": "",
+        "hidden_danger": "",
+        "attacker_intent": "",
+        "loss_scenario": "",
+    }
     return {
         "available": False,
-        "reason": reason or "openai_unavailable_fallback",
+        "reason": reason or "openai_unavailable",
         "model": model,
         "language": lang,
         "mode": mode if mode in {"short", "detailed"} else "detailed",
-        "text": structured.get("details") or structured.get("short") or "",
+        "text": text,
         "structured": structured,
-        "fallback": True,
     }
 
 
@@ -416,7 +307,7 @@ async def generate_ai_security_explanation(
 ) -> Dict[str, Any]:
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        return _fallback_ai_security_explanation(
+        return _ai_explanation_unavailable(
             verdict,
             lang,
             mode if "mode" in locals() else "detailed",
@@ -427,7 +318,7 @@ async def generate_ai_security_explanation(
     try:
         from openai import AsyncOpenAI
     except Exception:
-        return _fallback_ai_security_explanation(
+        return _ai_explanation_unavailable(
             verdict,
             lang,
             mode if "mode" in locals() else "detailed",
@@ -592,7 +483,7 @@ async def generate_ai_security_explanation(
 
         return result
     except Exception as e:
-        return _fallback_ai_security_explanation(
+        return _ai_explanation_unavailable(
             verdict,
             lang,
             mode if "mode" in locals() else "detailed",
