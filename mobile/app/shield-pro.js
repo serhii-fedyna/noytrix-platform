@@ -387,6 +387,19 @@ function formatLevelLabel(level, lang) {
   return pickLang(lang, "", "Safe");
 }
 
+function getAiVerdictText(raw) {
+  const result = raw?.ai_explanation_result || {};
+  const structured = result?.structured || {};
+  return (
+    structured.details ||
+    structured.short ||
+    result.text ||
+    raw?.ai_explanation ||
+    raw?.human_explanation ||
+    ""
+  ).toString().trim();
+}
+
 function formatSourceVerdict(verdict, lang) {
   const s = String(verdict || "").toLowerCase();
   if (s === "clean") return pickLang(lang, "", "Clean");
@@ -811,6 +824,8 @@ function normalizeScanReport(raw, currentLang) {
       (currentLang === "ru" ? raw.ai_verdict_ru : raw.ai_verdict_en) ||
       raw.ai_verdict ||
       null,
+    aiHumanVerdict: getAiVerdictText(raw),
+    aiExplanationResult: raw.ai_explanation_result || null,
     sources: Array.isArray(raw.sources) ? raw.sources : [],
     evidenceList: Array.isArray(raw.evidence) ? raw.evidence : [],
     scoring: raw.scoring || {
@@ -1836,6 +1851,8 @@ export default function ShieldPro() {
         levelLabel: formatLevelLabel(out?.level, currentLang),
         verdictLabel: out?.verdictLabel || out?.ai_verdict_localized || out?.verdict_localized || out?.ai_verdict || out?.verdict || "",
         aiVerdictLabel: out?.aiVerdictLabel || out?.ai_verdict_localized || out?.ai_verdict || null,
+        aiHumanVerdict: out?.aiHumanVerdict || getAiVerdictText(out),
+        aiExplanationResult: out?.aiExplanationResult || out?.ai_explanation_result || null,
         sources: Array.isArray(out?.sources) ? out.sources : [],
         evidenceList: Array.isArray(out?.evidenceList) ? out.evidenceList : Array.isArray(out?.evidence) ? out.evidence : [],
         scoring: out?.scoring || {},
@@ -2458,13 +2475,6 @@ ${uri}`,
                     {verdictText}
                   </Text>
 
-                  {!!normalizedOut.aiVerdictLabel && (
-                    <Text style={{ color: T.dim, marginTop: 6 }}>
-                      {tx("shieldPro.result.aiVerdict", pickLang(currentLang, "AI verdict", "AI verdict"))}:{" "}
-                      <Text style={{ color: T.text, fontWeight: "800" }}>{normalizedOut.aiVerdictLabel}</Text>
-                    </Text>
-                  )}
-
                   {!!targetText && (
                     <Text style={{ color: T.dim, marginTop: 8, textAlign: "center" }} numberOfLines={2}>
                       {targetText}
@@ -2481,10 +2491,13 @@ ${uri}`,
                   </View>
                 </View>
 
-                <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" }}>
-                  <MetricChip label={tx("shieldPro.result.type", pickLang(currentLang, "", "Type"))} value={normalizedOut.kindLabel} />
-                  <MetricChip label={tx("shieldPro.result.level", pickLang(currentLang, "", "Level"))} value={normalizedOut.levelLabel} />
-                </View>
+                {!!normalizedOut.aiHumanVerdict && (
+                  <View style={{ marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(0,0,0,0.18)", padding: 12 }}>
+                    <Text style={{ color: T.text, fontSize: 15, lineHeight: 21, textAlign: "center", fontWeight: "800" }}>
+                      {normalizedOut.aiHumanVerdict}
+                    </Text>
+                  </View>
+                )}
 
                 {!!normalizedOut.confirmedRedFlag && (
                   <View

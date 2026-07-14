@@ -5,6 +5,7 @@ const ROOT = process.cwd();
 const SRC_DIR = path.join(ROOT, "app");
 const EN_PATH = path.join(ROOT, "app/i18n/locales/en.json");
 const RU_PATH = path.join(ROOT, "app/i18n/locales/ru.json");
+const UK_PATH = path.join(ROOT, "app/i18n/locales/uk.json");
 
 function walk(dir){
   const res=[];
@@ -17,7 +18,7 @@ function walk(dir){
   return res;
 }
 
-function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8")); }
+function readJson(p){ return JSON.parse(fs.readFileSync(p,"utf8").replace(/^\uFEFF/, "")); }
 
 function flatten(obj, prefix=""){
   const out = [];
@@ -46,32 +47,43 @@ function extractKeysFromCode(files){
 
 function main(){
   const files = walk(SRC_DIR);
-  const codeKeys = extractKeysFromCode(files);
+  const codeKeys = extractKeysFromCode(files).filter((k) => !k.includes("${"));
 
   fs.mkdirSync(path.join(ROOT,"scripts"), {recursive:true});
   fs.writeFileSync(path.join(ROOT,"scripts/keys-from-code.txt"), codeKeys.join("\n"), "utf8");
 
   const en = readJson(EN_PATH);
   const ru = readJson(RU_PATH);
+  const uk = readJson(UK_PATH);
   const enKeys = new Set(flatten(en));
   const ruKeys = new Set(flatten(ru));
+  const ukKeys = new Set(flatten(uk));
 
   const missingEn = codeKeys.filter(k=>!enKeys.has(k));
   const missingRu = codeKeys.filter(k=>!ruKeys.has(k));
+  const missingUk = codeKeys.filter(k=>!ukKeys.has(k));
   const enNotRu = [...enKeys].filter(k=>!ruKeys.has(k)).sort();
   const ruNotEn = [...ruKeys].filter(k=>!enKeys.has(k)).sort();
+  const enNotUk = [...enKeys].filter(k=>!ukKeys.has(k)).sort();
+  const ukNotEn = [...ukKeys].filter(k=>!enKeys.has(k)).sort();
 
   fs.writeFileSync(path.join(ROOT,"scripts/missing-en.txt"), missingEn.join("\n"), "utf8");
   fs.writeFileSync(path.join(ROOT,"scripts/missing-ru.txt"), missingRu.join("\n"), "utf8");
+  fs.writeFileSync(path.join(ROOT,"scripts/missing-uk.txt"), missingUk.join("\n"), "utf8");
   fs.writeFileSync(path.join(ROOT,"scripts/en-not-ru.txt"), enNotRu.join("\n"), "utf8");
   fs.writeFileSync(path.join(ROOT,"scripts/ru-not-en.txt"), ruNotEn.join("\n"), "utf8");
+  fs.writeFileSync(path.join(ROOT,"scripts/en-not-uk.txt"), enNotUk.join("\n"), "utf8");
+  fs.writeFileSync(path.join(ROOT,"scripts/uk-not-en.txt"), ukNotEn.join("\n"), "utf8");
 
-  console.log("✅ Audit done");
+  console.log("Audit done");
   console.log("Code keys:", codeKeys.length);
   console.log("Missing EN:", missingEn.length, "-> scripts/missing-en.txt");
   console.log("Missing RU:", missingRu.length, "-> scripts/missing-ru.txt");
+  console.log("Missing UK:", missingUk.length, "-> scripts/missing-uk.txt");
   console.log("EN not RU:", enNotRu.length, "-> scripts/en-not-ru.txt");
   console.log("RU not EN:", ruNotEn.length, "-> scripts/ru-not-en.txt");
+  console.log("EN not UK:", enNotUk.length, "-> scripts/en-not-uk.txt");
+  console.log("UK not EN:", ukNotEn.length, "-> scripts/uk-not-en.txt");
 }
 
 main();

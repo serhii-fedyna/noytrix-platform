@@ -733,6 +733,19 @@ function formatLevelLabel(level, lang) {
   return pickLang(lang, "Безопасно", "Safe");
 }
 
+function getAiVerdictText(raw) {
+  const result = raw?.ai_explanation_result || {};
+  const structured = result?.structured || {};
+  return (
+    structured.details ||
+    structured.short ||
+    result.text ||
+    raw?.ai_explanation ||
+    raw?.human_explanation ||
+    ""
+  ).toString().trim();
+}
+
 function normalizeScanReport(raw, currentLang) {
   if (!raw || typeof raw !== "object") return null;
 
@@ -766,6 +779,8 @@ function normalizeScanReport(raw, currentLang) {
       (currentLang === "ru" ? raw.ai_verdict_ru : raw.ai_verdict_en) ||
       raw.ai_verdict ||
       null,
+    aiHumanVerdict: getAiVerdictText(raw),
+    aiExplanationResult: raw.ai_explanation_result || null,
     sources,
     evidence,
     scoring: raw.scoring || {
@@ -2229,13 +2244,6 @@ export default function Shield() {
                     {verdictLabel}
                   </Text>
 
-                  {!!normalizedReport?.aiVerdictLabel && (
-                    <Text style={{ color: T.dim, marginTop: 6 }}>
-                      {tx("shield.result.aiVerdict", pickLang(currentLang, "AI verdict", "AI verdict"))}:{" "}
-                      <Text style={{ color: T.text, fontWeight: "800" }}>{normalizedReport.aiVerdictLabel}</Text>
-                    </Text>
-                  )}
-
                   {!!targetLabel && (
                     <Text style={{ color: T.dim, marginTop: 8, textAlign: "center" }} numberOfLines={2}>
                       {targetLabel}
@@ -2250,10 +2258,13 @@ export default function Shield() {
                   </View>
                 </View>
 
-                <View style={{ flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" }}>
-                  <MetricChip label={tx("shield.result.type", pickLang(currentLang, "Тип", "Type"))} value={normalizedReport.kindLabel} />
-                  <MetricChip label={tx("shield.result.level", pickLang(currentLang, "Уровень", "Level"))} value={normalizedReport.levelLabel} />
-                </View>
+                {!!normalizedReport.aiHumanVerdict && (
+                  <View style={{ marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(0,0,0,0.18)", padding: 12 }}>
+                    <Text style={{ color: T.text, fontSize: 15, lineHeight: 21, textAlign: "center", fontWeight: "800" }}>
+                      {normalizedReport.aiHumanVerdict}
+                    </Text>
+                  </View>
+                )}
               </View>
 
               <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>

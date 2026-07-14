@@ -5,10 +5,12 @@ import * as Localization from "expo-localization";
 
 import en from "./locales/en.json";
 import ru from "./locales/ru.json";
+import uk from "./locales/uk.json";
 
 const resources = {
   en: { translation: en },
   ru: { translation: ru },
+  uk: { translation: uk },
 };
 
 const locales = Localization.getLocales?.() || [];
@@ -18,12 +20,15 @@ const deviceLanguage =
     .split("-")[0]
     .toLowerCase();
 
+const initialLanguage =
+  deviceLanguage === "ru" ? "ru" : deviceLanguage === "uk" || deviceLanguage === "ua" ? "uk" : "en";
+
 i18n.use(initReactI18next).init({
   resources,
 
-  lng: deviceLanguage,
+  lng: initialLanguage,
   fallbackLng: "en",
-  supportedLngs: ["en", "ru"],
+  supportedLngs: ["en", "ru", "uk"],
 
   ignoreJSONStructure: true,
   keySeparator: ".",

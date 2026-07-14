@@ -40,6 +40,7 @@ const UI = {
 
 const AUTH_KEY = "auth_state_v1";
 const AVATAR_SIZE = 64;
+const EMPTY_VALUE = "-";
 
 const cardChrome = (extra = {}) => ({
   backgroundColor: UI.card,
@@ -96,7 +97,13 @@ function safeNum(v, fb = 0) {
 export default function ProfileScreen() {
   const header = <Stack.Screen options={{ headerShown: false }} />;
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const rawLang = String(i18n?.language || "en").toLowerCase();
+  const currentLang = rawLang.startsWith("ru")
+    ? "ru"
+    : rawLang.startsWith("uk") || rawLang.startsWith("ua")
+    ? "uk"
+    : "en";
 
   const isAuth = useAuthStore((s) => s.isAuth);
   const user = useAuthStore((s) => s.user);
@@ -187,6 +194,7 @@ export default function ProfileScreen() {
 
         const qs = new URLSearchParams();
         if (userId) qs.append("userId", userId);
+        qs.append("lang", currentLang);
 
         const resp = await fetch(`${BACKEND}/profile/overview?${qs.toString()}`, {
           method: "GET",
@@ -233,7 +241,7 @@ export default function ProfileScreen() {
         else setProfileLoading(false);
       }
     },
-    [user]
+    [user, currentLang]
   );
 
   useEffect(() => {
@@ -303,7 +311,7 @@ export default function ProfileScreen() {
     const api = profileData?.identity || {};
     return {
       displayName: api?.displayName || displayName,
-      email: api?.email || user?.email || "вЂ”",
+      email: api?.email || user?.email || EMPTY_VALUE,
       memberSince: formatMemberSince(api?.memberSince),
       level: safeNum(api?.level, 1),
       rank: api?.rank || "Explorer",
@@ -346,7 +354,7 @@ export default function ProfileScreen() {
       explains: safeNum(api?.newsExplains, 0),
       immunityAnalyses: safeNum(api?.immunityAnalyses, 0),
       tokensChecked: safeNum(api?.tokensChecked, 0),
-      topSymbol: api?.topSymbol || "вЂ”",
+      topSymbol: api?.topSymbol || EMPTY_VALUE,
       communityVotes: safeNum(api?.communityVotes, 0),
       alertsUsed: notifEnabled ? 1 : 0,
     };
@@ -713,7 +721,7 @@ export default function ProfileScreen() {
                     {t("profile.activity.topSymbolLabel", { defaultValue: "Top asset" })}
                   </Text>
                   <Text style={{ color: UI.mute, marginTop: 4 }}>
-                    {activity.topSymbol === "вЂ”"
+                    {activity.topSymbol === EMPTY_VALUE
                       ? t("profile.activity.topSymbolEmpty", {
                           defaultValue: "No dominant asset yet.",
                         })
@@ -737,17 +745,17 @@ export default function ProfileScreen() {
                     },
                     {
                       label: t("profile.trading.winRate", { defaultValue: "Acceptance rate" }),
-                      value: trading.total ? `${trading.acceptanceRate}%` : "вЂ”",
+                      value: trading.total ? `${trading.acceptanceRate}%` : EMPTY_VALUE,
                       tone: trading.acceptanceRate >= 50 ? "good" : "default",
                     },
                     {
                       label: t("profile.trading.avgRisk", { defaultValue: "Approved" }),
-                      value: trading.total ? `${trading.approvedSetups}` : "вЂ”",
+                      value: trading.total ? `${trading.approvedSetups}` : EMPTY_VALUE,
                       tone: trading.approvedSetups > 0 ? "good" : "default",
                     },
                     {
                       label: t("profile.trading.best", { defaultValue: "Rejected" }),
-                      value: trading.total ? `${trading.rejectedSetups}` : "вЂ”",
+                      value: trading.total ? `${trading.rejectedSetups}` : EMPTY_VALUE,
                       tone: trading.rejectedSetups > 0 ? "bad" : "default",
                     },
                   ]}
@@ -855,7 +863,7 @@ export default function ProfileScreen() {
                 <RowCard
                   icon="mail-outline"
                   title={t("profile.security.email", { defaultValue: "Connected email" })}
-                  subtitle={identity.email || "вЂ”"}
+                  subtitle={identity.email || EMPTY_VALUE}
                 />
 
                 <RowCard
@@ -972,12 +980,12 @@ export default function ProfileScreen() {
 }
 
 function formatMemberSince(raw) {
-  if (!raw) return "вЂ”";
+  if (!raw) return EMPTY_VALUE;
   const dt = new Date(raw);
   if (Number.isNaN(dt.getTime())) {
     const s = String(raw);
     const match = s.match(/\d{4}/);
-    return match ? match[0] : "вЂ”";
+    return match ? match[0] : EMPTY_VALUE;
   }
   return String(dt.getFullYear());
 }

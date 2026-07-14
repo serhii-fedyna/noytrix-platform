@@ -288,6 +288,38 @@ I18N = {
     },
 }
 
+I18N["uk"] = {
+    "safe": "Безпечно",
+    "suspicious": "Підозріло",
+    "danger": "Небезпечно",
+    "critical": "Критично / Скам",
+    "unknown": "Невідомо",
+    "news_default_explain": "Новина про крипторинок. Оцінюй вплив за фактами: ліквідність, регуляторні ризики, інтеграції, реакція ціни/обсягу.",
+    "hint_listing": "Лістинг або допуск на біржу зазвичай підвищує увагу та ліквідність.",
+    "hint_partnership": "Партнерство або інтеграція зазвичай є позитивним довгостроковим сигналом.",
+    "hint_hack": "Негатив: злам, експлойт або витік. Часто спричиняє падіння ціни та довіри.",
+    "hint_reg": "Регуляторний ризик. У короткостроковій перспективі часто тисне на ціну.",
+    "hint_funding": "Інвестиції або раунд фінансування підтримують розвиток і часто дають позитивний сентимент.",
+    "hint_upgrade": "Технічне оновлення. Дивіться на якість виконання та прийняття користувачами.",
+    "quota_exceeded": "Денний ліміт FREE вичерпано. PRO дає безліміт.",
+    "forbidden": "Доступ заборонено.",
+    "missing_input": "Порожній input.",
+    "scan_failed": "Помилка сканування.",
+    "source_malicious": "Небезпечно",
+    "source_clean": "Чисто",
+    "source_no_data": "Немає даних",
+    "source_timeout": "Таймаут",
+    "source_invalid_key": "Ключ неправильний або не налаштований",
+    "source_quota": "Квоту вичерпано",
+    "source_error": "Помилка",
+    "object_url": "Посилання",
+    "object_domain": "Домен",
+    "object_wallet": "Гаманець",
+    "object_contract": "Контракт",
+    "object_ticker": "Тикер",
+    "object_text": "Текст",
+}
+
 def tr(lang: str, key: str) -> str:
     return (I18N.get(lang) or I18N["en"]).get(key, (I18N["en"].get(key, key)))
 
@@ -1840,6 +1872,32 @@ def _scan_client_safe_response(data: dict) -> dict:
         "worst_case": text_value(data.get("worst_case")),
         "summary": text_value(data.get("summary")),
     }
+
+    ai_result = data.get("ai_explanation_result")
+    if isinstance(ai_result, dict):
+        structured = ai_result.get("structured") if isinstance(ai_result.get("structured"), dict) else {}
+        safe["ai_explanation_result"] = {
+            "available": bool(ai_result.get("available")),
+            "reason": text_value(ai_result.get("reason")),
+            "model": text_value(ai_result.get("model")),
+            "language": text_value(ai_result.get("language")),
+            "mode": text_value(ai_result.get("mode")),
+            "text": text_value(ai_result.get("text"), structured.get("details"), structured.get("short")),
+            "structured": {
+                "short": text_value(structured.get("short")),
+                "details": text_value(structured.get("details")),
+                "confidence_note": text_value(structured.get("confidence_note")),
+                "severity_label": text_value(structured.get("severity_label")),
+                "next_step_priority": text_value(structured.get("next_step_priority")),
+                "attack_scenario": text_value(structured.get("attack_scenario")),
+                "hidden_danger": text_value(structured.get("hidden_danger")),
+                "attacker_intent": text_value(structured.get("attacker_intent")),
+                "loss_scenario": text_value(structured.get("loss_scenario")),
+            },
+        }
+        safe["ai_explanation"] = safe["ai_explanation_result"]["text"]
+    else:
+        safe["ai_explanation"] = text_value(data.get("ai_explanation"), data.get("explanation"))
 
     quota = data.get("quota")
     if isinstance(quota, dict):
@@ -7597,6 +7655,27 @@ async def scan(
         }
         data = attach_legacy_fields(data, L)
         data = _attach_ux_risk_blocks(data, L)
+
+        try:
+            data["ai_explanation_context"] = build_ai_explanation_context(data)
+            data["ai_explanation_result"] = await generate_ai_security_explanation(
+                data,
+                L,
+                "short",
+            )
+            data["ai_explanation"] = (
+                (data.get("ai_explanation_result") or {}).get("text")
+                or data.get("ai_explanation")
+                or ""
+            )
+        except Exception as e:
+            data["ai_explanation_result"] = {
+                "available": False,
+                "reason": str(e)[:300],
+                "language": L,
+                "mode": "short",
+                "text": "",
+            }
 
         try:
             level = _canonical_level(data.get("level"), data.get("score"))

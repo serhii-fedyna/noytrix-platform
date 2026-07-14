@@ -127,8 +127,18 @@ const reIsHttp = /^https?:\/\//i;
 const reIsEth = /^0x[a-f0-9]{40}$/i;
 const reTicker = /^[A-Z0-9._-]{2,15}$/i;
 
-function pickLang(lang, ru, en) {
-  return String(lang || "en").toLowerCase().startsWith("ru") ? ru : en;
+function normalizeAppLang(value) {
+  const s = String(value || "en").toLowerCase();
+  if (s.startsWith("ru")) return "ru";
+  if (s.startsWith("uk") || s.startsWith("ua")) return "uk";
+  return "en";
+}
+
+function pickLang(lang, ru, en, uk) {
+  const normalized = normalizeAppLang(lang);
+  if (normalized === "ru") return ru;
+  if (normalized === "uk") return uk || en;
+  return en;
 }
 
 
@@ -335,6 +345,23 @@ function formatLevelLabel(level, lang) {
   return pickLang(lang, "Безопасно", "Safe");
 }
 
+function getAiVerdictText(raw) {
+  const result = raw?.ai_explanation_result || null;
+  const structured = result && typeof result === "object" ? result.structured || null : null;
+  const candidates = [
+    structured?.details,
+    structured?.short,
+    result?.text,
+    raw?.ai_explanation,
+  ];
+
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+
+  return "";
+}
+
 function formatSourceName(name, lang) {
   const map = {
     virustotal: "VirusTotal",
@@ -461,6 +488,8 @@ function normalizeScanReport(raw, currentLang) {
     permissions_summary: raw.permissions_summary || null,
     risk_reasons: Array.isArray(raw.risk_reasons) ? raw.risk_reasons : [],
     quota: raw.quota || null,
+    aiHumanVerdict: getAiVerdictText(raw),
+    aiExplanationResult: raw.ai_explanation_result || null,
   };
 }
 
@@ -525,8 +554,8 @@ const UxRiskBlock = ({ report, currentLang }) => {
     "";
 
   if (tokenText) {
-    whatText = whatText.split("дадада").join(tokenText).split("дадада").join(tokenText).replace(/tokens/gi, tokenText);
-    worstText = worstText.split("дадада").join(tokenText).split("дадада").join(tokenText).replace(/tokens/gi, tokenText);
+    whatText = whatText.replace(/tokens/gi, tokenText);
+    worstText = worstText.replace(/tokens/gi, tokenText);
   }
 
   const hasRealPermissions =
@@ -559,17 +588,17 @@ const UxRiskBlock = ({ report, currentLang }) => {
 
     ...(hasRealPermissions ? [{
       icon: "key-outline",
-      title: isRu ? "Что ты подтверждаешь" : "What you are approving",
+      title: pickLang(currentLang, "Что ты подтверждаешь", "What you are approving", "Що ти підтверджуєш"),
       text: String(permissions?.summary || permissions?.note || "").trim(),
       color: C.accent,
       revokeUrl: permissions?.can_spend === true ? "https://revoke.cash/" : "",
       extra: [
-        permissions.can_spend === true ? `${isRu ? "Может списывать" : "Can spend"}: ${isRu ? "да" : "yes"}` : "",
-        permissions.unlimited === true ? `${isRu ? "дада?" : "Spend limit"}: ?` : "",
-        permissions.spend_limit && permissions.spend_limit !== "unknown" && permissions.spend_limit !== "?" ? `${isRu ? "дада?" : "Spend limit"}: ${safeText(permissions.spend_limit)}` : "",
-        tokens.length ? `${isRu ? "дадада" : "Tokens"}: ${tokens.join(", ")}` : "",
-        permissions?.spender_trust ? `${isRu ? "дададада? spender" : "Spender reputation"}: ${permissions.spender_trust}` : "",
-        permissions?.spender_label ? `${isRu ? "дада дада" : "Spender"}: ${permissions.spender_label}` : permissions?.spender ? `${isRu ? "дада дада" : "Spender"}: ${permissions.spender}` : "",
+        permissions.can_spend === true ? `${pickLang(currentLang, "Может списывать", "Can spend", "Може списувати")}: ${pickLang(currentLang, "да", "yes", "так")}` : "",
+        permissions.unlimited === true ? `${pickLang(currentLang, "Лимит списания", "Spend limit", "Ліміт списання")}: ${pickLang(currentLang, "безлимитный", "unlimited", "безлімітний")}` : "",
+        permissions.spend_limit && permissions.spend_limit !== "unknown" && permissions.spend_limit !== "?" ? `${pickLang(currentLang, "Лимит списания", "Spend limit", "Ліміт списання")}: ${safeText(permissions.spend_limit)}` : "",
+        tokens.length ? `${pickLang(currentLang, "Токены", "Tokens", "Токени")}: ${tokens.join(", ")}` : "",
+        permissions?.spender_trust ? `${pickLang(currentLang, "Репутация spender", "Spender reputation", "Репутація spender")}: ${permissions.spender_trust}` : "",
+        permissions?.spender_label ? `${pickLang(currentLang, "Кто получает доступ", "Spender", "Хто отримує доступ")}: ${permissions.spender_label}` : permissions?.spender ? `${pickLang(currentLang, "Кто получает доступ", "Spender", "Хто отримує доступ")}: ${permissions.spender}` : "",
       ].filter(Boolean),
     }] : []),
   ].filter(Boolean);
@@ -579,7 +608,7 @@ const UxRiskBlock = ({ report, currentLang }) => {
   return (
     <BlurCard style={{ borderColor: "rgba(255,176,32,0.30)" }}>
       <Text style={{ color: C.text, fontWeight: "900", fontSize: 18, marginBottom: 10, textAlign: "center" }}>
-        {isRu ? "Что реально может произойти" : "What can actually happen"}
+        {pickLang(currentLang, "Что реально может произойти", "What can actually happen", "Що реально може статися")}
       </Text>
 
       {rows.map((row, idx) => (
@@ -617,7 +646,7 @@ const UxRiskBlock = ({ report, currentLang }) => {
             >
               <Ionicons name="close-circle-outline" size={18} color={C.bad} />
               <Text style={{ color: C.bad, fontWeight: "900", fontSize: 15, marginLeft: 8 }}>
-                {isRu ? "дададада дадада" : "Revoke approval"}
+                {pickLang(currentLang, "Отозвать approval", "Revoke approval", "Відкликати approval")}
               </Text>
             </TouchableOpacity>
           )}
@@ -676,7 +705,7 @@ export default function Home() {
   const user = useAuthStore((s) => s.user);
   const isAuth = useAuthStore((s) => s.isAuth);
 
-  const [lang, setLangState] = useState(i18n?.language?.startsWith("ru") ? "ru" : "en");
+  const [lang, setLangState] = useState(normalizeAppLang(i18n?.language));
   const [input, setInput] = useState("");
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -701,15 +730,15 @@ export default function Home() {
   const uid = resolvedUid || authUid || installUid || "anonymous";
 
   const TT = useCallback(
-    (key, enText, ruText) => {
+    (key, enText, ruText, ukText) => {
       const val = t(key, { defaultValue: "" });
       if (val && String(val).trim() && val !== key) return val;
-      return lang === "ru" ? ruText : enText;
+      return pickLang(lang, ruText, enText, ukText);
     },
     [t, lang]
   );
 
-  const currentLang = lang === "ru" ? "ru" : "en";
+  const currentLang = normalizeAppLang(lang);
 
   useEffect(() => {
     logEvent("screen_open", { screen: "home" });
@@ -719,7 +748,7 @@ export default function Home() {
     (async () => {
       try {
         const saved = await AsyncStorage.getItem("app.language");
-        const initial = saved || (i18n?.language?.startsWith("ru") ? "ru" : "en");
+        const initial = normalizeAppLang(saved || i18n?.language);
         if (i18n && initial && initial !== i18n.language) await i18n.changeLanguage(initial);
         setLangState(initial || "en");
       } catch {}
@@ -730,11 +759,12 @@ export default function Home() {
     async (lng) => {
       try {
         if (!i18n || typeof i18n.changeLanguage !== "function") return;
-        if (lng === lang) return;
-        await i18n.changeLanguage(lng);
-        setLangState(lng);
-        await AsyncStorage.setItem("app.language", lng);
-        logEvent("language_change", { screen: "home", lang: lng });
+        const next = normalizeAppLang(lng);
+        if (next === lang) return;
+        await i18n.changeLanguage(next);
+        setLangState(next);
+        await AsyncStorage.setItem("app.language", next);
+        logEvent("language_change", { screen: "home", lang: next });
       } catch {}
     },
     [i18n, lang]
@@ -1083,7 +1113,7 @@ export default function Home() {
 
               <View style={[cardChrome, { borderRadius: 999 }]}>
                 <BlurView intensity={28} tint="dark" style={{ borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, flexDirection: "row" }}>
-                  {["ru", "en"].map((lng) => (
+                  {["ru", "en", "uk"].map((lng) => (
                     <TouchableOpacity key={lng} onPress={() => setLang(lng)} style={{ paddingHorizontal: 7, paddingVertical: 2, opacity: lang === lng ? 1 : 0.55 }}>
                       <Text style={{ color: lang === lng ? C.accent : C.text, fontWeight: "900", fontSize: 11 }}>{lng.toUpperCase()}</Text>
                     </TouchableOpacity>
@@ -1095,7 +1125,7 @@ export default function Home() {
 
           <BlurCard style={{ marginTop: 6, borderColor: "rgba(255,176,32,0.24)" }}>
             <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "center", marginBottom: 10 }}>
-              <SmallPill text={TT("home.new.pill1", "ScamShield", "Скам Шилд")} icon="shield-checkmark" />
+              <SmallPill text={TT("home.new.pill1", "ScamShield", "Скам Шилд", "Скам Шилд")} icon="shield-checkmark" />
               <SmallPill text={quotaPillText} icon={isPro ? "flash" : "lock-open-outline"} color={isPro ? C.accent : C.dim} />
             </View>
 
@@ -1103,6 +1133,10 @@ export default function Home() {
               {currentLang === "ru" ? (
                 <>
                   ПРОВЕРЬ <Text style={{ color: C.accent }}>ССЫЛКУ</Text>, КОШЕЛЁК ИЛИ ТЕКСТ ДО ТОГО, КАК ДОВЕРЯТЬ.
+                </>
+              ) : currentLang === "uk" ? (
+                <>
+                  ПЕРЕВІР <Text style={{ color: C.accent }}>ПОСИЛАННЯ</Text>, ГАМАНЕЦЬ АБО ТЕКСТ ДО ТОГО, ЯК ДОВІРЯТИ.
                 </>
               ) : (
                 <>
@@ -1116,6 +1150,10 @@ export default function Home() {
                 <>
                   Вставь всё подозрительное. Noytrix даст <Text style={{ color: C.accent, fontWeight: "900" }}>быстрый вердикт</Text> здесь, а полный разбор откроешь в ScamShield.
                 </>
+              ) : currentLang === "uk" ? (
+                <>
+                  Встав усе підозріле. Noytrix дасть <Text style={{ color: C.accent, fontWeight: "900" }}>швидкий вердикт</Text> тут, а повний розбір відкриєш у ScamShield.
+                </>
               ) : (
                 <>
                   Paste anything suspicious. Noytrix gives a <Text style={{ color: C.accent, fontWeight: "900" }}>fast verdict</Text> here, then opens the full ScamShield report.
@@ -1125,7 +1163,7 @@ export default function Home() {
 
             <View style={{ marginTop: 18, borderWidth: 1, borderColor: C.borderSoft, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.05)" }}>
               <TextInput
-                placeholder={TT("home.new.inputPlaceholder", "Paste URL / domain / wallet / contract / ticker / text", "Вставь URL / домен / кошелёк / контракт / тикер / текст")}
+                placeholder={TT("home.new.inputPlaceholder", "Paste URL / domain / wallet / contract / ticker / text", "Вставь URL / домен / кошелёк / контракт / тикер / текст", "Встав URL / домен / гаманець / контракт / тикер / текст")}
                 placeholderTextColor={C.dim}
                 value={input}
                 onChangeText={(v) => {
@@ -1142,17 +1180,17 @@ export default function Home() {
                 <PrimaryButton
                   onPress={onCheck}
                   disabled={loading || quotaBlocked}
-                  title={loading ? TT("home.new.checking", "Checking…", "Проверка…") : TT("home.new.check", "Check now", "Проверить")}
+                  title={loading ? TT("home.new.checking", "Checking…", "Проверка…", "Перевірка...") : TT("home.new.check", "Check now", "Проверить", "Перевірити")}
                   leftIcon={loading ? <ActivityIndicator color={C.accentText} /> : <Ionicons name="shield-checkmark" size={18} color={C.accentText} />}
                 />
               </View>
               <View style={{ width: 10 }} />
-              <SecondaryButton title={TT("home.new.samples", "Samples", "Примеры")} onPress={() => setShowSamples(true)} leftIcon={<Ionicons name="sparkles-outline" size={16} color={C.dim} />} />
+              <SecondaryButton title={TT("home.new.samples", "Samples", "Примеры", "Приклади")} onPress={() => setShowSamples(true)} leftIcon={<Ionicons name="sparkles-outline" size={16} color={C.dim} />} />
             </View>
 
             {(!!input || !!normalizedReport || !!backendError) && (
               <View style={{ marginTop: 10 }}>
-                <SecondaryButton title={TT("home.new.clear", "Clear", "Очистить")} onPress={clearScan} leftIcon={<Ionicons name="close-circle-outline" size={16} color={C.dim} />} />
+                <SecondaryButton title={TT("home.new.clear", "Clear", "Очистить", "Очистити")} onPress={clearScan} leftIcon={<Ionicons name="close-circle-outline" size={16} color={C.dim} />} />
               </View>
             )}
           </BlurCard>
@@ -1160,7 +1198,7 @@ export default function Home() {
           {!!backendError && (
             <BlurCard style={{ borderColor: "rgba(255,107,107,0.38)" }}>
               <Text style={{ color: C.bad, fontWeight: "900", fontSize: 18, marginBottom: 8, textAlign: "center" }}>
-                {TT("home.new.errorTitle", "CHECK UNAVAILABLE", "ПРОВЕРКА НЕДОСТУПНА")}
+                {TT("home.new.errorTitle", "CHECK UNAVAILABLE", "ПРОВЕРКА НЕДОСТУПНА", "ПЕРЕВІРКА НЕДОСТУПНА")}
               </Text>
               <Text style={{ color: C.dim, lineHeight: 20, textAlign: "center" }}>{backendError}</Text>
             </BlurCard>
@@ -1170,13 +1208,13 @@ export default function Home() {
           {!isPro && quotaBlocked && (
             <BlurCard style={{ borderColor: "rgba(255,176,32,0.35)" }}>
               <Text style={{ color: C.accent, fontWeight: "900", fontSize: 20, marginBottom: 8, textAlign: "center" }}>
-                {TT("home.new.limitTitleInline", "FREE LIMIT REACHED", "FREE ЛИМИТ ДОСТИГНУТ")}
+                {TT("home.new.limitTitleInline", "FREE LIMIT REACHED", "FREE ЛИМИТ ДОСТИГНУТ", "FREE ЛІМІТ ВИЧЕРПАНО")}
               </Text>
               <Text style={{ color: C.dim, lineHeight: 21, fontSize: 15, marginBottom: 14, textAlign: "center" }}>
-                {TT("home.new.limitTextInline", "You used 4/4 checks today. Upgrade to PRO for unlimited scans.", "Вы использовали 4/4 проверки сегодня. Для безлимитных проверок перейдите на PRO.")}
+                {TT("home.new.limitTextInline", "You used 4/4 checks today. Upgrade to PRO for unlimited scans.", "Вы использовали 4/4 проверки сегодня. Для безлимитных проверок перейдите на PRO.", "Сьогодні ви використали 4/4 перевірки. Перейдіть на PRO для безлімітних сканів.")}
               </Text>
               <PrimaryButton
-                title={TT("home.new.limitProInline", "UPGRADE TO PRO", "ПЕРЕЙТИ НА PRO")}
+                title={TT("home.new.limitProInline", "UPGRADE TO PRO", "ПЕРЕЙТИ НА PRO", "ПЕРЕЙТИ НА PRO")}
                 onPress={openPro}
                 leftIcon={<Ionicons name="flash" size={18} color={C.accentText} />}
               />
@@ -1187,7 +1225,7 @@ export default function Home() {
             <BlurCard style={{ borderColor: verdictColor, borderWidth: 2 }}>
               <View style={{ borderRadius: 20, padding: 14, backgroundColor: verdictBg, borderWidth: 1, borderColor: "rgba(255,255,255,0.07)" }}>
                 <Text style={{ color: C.dim, fontWeight: "900", fontSize: 12, marginBottom: 6, textAlign: "center" }}>
-                  {TT("home.new.quickVerdict", "QUICK VERDICT", "БЫСТРЫЙ ВЕРДИКТ")}
+                  {TT("home.new.quickVerdict", "QUICK VERDICT", "БЫСТРЫЙ ВЕРДИКТ", "ШВИДКИЙ ВЕРДИКТ")}
                 </Text>
 
                 <Text style={{ color: verdictColor, fontWeight: "900", fontSize: 31, textAlign: "center" }} numberOfLines={2}>
@@ -1209,75 +1247,24 @@ export default function Home() {
                   </Text>
                 )}
 
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 14 }}>
-                  <View style={{ width: "48.5%", borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 12 }}>
-                    <Text style={{ color: C.dim, textAlign: "center" }}>{TT("home.new.type", "TYPE", "ТИП")}</Text>
-                    <Text style={{ color: C.text, fontWeight: "900", textAlign: "center", marginTop: 5 }}>{normalizedReport.kindLabel}</Text>
+                {!!normalizedReport.aiHumanVerdict && (
+                  <View style={{ marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(0,0,0,0.18)", padding: 12 }}>
+                    <Text style={{ color: C.text, fontSize: 15, lineHeight: 21, textAlign: "center", fontWeight: "800" }}>
+                      {normalizedReport.aiHumanVerdict}
+                    </Text>
                   </View>
-                  <View style={{ width: "48.5%", borderWidth: 1, borderColor: C.border, borderRadius: 16, padding: 12 }}>
-                    <Text style={{ color: C.dim, textAlign: "center" }}>{TT("home.new.level", "LEVEL", "УРОВЕНЬ")}</Text>
-                    <Text style={{ color: verdictColor, fontWeight: "900", textAlign: "center", marginTop: 5 }}>{normalizedReport.levelLabel}</Text>
-                  </View>
-                </View>
+                )}
               </View>
-
-              {topEvidence.length ? (
-                <View style={{ marginTop: 14 }}>
-                  <Text style={{ color: C.text, fontWeight: "900", fontSize: 16, marginBottom: 10, textAlign: "center" }}>
-                    {TT("home.new.mainSignals", "MAIN SIGNALS", "ГЛАВНЫЕ СИГНАЛЫ")}
-                  </Text>
-                  {topEvidence.map((ev, i) => (
-                    <View key={`home-ev-${i}`} style={{ borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, padding: 12, marginBottom: 10, backgroundColor: "rgba(255,255,255,0.03)" }}>
-                      <Text style={{ color: C.text, fontWeight: "900", fontSize: 15, textAlign: "center" }}>
-                        {prettyTitleFromCode(ev?.code, currentLang)}
-                      </Text>
-                      <Text style={{ color: C.dim, marginTop: 7, lineHeight: 19, textAlign: "center" }} numberOfLines={2}>
-                        {prettyEvidenceText(ev, currentLang)}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-
-              {(compactSources.length && !(normalizedReport?.kind === "transaction" || normalizedReport?.permissions_summary?.can_spend === true)) ? (
-                <View style={{ marginTop: 4 }}>
-                  <Text style={{ color: C.text, fontWeight: "900", fontSize: 16, marginBottom: 10, textAlign: "center" }}>
-                    {TT("home.new.sources", "SOURCES CHECKED", "ИСТОЧНИКИ ПРОВЕРКИ")}
-                  </Text>
-                  {compactSources.map((src, idx) => {
-                    const status = String(src?.status || "").toLowerCase();
-                    return (
-                      <View key={`${src?.name || "src"}-${idx}`} style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 10 }}>
-                        <Text style={{ color: C.text, fontWeight: "800", flex: 1, marginRight: 10 }}>{formatSourceName(src?.name, currentLang)}</Text>
-                        <View style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: sourceStatusBg(status), borderWidth: 1, borderColor: C.border }}>
-                          <Text style={{ color: sourceStatusColor(status), fontWeight: "900", fontSize: 12 }}>
-                            {formatSourceStatusText(status, src, currentLang)}
-                          </Text>
-                        </View>
-                      </View>
-                    );
-                  })}
-                </View>
-              ) : (normalizedReport?.kind === "transaction" || normalizedReport?.permissions_summary?.can_spend === true) ? (
-                <View style={{ marginTop: 4 }}>
-                  <Text style={{ color: C.text, fontWeight: "900", fontSize: 16, marginBottom: 10, textAlign: "center" }}>
-                    {TT("home.new.sources", "SOURCES CHECKED", "да?Худший сценарий")}
-                  </Text>
-                  <Text style={{ color: C.dim, textAlign: "center", lineHeight: 19 }}>
-                    {currentLang === "ru" ? "дададада: Худший сценарийда (EVM decoder)" : "Source: transaction analysis (EVM decoder)"}
-                  </Text>
-                </View>
-              ) : null}
 
               <View style={{ marginTop: 14 }}>
                 <PrimaryButton
-                  title={TT("home.new.openFull", "OPEN FULL SCAMSHIELD REPORT", "ОТКРЫТЬ ПОЛНЫЙ РАЗБОР SCAMSHIELD")}
+                  title={TT("home.new.openFull", "OPEN FULL SCAMSHIELD REPORT", "ОТКРЫТЬ ПОЛНЫЙ РАЗБОР SCAMSHIELD", "ВІДКРИТИ ПОВНИЙ РОЗБІР SCAMSHIELD")}
                   onPress={openShieldFull}
                   leftIcon={<Ionicons name="arrow-forward" size={18} color={C.accentText} />}
                 />
 
                 <SecondaryButton
-                  title={sharingNow ? TT("home.new.sharing", "Sharing…", "Отправка…") : TT("home.new.share", "SHARE RESULT", "ПОДЕЛИТЬСЯ")}
+                  title={sharingNow ? TT("home.new.sharing", "Sharing…", "Отправка…", "Надсилання...") : TT("home.new.share", "SHARE RESULT", "ПОДЕЛИТЬСЯ", "ПОДІЛИТИСЯ")}
                   onPress={shareVerdict}
                   disabled={sharingNow}
                   leftIcon={<Ionicons name="share-social-outline" size={16} color={C.dim} />}
@@ -1480,7 +1467,7 @@ export default function Home() {
                   {s.h}
                 </Text>
                 <Text style={{ color: C.dim, marginTop: 6, textAlign: "center" }} numberOfLines={2}>
-                  {currentLang === "ru" ? s.dRu : s.dEn}
+                  {currentLang === "en" ? s.dEn : s.dRu}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -1490,6 +1477,3 @@ export default function Home() {
     </LinearGradient>
   );
 }
-
-
-

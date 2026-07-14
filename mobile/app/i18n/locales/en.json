@@ -1,4 +1,4 @@
-﻿{
+{
   "common": {
     "back": "Back",
     "cancel": "Cancel",
@@ -16,7 +16,9 @@
     "save": "Save",
     "share": "Share",
     "tryAgain": "Try again",
-    "loadingNews": "Loading news…"
+    "loadingNews": "Loading news…",
+    "yes": "Yes",
+    "no": "No"
   },
   "tabs": {
     "home": "Home",
@@ -70,6 +72,41 @@
     "errors": {
       "network": "Network error. Please check your connection.",
       "unknown": "Unexpected error. Please try again."
+    },
+    "common": {
+      "errorTitle": "Error",
+      "errorBody": "Something went wrong. Please try again."
+    },
+    "signup": {
+      "title": "Create account",
+      "nicknameLabel": "Nickname",
+      "nicknamePlaceholder": "Your name",
+      "emailLabel": "Email",
+      "emailPlaceholder": "you@example.com",
+      "passwordLabel": "Password",
+      "passwordPlaceholder": "Create a password",
+      "sendCode": "Send code",
+      "sending": "Sending...",
+      "alertCodeSentTitle": "Code sent",
+      "alertCodeSentText": "Check your email and enter the code.",
+      "alertEmailTakenTitle": "Email already used",
+      "alertEmailTakenText": "This email already has an account. Sign in or restore access.",
+      "alertErrorTitle": "Registration failed",
+      "alertErrorText": "Could not create the account. Please try again.",
+      "errors": {
+        "invalidEmail": "Enter a valid email.",
+        "nickShort": "Nickname is too short.",
+        "passwordShort": "Password is too short."
+      }
+    },
+    "forgot": {
+      "title": "Restore access",
+      "button": "Get new key"
+    },
+    "reset": {
+      "title": "Set new access key",
+      "subtitle": "We will send a new access key to your email.",
+      "button": "Restore access"
     }
   },
   "home": {
@@ -1328,118 +1365,101 @@
     "freeLimit": "Free limit reached.",
     "proUnlimited": "Unlimited questions for PRO users."
   },
- "pro": {
-  "headerTitle": "Noytrix PRO",
-
-  "heroTitle": "Don’t get rekt. Check before you trust.",
-  "heroSubtitle": "Avoid losing money in crypto. Noytrix PRO shows risk, detects scams and gives clear actions before you lose funds.",
-
-  "moneyTitle": "Protect your money + trade smarter",
-  "moneyText": "Scam protection and trading decisions in one app — before you connect, buy, send or enter a trade.",
-
-  "alerts": {
-    "purchaseTitle": "Purchase",
-    "purchaseBody": "If you confirmed the payment in Google Play, PRO will be activated. If the screen didn’t update immediately, restart the app.",
-    "errorTitle": "Payment error",
-    "errorFallback": "Unable to complete purchase. Please try again."
-  },
-
-  "benefits": {
-    "tradeRisk": "See if a trade is too risky BEFORE you enter",
-    "scamDetect": "Detect scam links, wallets and suspicious crypto traps",
-    "mistakes": "Track mistakes and stop losing money on bad decisions"
-  },
-
-  "caseTitle": "User almost lost $500 on a scam",
-  "caseText": "Noytrix detected suspicious signals before the user trusted the link.",
-
-  "fomo": {
-    "one": "Most users upgrade after first check",
-    "two": "PRO unlocks full protection"
-  },
-
-  "tariffsTitle": "Choose your protection",
-  "tariffsNote": "Limited free scans per day. Upgrade to unlock full crypto protection.",
-  "restoreHint": "Your PRO access is active.",
-  "restoreButton": "Restore purchase",
-
-  "priceAnchor": "One bad trade can cost $100+. PRO costs less than your mistake.",
-
-  "disclaimer": "PRO does not guarantee profit and does not replace your own decision. It helps you check risk before you act.",
-
-  "badges": {
-    "active": "Active"
-  },
-
-  "planActions": {
-    "unlock": "Unlock PRO",
-    "active": "Active",
-    "available": "Available",
-    "includedLifetime": "Included"
-  },
-
-  "plans": {
-    "m": {
-      "title": "1 month",
-      "save": ""
+  "pro": {
+    "headerTitle": "Noytrix PRO",
+    "heroTitle": "Don’t get rekt. Check before you trust.",
+    "heroSubtitle": "Avoid losing money in crypto. Noytrix PRO shows risk, detects scams and gives clear actions before you lose funds.",
+    "moneyTitle": "Protect your money + trade smarter",
+    "moneyText": "Scam protection and trading decisions in one app — before you connect, buy, send or enter a trade.",
+    "alerts": {
+      "purchaseTitle": "Purchase",
+      "purchaseBody": "If you confirmed the payment in Google Play, PRO will be activated. If the screen didn’t update immediately, restart the app.",
+      "errorTitle": "Payment error",
+      "errorFallback": "Unable to complete purchase. Please try again."
     },
-    "h": {
-      "title": "6 months",
-      "save": "Save 20%"
+    "benefits": {
+      "tradeRisk": "See if a trade is too risky BEFORE you enter",
+      "scamDetect": "Detect scam links, wallets and suspicious crypto traps",
+      "mistakes": "Track mistakes and stop losing money on bad decisions"
     },
-    "l": {
-      "title": "Annual access",
-      "save": "One-time purchase"
-    }
-  },
-
-  "includesSection": "What PRO helps you do",
-
-  "includes": {
-    "protectTitle": "Check before you trust",
-    "protectDesc": "Scan links, domains, wallets and crypto objects before you send funds or connect.",
-
-    "tradeTitle": "Enter trades with more control",
-    "tradeDesc": "Understand risk, volatility and possible danger before opening a position.",
-
-    "actionTitle": "Get clear actions",
-    "actionDesc": "Not just numbers — Noytrix explains what to avoid, what to check and what to do next.",
-
-    "historyTitle": "Stop repeating bad decisions",
-    "historyDesc": "Track checks, mistakes and decisions so you can improve instead of losing blindly."
-  },
-
-  "whySection": "Why it is worth it",
-
-  "why": {
-    "money": {
-      "title": "One mistake can cost more than PRO",
-      "text": "A fake link, bad trade or suspicious token can cost much more than a subscription."
+    "caseTitle": "User almost lost $500 on a scam",
+    "caseText": "Noytrix detected suspicious signals before the user trusted the link.",
+    "fomo": {
+      "one": "Most users upgrade after first check",
+      "two": "PRO unlocks full protection"
     },
-    "protection": {
-      "title": "Full protection, not random guessing",
-      "text": "PRO gives deeper checks, stronger signals and clearer risk before you act."
+    "tariffsTitle": "Choose your protection",
+    "tariffsNote": "Limited free scans per day. Upgrade to unlock full crypto protection.",
+    "restoreHint": "Your PRO access is active.",
+    "restoreButton": "Restore purchase",
+    "priceAnchor": "One bad trade can cost $100+. PRO costs less than your mistake.",
+    "disclaimer": "PRO does not guarantee profit and does not replace your own decision. It helps you check risk before you act.",
+    "badges": {
+      "active": "Active"
     },
-    "smarter": {
-      "title": "Trade smarter, not emotionally",
-      "text": "Use risk signals and decision history to avoid emotional entries and weak setups."
-    }
+    "planActions": {
+      "unlock": "Unlock PRO",
+      "active": "Active",
+      "available": "Available",
+      "includedLifetime": "Included",
+      "includedYearly": "Included yearly access"
+    },
+    "plans": {
+      "m": {
+        "title": "1 month",
+        "save": ""
+      },
+      "h": {
+        "title": "6 months",
+        "save": "Save 20%"
+      },
+      "l": {
+        "title": "Annual access",
+        "save": "One-time purchase"
+      }
+    },
+    "includesSection": "What PRO helps you do",
+    "includes": {
+      "protectTitle": "Check before you trust",
+      "protectDesc": "Scan links, domains, wallets and crypto objects before you send funds or connect.",
+      "tradeTitle": "Enter trades with more control",
+      "tradeDesc": "Understand risk, volatility and possible danger before opening a position.",
+      "actionTitle": "Get clear actions",
+      "actionDesc": "Not just numbers — Noytrix explains what to avoid, what to check and what to do next.",
+      "historyTitle": "Stop repeating bad decisions",
+      "historyDesc": "Track checks, mistakes and decisions so you can improve instead of losing blindly."
+    },
+    "whySection": "Why it is worth it",
+    "why": {
+      "money": {
+        "title": "One mistake can cost more than PRO",
+        "text": "A fake link, bad trade or suspicious token can cost much more than a subscription."
+      },
+      "protection": {
+        "title": "Full protection, not random guessing",
+        "text": "PRO gives deeper checks, stronger signals and clearer risk before you act."
+      },
+      "smarter": {
+        "title": "Trade smarter, not emotionally",
+        "text": "Use risk signals and decision history to avoid emotional entries and weak setups."
+      }
+    },
+    "joinSection": "Unlock full access",
+    "join": {
+      "proLabel": "Noytrix PRO",
+      "fullAccess": "Full access",
+      "accessText": "Get full ScamShield protection, trading risk tools and decision history in one PRO plan.",
+      "ctaBuy": "Get full protection",
+      "ctaActive": "PRO active",
+      "startPriceLabel": "Starts from",
+      "startPriceValue": "{{price}}",
+      "valueLabel": "Value",
+      "valueText": "Less than one bad crypto mistake"
+    },
+    "restoreTitle": "Restore purchase",
+    "restoreSuccess": "Purchase restored.",
+    "restoreEmpty": "No active purchase was found for this account."
   },
-
-  "joinSection": "Unlock full access",
-
-  "join": {
-    "proLabel": "Noytrix PRO",
-    "fullAccess": "Full access",
-    "accessText": "Get full ScamShield protection, trading risk tools and decision history in one PRO plan.",
-    "ctaBuy": "Get full protection",
-    "ctaActive": "PRO active",
-    "startPriceLabel": "Starts from",
-    "startPriceValue": "{{price}}",
-    "valueLabel": "Value",
-    "valueText": "Less than one bad crypto mistake"
-  }
-},
   "trading": {
     "status": "Windows system",
     "title": "Trading Center",
@@ -1496,7 +1516,6 @@
       }
     },
     "system": {
-      "title": "System includes",
       "1": "Binance API connection",
       "2": "Real-time futures pair monitoring",
       "3": "Long / Short signal logic",
@@ -1504,7 +1523,8 @@
       "5": "Leverage and position control",
       "6": "Daily loss limit and max trades per day",
       "7": "Live runtime and bot status monitoring",
-      "8": "Manual + semi-auto execution workflow"
+      "8": "Manual + semi-auto execution workflow",
+      "title": "System includes"
     },
     "plans": {
       "kicker": "Desktop plans",
