@@ -78,8 +78,8 @@ def enforce_risk_floor(score, level, malicious_sources=None, confirmed_red_flag=
     level = normalize_level(level, score)
 
     if confirmed_red_flag or malicious_sources:
-        score = max(score, 80)
-        if level in {"safe", "low", "medium"}:
-            level = "high"
+        score = max(score, 85)
+        if level in {"safe", "low", "medium", "high"}:
+            level = "critical"
 
     return score, level

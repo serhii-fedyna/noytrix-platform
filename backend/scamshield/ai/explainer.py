@@ -104,7 +104,7 @@ def build_threat_specific_prompt(ctx: Dict[str, Any]) -> str:
 
     if kind == "url":
         parts.append(
-            "This is a website or link check. Explain domain/page risk, external source results, and what the user should avoid on the site."
+            "This is a website or link check. Explain domain/page risk, Noytrix threat signals, and what the user should avoid on the site."
         )
     elif kind == "wallet":
         parts.append(
@@ -272,8 +272,8 @@ def _ai_explanation_unavailable(
 
     messages = {
         "en": "AI explanation is temporarily unavailable. Please try again later.",
-        "ru": "AI-?????????? ???????? ??????????. ?????????? ????????? ?????.",
-        "uk": "AI-????????? ????????? ??????????. ????????? ????????? ???????.",
+        "ru": "AI-объяснение временно недоступно. Попробуйте повторить позже.",
+        "uk": "AI-пояснення тимчасово недоступне. Спробуйте повторити пізніше.",
     }
     text = messages[lang]
     structured = {
@@ -308,7 +308,6 @@ async def generate_ai_security_explanation(
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return _ai_explanation_unavailable(
-            verdict,
             lang,
             mode if "mode" in locals() else "detailed",
             "openai_api_key_missing",
@@ -319,7 +318,6 @@ async def generate_ai_security_explanation(
         from openai import AsyncOpenAI
     except Exception:
         return _ai_explanation_unavailable(
-            verdict,
             lang,
             mode if "mode" in locals() else "detailed",
             "openai_package_missing",
@@ -340,6 +338,7 @@ async def generate_ai_security_explanation(
     system = (
         "You are Noytrix AI Security Analyst for Web3. "
         "Use only the structured backend data provided. "
+        "Do not mention third-party provider names such as VirusTotal, Google Safe Browsing, urlscan, Etherscan, BscScan, DexScreener, Honeypot, or CoinGecko in the user-facing text. Treat their data as Noytrix risk intelligence. "
         "Do not invent facts. Do not claim exact financial loss unless the backend provides it. "
         "If evidence is weak or unavailable, say that clearly. "
         "Write for a normal crypto user, not for a developer. "
@@ -376,7 +375,7 @@ async def generate_ai_security_explanation(
         "Explain the likely attacker intent and what the attacker is trying to achieve. "
         "If execution behavior exists, explain the execution flow in plain language: what the user sees first, what hidden action may happen next, and the possible final outcome. "
         "For wallet-drain style behavior, clearly explain that signing can create future risk even without immediate theft. "
-        "If confidence is high, explain WHY confidence is high using concrete evidence sources and repeated signals. "
+        "If confidence is high, explain WHY confidence is high using concrete Noytrix evidence signals and repeated signals. "
         "If confidence is low or mixed, explain WHY uncertainty exists and which signals are missing or incomplete. "
         "Avoid robotic assistant wording. Write like an experienced crypto threat analyst speaking to a real user. "
         "Do not just list risks — connect them into a believable attack narrative. "
@@ -396,7 +395,7 @@ async def generate_ai_security_explanation(
     mode_rule = (
         "Use short mode: short must be one very clear sentence, details must be no more than 2 short sentences, risks/actions max 2 items each. "
         if mode == "short"
-        else "Use detailed mode: details should explain the situation clearly, risks/actions may contain up to 5 useful items each. "
+        else "Use detailed mode: details should be 4 to 8 clear sentences, and risks/actions may contain up to 5 useful items each. "
     )
 
     user = (
@@ -435,7 +434,7 @@ async def generate_ai_security_explanation(
         resp = await client.chat.completions.create(
             model=model,
             temperature=0.2,
-            max_tokens=450,
+            max_tokens=900,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -484,7 +483,6 @@ async def generate_ai_security_explanation(
         return result
     except Exception as e:
         return _ai_explanation_unavailable(
-            verdict,
             lang,
             mode if "mode" in locals() else "detailed",
             str(e)[:300],

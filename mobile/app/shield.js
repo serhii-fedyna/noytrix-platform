@@ -142,8 +142,18 @@ const reIsHttp = /^https?:\/\//i;
 const reIsEth = /^0x[a-f0-9]{40}$/i;
 const reTicker = /^[A-Z0-9._-]{2,15}$/i;
 
-function pickLang(lang, ru, en) {
-  return String(lang || "en").toLowerCase().startsWith("ru") ? ru : en;
+function normalizeLang(value) {
+  const s = String(value || "en").toLowerCase();
+  if (s.startsWith("ru")) return "ru";
+  if (s.startsWith("uk") || s.startsWith("ua")) return "uk";
+  return "en";
+}
+
+function pickLang(lang, ru, en, uk) {
+  const normalized = normalizeLang(lang);
+  if (normalized === "ru") return ru ?? en ?? uk ?? "";
+  if (normalized === "uk") return uk ?? en ?? ru ?? "";
+  return en ?? ru ?? uk ?? "";
 }
 
 function uidFrom(name, email, nick) {
@@ -709,41 +719,57 @@ function formatKindLabel(kind, localized, lang) {
 
   const k = String(kind || "").toLowerCase();
   if (k === "url") return "URL";
-  if (k === "domain") return pickLang(lang, "Домен", "Domain");
-  if (k === "wallet") return pickLang(lang, "Кошелёк", "Wallet");
-  if (k === "contract") return pickLang(lang, "Контракт", "Contract");
-  if (k === "ticker") return pickLang(lang, "Тикер", "Ticker");
+  if (k === "domain") return pickLang(lang, "Домен", "Domain", "Домен");
+  if (k === "wallet") return pickLang(lang, "Кошелёк", "Wallet", "Гаманець");
+  if (k === "contract") return pickLang(lang, "Контракт", "Contract", "Контракт");
+  if (k === "ticker") return pickLang(lang, "Тикер", "Ticker", "Тикер");
 
-  return pickLang(lang, "Текст", "Text");
+  return pickLang(lang, "Текст", "Text", "Текст");
 }
 
 function formatCommunityVerdict(v, lang) {
   const s = String(v || "").toLowerCase();
   if (s === "safe") return "SAFE";
   if (s === "scam") return "SCAM";
-  if (s === "mixed") return pickLang(lang, "Смешано", "Mixed");
-  return pickLang(lang, "Неизвестно", "Unknown");
+  if (s === "mixed") return pickLang(lang, "Смешано", "Mixed", "Змішано");
+  return pickLang(lang, "Неизвестно", "Unknown", "Невідомо");
 }
 
 function formatLevelLabel(level, lang) {
   const s = String(level || "").toLowerCase();
-  if (s === "critical") return pickLang(lang, "Критично", "Critical");
-  if (s === "danger") return pickLang(lang, "Опасно", "Danger");
-  if (s === "suspicious") return pickLang(lang, "Подозрительно", "Suspicious");
-  return pickLang(lang, "Безопасно", "Safe");
+  if (s === "critical") return pickLang(lang, "Критично", "Critical", "Критично");
+  if (s === "danger") return pickLang(lang, "Опасно", "Danger", "Небезпечно");
+  if (s === "suspicious") return pickLang(lang, "Подозрительно", "Suspicious", "Підозріло");
+  return pickLang(lang, "Безопасно", "Safe", "Безпечно");
 }
 
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || {};
   const structured = result?.structured || {};
-  return (
-    structured.details ||
-    structured.short ||
-    result.text ||
-    raw?.ai_explanation ||
-    raw?.human_explanation ||
-    ""
-  ).toString().trim();
+  const chunks = [];
+  const add = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(add);
+      return;
+    }
+    const text = typeof value === "string" ? value.trim() : "";
+    if (text && !chunks.includes(text)) chunks.push(text);
+  };
+
+  add(structured.details);
+  add(structured.attack_scenario);
+  add(structured.hidden_danger);
+  add(structured.attacker_intent);
+  add(structured.loss_scenario);
+  add(structured.risks);
+  add(structured.actions);
+  add(structured.confidence_note);
+  add(structured.short);
+  add(result.text);
+  add(raw?.ai_explanation);
+  add(raw?.human_explanation);
+
+  return chunks.join("\n\n").trim();
 }
 
 function normalizeScanReport(raw, currentLang) {
@@ -769,14 +795,14 @@ function normalizeScanReport(raw, currentLang) {
     verdictLabel:
       raw.ai_verdict_localized ||
       raw.verdict_localized ||
-      (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : raw.ai_verdict_en || raw.verdict_en) ||
+      (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk || raw.verdict_uk : raw.ai_verdict_en || raw.verdict_en) ||
       raw.ai_verdict ||
       raw.verdict ||
       raw.level ||
       "",
     aiVerdictLabel:
       raw.ai_verdict_localized ||
-      (currentLang === "ru" ? raw.ai_verdict_ru : raw.ai_verdict_en) ||
+      (currentLang === "ru" ? raw.ai_verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk : raw.ai_verdict_en) ||
       raw.ai_verdict ||
       null,
     aiHumanVerdict: getAiVerdictText(raw),
@@ -1354,8 +1380,7 @@ export default function Shield() {
 
   const currentLang = useMemo(() => {
     const v = i18nHook?.lang || i18nHook?.language || i18nHook?.i18n?.language || i18nHook?.locale || "en";
-    const s = String(v || "").toLowerCase();
-    return s.startsWith("ru") ? "ru" : "en";
+    return normalizeLang(v);
   }, [i18nHook]);
 
   useEffect(() => {
@@ -1517,6 +1542,8 @@ export default function Shield() {
                   headers: {
                     Authorization: `Bearer ${authHeader}`,
                     "Accept-Language": currentLang,
+                    "X-Lang": currentLang,
+                    "X-Language": currentLang,
                     "X-User-Id": bestUid || "anonymous",
                   },
                 },
@@ -1686,6 +1713,8 @@ export default function Shield() {
     try {
       const headers = {
         "Accept-Language": currentLang,
+        "X-Lang": currentLang,
+        "X-Language": currentLang,
         "X-User-Id": stableUserId,
       };
 
@@ -1871,6 +1900,8 @@ export default function Shield() {
         const headers = {
           "Content-Type": "application/json",
           "Accept-Language": currentLang,
+          "X-Lang": currentLang,
+          "X-Language": currentLang,
           "X-User-Id": stableUserId,
           "x-app-key": APP_KEY,
         };
@@ -2291,6 +2322,8 @@ export default function Shield() {
               </View>
             </BlurCard>
 
+            {false && (
+              <>
             <UxRiskBlock report={normalizedReport} currentLang={currentLang} tx={tx} />
 
             <BlurCard>
@@ -2328,6 +2361,9 @@ export default function Shield() {
                 </Text>
               )}
             </BlurCard>
+
+              </>
+            )}
 
             <BlurCard>
               <Text style={{ color: T.text, fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
@@ -2649,10 +2685,6 @@ export default function Shield() {
     </LinearGradient>
   );
 }
-
-
-
-
 
 
 

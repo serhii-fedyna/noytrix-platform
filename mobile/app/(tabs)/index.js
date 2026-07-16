@@ -330,36 +330,47 @@ function formatKindLabel(kind, localized, lang) {
   if (localized) return localized;
   const k = String(kind || "").toLowerCase();
   if (k === "url") return "URL";
-  if (k === "domain") return pickLang(lang, "Домен", "Domain");
-  if (k === "wallet") return pickLang(lang, "Кошелёк", "Wallet");
-  if (k === "contract") return pickLang(lang, "Контракт", "Contract");
-  if (k === "ticker") return pickLang(lang, "Тикер", "Ticker");
-  return pickLang(lang, "Текст", "Text");
+  if (k === "domain") return pickLang(lang, "Домен", "Domain", "Домен");
+  if (k === "wallet") return pickLang(lang, "Кошелёк", "Wallet", "Гаманець");
+  if (k === "contract") return pickLang(lang, "Контракт", "Contract", "Контракт");
+  if (k === "ticker") return pickLang(lang, "Тикер", "Ticker", "Тикер");
+  return pickLang(lang, "Текст", "Text", "Текст");
 }
 
 function formatLevelLabel(level, lang) {
   const s = String(level || "").toLowerCase();
-  if (s === "critical") return pickLang(lang, "Критический", "Critical");
-  if (s === "danger") return pickLang(lang, "Опасно", "Danger");
-  if (s === "suspicious") return pickLang(lang, "Подозрительно", "Suspicious");
-  return pickLang(lang, "Безопасно", "Safe");
+  if (s === "critical") return pickLang(lang, "Критический", "Critical", "Критичний");
+  if (s === "danger") return pickLang(lang, "Опасно", "Danger", "Небезпечно");
+  if (s === "suspicious") return pickLang(lang, "Подозрительно", "Suspicious", "Підозріло");
+  return pickLang(lang, "Безопасно", "Safe", "Безпечно");
 }
 
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || null;
   const structured = result && typeof result === "object" ? result.structured || null : null;
-  const candidates = [
-    structured?.details,
-    structured?.short,
-    result?.text,
-    raw?.ai_explanation,
-  ];
+  const chunks = [];
+  const add = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(add);
+      return;
+    }
+    const text = typeof value === "string" ? value.trim() : "";
+    if (text && !chunks.includes(text)) chunks.push(text);
+  };
 
-  for (const value of candidates) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
+  add(structured?.details);
+  add(structured?.attack_scenario);
+  add(structured?.hidden_danger);
+  add(structured?.attacker_intent);
+  add(structured?.loss_scenario);
+  add(structured?.risks);
+  add(structured?.actions);
+  add(structured?.confidence_note);
+  add(structured?.short);
+  add(result?.text);
+  add(raw?.ai_explanation);
 
-  return "";
+  return chunks.join("\n\n").trim();
 }
 
 function formatSourceName(name, lang) {
@@ -475,7 +486,7 @@ function normalizeScanReport(raw, currentLang) {
     verdictLabel:
       raw.ai_verdict_localized ||
       raw.verdict_localized ||
-      (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : raw.ai_verdict_en || raw.verdict_en) ||
+      (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk || raw.verdict_uk : raw.ai_verdict_en || raw.verdict_en) ||
       raw.ai_verdict ||
       raw.verdict ||
       raw.level ||
@@ -516,12 +527,12 @@ function explainBackendMessage(raw, lang) {
 }
 
 const SAMPLES = [
-  { h: "https://binance-airdrop-bonus.net", dRu: "Фишинг под Binance", dEn: "Phishing pretending to be Binance" },
-  { h: "https://metamask-support-login.com", dRu: "Фейковая поддержка MetaMask", dEn: "Fake MetaMask support" },
-  { h: "http://paypal.com.verify-account-security.com", dRu: "Ловушка с поддоменом PayPal", dEn: "PayPal subdomain trap" },
-  { h: "0x1111111254EEB25477B68fB85Ed929F73A960582", dRu: "EVM адрес / контракт", dEn: "EVM address / contract" },
-  { h: "BTC", dRu: "Проверка тикера", dEn: "Ticker check" },
-  { h: "connect wallet to claim reward now enter seed phrase", dRu: "Опасный текст", dEn: "Dangerous text" },
+  { h: "https://binance-airdrop-bonus.net", dRu: "Фишинг под Binance", dEn: "Phishing pretending to be Binance", dUk: "Фішинг під Binance" },
+  { h: "https://metamask-support-login.com", dRu: "Фейковая поддержка MetaMask", dEn: "Fake MetaMask support", dUk: "Фейкова підтримка MetaMask" },
+  { h: "http://paypal.com.verify-account-security.com", dRu: "Ловушка с поддоменом PayPal", dEn: "PayPal subdomain trap", dUk: "Пастка з піддоменом PayPal" },
+  { h: "0x1111111254EEB25477B68fB85Ed929F73A960582", dRu: "EVM адрес / контракт", dEn: "EVM address / contract", dUk: "EVM адреса / контракт" },
+  { h: "BTC", dRu: "Проверка тикера", dEn: "Ticker check", dUk: "Перевірка тикера" },
+  { h: "connect wallet to claim reward now enter seed phrase", dRu: "Опасный текст", dEn: "Dangerous text", dUk: "Небезпечний текст" },
 ];
 
 const HK = (uid) => `profile.${uid}:history`;
@@ -835,11 +846,11 @@ export default function Home() {
   const compactSources = useMemo(() => (Array.isArray(normalizedReport?.sources) ? normalizedReport.sources.slice(0, 3) : []), [normalizedReport]);
 
   const quotaPillText = useMemo(() => {
-    if (isPro) return pickLang(currentLang, "PRO • безлимит", "PRO • unlimited");
+    if (isPro) return pickLang(currentLang, "PRO • безлимит", "PRO • unlimited", "PRO • безліміт");
 
     const used = Number(quota?.used || 0);
     const limit = Number(quota?.limit || quota?.freeLimit || 4);
-    return pickLang(currentLang, `FREE • ${used}/${limit} проверок`, `FREE • ${used}/${limit} checks`);
+    return pickLang(currentLang, `FREE • ${used}/${limit} проверок`, `FREE • ${used}/${limit} checks`, `FREE • ${used}/${limit} перевірок`);
   }, [isPro, quota, currentLang]);
 
   const onCheck = useCallback(async () => {
@@ -852,7 +863,7 @@ export default function Home() {
     const effectiveUid = await getBestKnownUid(effectiveUser, installUid, accessToken || "");
 
     if (!isPro && quotaBlocked) {
-      setQuotaMsg(pickLang(currentLang, "FREE лимит на сегодня уже использован. PRO убирает лимиты.", "FREE daily limit reached. PRO removes limits."));
+      setQuotaMsg(pickLang(currentLang, "FREE лимит на сегодня уже использован. PRO убирает лимиты.", "FREE daily limit reached. PRO removes limits.", "FREE ліміт на сьогодні вже використано. PRO прибирає ліміти."));
       setShowQuotaModal(false);
       return;
     }
@@ -866,6 +877,8 @@ export default function Home() {
     try {
       const headers = {
         "Accept-Language": currentLang,
+        "X-Lang": currentLang,
+        "X-Language": currentLang,
         "X-User-Id": effectiveUid || "anonymous",
       };
 
@@ -902,7 +915,7 @@ export default function Home() {
 
         setQuotaMsg(
           detail?.message ||
-            pickLang(currentLang, "FREE лимит 4 проверки в день достигнут. PRO убирает лимиты.", "FREE limit of 4 checks per day reached. PRO removes limits.")
+            pickLang(currentLang, "FREE лимит 4 проверки в день достигнут. PRO убирает лимиты.", "FREE limit of 4 checks per day reached. PRO removes limits.", "FREE ліміт 4 перевірки на день досягнуто. PRO прибирає ліміти.")
         );
         setShowQuotaModal(false);
         setQuotaBlocked(true);
@@ -956,7 +969,7 @@ export default function Home() {
       const humanMessage = explainBackendMessage(String(e?.message || e || ""), currentLang);
       setReport(null);
       setBackendError(humanMessage);
-      showAppAlert(pickLang(currentLang, "Проверка недоступна", "Check unavailable"), humanMessage);
+      showAppAlert(pickLang(currentLang, "Проверка недоступна", "Check unavailable", "Перевірка недоступна"), humanMessage);
     } finally {
       setLoading(false);
     }
@@ -990,7 +1003,7 @@ export default function Home() {
         await Sharing.shareAsync(uri, {
           mimeType: "image/png",
           UTI: "public.png",
-          dialogTitle: pickLang(currentLang, "Поделиться Noytrix", "Share Noytrix"),
+          dialogTitle: pickLang(currentLang, "Поделиться Noytrix", "Share Noytrix", "Поділитися Noytrix"),
         });
       } else {
         await Share.share({
@@ -1006,8 +1019,8 @@ export default function Home() {
 
       if (!raw.includes("cancel")) {
         showAppAlert(
-          pickLang(currentLang, "Не удалось поделиться", "Could not share"),
-          pickLang(currentLang, "Не удалось отправить изображение. Попробуй ещё раз.", "Could not share the image. Please try again.")
+          pickLang(currentLang, "Не удалось поделиться", "Could not share", "Не вдалося поділитися"),
+          pickLang(currentLang, "Не удалось отправить изображение. Попробуй ещё раз.", "Could not share the image. Please try again.", "Не вдалося надіслати зображення. Спробуй ще раз.")
         );
       }
 
@@ -1274,15 +1287,15 @@ export default function Home() {
             </BlurCard>
           )}
 
-          {showResultBlock && (
-            <UxRiskBlock report={normalizedReport} currentLang={currentLang} />
-          )}
-
           <BlurCard style={{ borderColor: "rgba(255,176,32,0.25)" }}>
             <Text style={{ color: C.text, fontWeight: "900", fontSize: 22, marginBottom: 8, textAlign: "center" }}>
               {currentLang === "ru" ? (
                 <>
                   ОДИН ЭКРАН. ОДНО ДЕЙСТВИЕ. <Text style={{ color: C.accent }}>МЕНЬШЕ РИСКА.</Text>
+                </>
+              ) : currentLang === "uk" ? (
+                <>
+                  ОДИН ЕКРАН. ОДНА ДІЯ. <Text style={{ color: C.accent }}>МЕНШЕ РИЗИКУ.</Text>
                 </>
               ) : (
                 <>
@@ -1295,20 +1308,21 @@ export default function Home() {
               {TT(
                 "home.new.whyText",
                 "Noytrix checks links, domains, wallets, contracts, tickers and suspicious text before you click, connect or send funds.",
-                "Noytrix проверяет ссылки, домены, кошельки, контракты, тикеры и подозрительный текст до клика, подключения или перевода."
+                "Noytrix проверяет ссылки, домены, кошельки, контракты, тикеры и подозрительный текст до клика, подключения или перевода.",
+                "Noytrix перевіряє посилання, домени, гаманці, контракти, тикери й підозрілий текст до кліку, підключення або переказу."
               )}
             </Text>
 
             <View style={{ marginTop: 14 }}>
               {[
-                { icon: "link-outline", en: "Phishing links and fake domains", ru: "Фишинговые ссылки и фейковые домены" },
-                { icon: "wallet-outline", en: "Wallets, contracts and Web3 risks", ru: "Кошельки, контракты и Web3-риски" },
-                { icon: "warning-outline", en: "Seed phrase, drainer and fake support signals", ru: "Seed phrase, drainer и fake support сигналы" },
+                { icon: "link-outline", en: "Phishing links and fake domains", ru: "Фишинговые ссылки и фейковые домены", uk: "Фішингові посилання та фейкові домени" },
+                { icon: "wallet-outline", en: "Wallets, contracts and Web3 risks", ru: "Кошельки, контракты и Web3-риски", uk: "Гаманці, контракти та Web3-ризики" },
+                { icon: "warning-outline", en: "Seed phrase, drainer and fake support signals", ru: "Seed phrase, drainer и fake support сигналы", uk: "Seed phrase, drainer і сигнали fake support" },
               ].map((x, i) => (
                 <View key={`benefit-${i}`} style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, padding: 12, backgroundColor: "rgba(255,255,255,0.03)", marginBottom: 10 }}>
                   <Ionicons name={x.icon} size={19} color={C.accent} style={{ marginRight: 10 }} />
                   <Text style={{ color: C.text, fontWeight: "800", flex: 1, lineHeight: 19, textAlign: "center" }}>
-                    {pickLang(currentLang, x.ru, x.en)}
+                    {pickLang(currentLang, x.ru, x.en, x.uk)}
                   </Text>
                 </View>
               ))}
@@ -1467,7 +1481,7 @@ export default function Home() {
                   {s.h}
                 </Text>
                 <Text style={{ color: C.dim, marginTop: 6, textAlign: "center" }} numberOfLines={2}>
-                  {currentLang === "en" ? s.dEn : s.dRu}
+                  {pickLang(currentLang, s.dRu, s.dEn, s.dUk)}
                 </Text>
               </TouchableOpacity>
             ))}

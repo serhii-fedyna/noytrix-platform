@@ -84,8 +84,18 @@ const PRO_KEYS = [
   "noytrix_pro_flag",
 ];
 
-function pickLang(lang, ru, en) {
-  return String(lang || "en").toLowerCase().startsWith("ru") ? ru || en : en || ru;
+function normalizeLang(value) {
+  const s = String(value || "en").toLowerCase();
+  if (s.startsWith("ru")) return "ru";
+  if (s.startsWith("uk") || s.startsWith("ua")) return "uk";
+  return "en";
+}
+
+function pickLang(lang, ru, en, uk) {
+  const normalized = normalizeLang(lang);
+  if (normalized === "ru") return ru ?? en ?? uk ?? "";
+  if (normalized === "uk") return uk ?? en ?? ru ?? "";
+  return en ?? ru ?? uk ?? "";
 }
 
 function clamp(x, a, b) {
@@ -151,8 +161,14 @@ function verdictLabel(level, lang = "en") {
     high: "High risk",
     critical: "Critical risk",
   };
+  const uk = {
+    low: "Низький ризик",
+    medium: "Середній ризик",
+    high: "Високий ризик",
+    critical: "Критичний ризик",
+  };
 
-  return pickLang(lang, ru[l] || "Риск", en[l] || "Risk");
+  return pickLang(lang, ru[l] || "Риск", en[l] || "Risk", uk[l] || "Ризик");
 }
 
 function levelColor(level) {
@@ -607,6 +623,8 @@ async function apiPost(path, body, lang = "en", extraHeaders = {}) {
         "Content-Type": "application/json",
         Accept: "application/json",
         "Accept-Language": lang,
+        "X-Lang": lang,
+        "X-Language": lang,
         "X-User-Id": userId,
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(extraHeaders || {}),
@@ -1238,9 +1256,9 @@ export default function ImmunityScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
 
-  const currentLang = String(i18n?.language || "en").toLowerCase().startsWith("ru") ? "ru" : "en";
+  const currentLang = normalizeLang(i18n?.language);
   const isRu = currentLang === "ru";
-  const tvLocale = isRu ? "ru" : "en";
+  const tvLocale = currentLang === "ru" ? "ru" : currentLang === "uk" ? "uk" : "en";
 
   const tx = useCallback(
     (key, def, params) => t(`immunity.${key}`, { defaultValue: def, ...(params || {}) }),

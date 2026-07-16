@@ -4,17 +4,71 @@ import { OneSignal } from "react-native-onesignal";
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 
+function initOneSignalSafe() {
+  try {
+    OneSignal.initialize(ONESIGNAL_APP_ID);
+  } catch (e) {
+    console.log("[PUSH] OneSignal.initialize skipped/error:", e);
+  }
+}
+
+export function getPushSubscriptionState() {
+  try {
+    initOneSignalSafe();
+    const sub = OneSignal.User.pushSubscription;
+    return {
+      id: sub?.getId?.() ?? null,
+      token: sub?.getToken?.() ?? null,
+      optedIn: sub?.getOptedIn?.() ?? null,
+    };
+  } catch (e) {
+    console.log("[PUSH] getPushSubscriptionState error:", e);
+    return { id: null, token: null, optedIn: null };
+  }
+}
+
+export async function setPushNotificationsEnabled(enabled, { request = false } = {}) {
+  try {
+    initOneSignalSafe();
+
+    if (!enabled) {
+      try {
+        OneSignal.User.pushSubscription.optOut();
+      } catch (e) {
+        console.log("[PUSH] optOut error:", e);
+      }
+      return { ...getPushSubscriptionState(), enabled: false };
+    }
+
+    if (request) {
+      try {
+        await OneSignal.Notifications.requestPermission(true);
+      } catch (e) {
+        console.log("[PUSH] requestPermission error:", e);
+      }
+    }
+
+    try {
+      OneSignal.User.pushSubscription.optIn();
+    } catch (e) {
+      console.log("[PUSH] optIn error:", e);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return { ...getPushSubscriptionState(), enabled: true };
+  } catch (e) {
+    console.log("[PUSH] setPushNotificationsEnabled error:", e);
+    return { id: null, token: null, optedIn: null, enabled: false };
+  }
+}
+
 
 export async function ensurePushReady({ request = false } = {}) {
   try {
     console.log("[PUSH] ensurePushReady CALLED. request =", request);
     console.log("[PUSH] platform =", Platform.OS);
 
-    try {
-      OneSignal.initialize(ONESIGNAL_APP_ID);
-    } catch (e) {
-      console.log("[PUSH] OneSignal.initialize skipped/error:", e);
-    }
+    initOneSignalSafe();
 
     const logState = (label = "state") => {
       try {

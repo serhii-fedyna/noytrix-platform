@@ -1892,6 +1892,8 @@ def _scan_client_safe_response(data: dict) -> dict:
             "structured": {
                 "short": text_value(structured.get("short")),
                 "details": text_value(structured.get("details")),
+                "risks": [text_value(x) for x in (structured.get("risks") or []) if text_value(x)],
+                "actions": [text_value(x) for x in (structured.get("actions") or []) if text_value(x)],
                 "confidence_note": text_value(structured.get("confidence_note")),
                 "severity_label": text_value(structured.get("severity_label")),
                 "next_step_priority": text_value(structured.get("next_step_priority")),
@@ -3740,6 +3742,7 @@ URL_HARD_EVIDENCE_CODES = {
     "known_malicious_contract_identity",
     "wallet_drainer_runtime",
     "gsb_match",
+    "vt_detection",
     "virustotal_malicious",
     "urlscan_malicious",
     "phishtank_match",
@@ -3835,6 +3838,8 @@ def _build_url_evidence_trace(sources: list[dict], heuristics: list[dict], page_
             severity = 0
         hard = code in URL_HARD_EVIDENCE_CODES and severity >= 60
         generic_noise = code in URL_GENERIC_WEB3_NOISE_CODES
+        if code in {"gsb_match", "vt_detection", "virustotal_malicious", "urlscan_malicious"} and severity >= 40:
+            hard = True
         if str(source_status).lower() == "malicious" and severity >= 70 and code not in URL_GENERIC_WEB3_NOISE_CODES:
             hard = True
         items.append({
@@ -7667,7 +7672,7 @@ async def scan(
             data["ai_explanation_result"] = await generate_ai_security_explanation(
                 data,
                 L,
-                "short",
+                "detailed",
             )
             data["ai_explanation"] = (
                 (data.get("ai_explanation_result") or {}).get("text")
@@ -7679,7 +7684,7 @@ async def scan(
                 "available": False,
                 "reason": str(e)[:300],
                 "language": L,
-                "mode": "short",
+                "mode": "detailed",
                 "text": "",
             }
 

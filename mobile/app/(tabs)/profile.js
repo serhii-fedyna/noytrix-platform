@@ -22,7 +22,7 @@ import { useTranslation } from "react-i18next";
 
 import { useAuthStore } from "../lib/store.auth";
 import SignIn from "../auth/signin";
-import { ensurePushReady } from "../lib/notifications";
+import { getPushSubscriptionState, setPushNotificationsEnabled } from "../lib/notifications";
 import { BACKEND } from "../lib/backend";
 
 const BG = { start: "#06080f", mid: "#0a1233", end: "#0b1c4f" };
@@ -138,7 +138,14 @@ export default function ProfileScreen() {
     (async () => {
       try {
         const v = await AsyncStorage.getItem("profile.notifications");
-        setNotifEnabled(v === "1");
+        if (v === "0") {
+          setNotifEnabled(false);
+        } else if (v === "1") {
+          setNotifEnabled(true);
+        } else {
+          const state = getPushSubscriptionState();
+          setNotifEnabled(state.optedIn === true);
+        }
       } catch {}
     })();
   }, []);
@@ -146,13 +153,11 @@ export default function ProfileScreen() {
   const onToggleNotifs = useCallback(async () => {
     let next = !notifEnabled;
 
-    if (next) {
-      try {
-        const token = await ensurePushReady({ request: true });
-        if (!token) next = false;
-      } catch {
-        next = false;
-      }
+    try {
+      const state = await setPushNotificationsEnabled(next, { request: next });
+      next = next ? state.optedIn === true || !!state.id || !!state.token : false;
+    } catch {
+      next = false;
     }
 
     setNotifEnabled(next);

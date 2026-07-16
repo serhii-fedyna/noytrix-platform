@@ -116,12 +116,24 @@ def score_scan(
                 "compromised_legitimate_redirect_to_lure",
                 "legitimate_domain_obfuscated_wallet_flow",
                 "hosted_platform_abuse_wallet_flow",
+                "gsb_match",
+                "vt_detection",
+                "virustotal_malicious",
+                "urlscan_malicious",
+                "phishtank_match",
+                "openphish_match",
+                "scamsniffer_match",
+                "cryptoscamdb_match",
+                "noytrix_scam_database_match",
             }
+            max_severity = max(
+                [int(e.get("severity") or 0) for e in evidence if isinstance(e, dict)] or [0]
+            )
             has_strong_evidence = any(
-                str(e.get("code") or "") in strong_codes and int(e.get("severity") or 0) >= 70
+                str(e.get("code") or "") in strong_codes and int(e.get("severity") or 0) >= 40
                 for e in evidence
                 if isinstance(e, dict)
-            )
+            ) or max_severity >= 70
 
             if not has_strong_evidence:
                 continue
@@ -141,10 +153,10 @@ def score_scan(
             else:
                 internal_clean_sources += 1
 
-    # Pure internal verdict: external sources are visible as reference only.
-    # They must never control final verdict or malicious_sources.
-    malicious_sources = internal_malicious_sources
-    confirmed_red_flag = internal_red_flag
+    # Production verdict: Noytrix remains the final decision-maker, but trusted
+    # external threat confirmations are real evidence and must affect the score.
+    malicious_sources = list(dict.fromkeys(internal_malicious_sources + external_malicious_sources))
+    confirmed_red_flag = bool(internal_red_flag or external_red_flag)
 
     heuristics_score = int(sum(int(x.get("severity") or 0) for x in (heuristics or [])))
     content_score = int(sum(int(x.get("severity") or 0) for x in (page_content or [])))
@@ -177,6 +189,15 @@ def score_scan(
         "drainer_pattern",
         "wallet_drainer",
         "known_malicious_contract_identity",
+        "gsb_match",
+        "vt_detection",
+        "virustotal_malicious",
+        "urlscan_malicious",
+        "phishtank_match",
+        "openphish_match",
+        "scamsniffer_match",
+        "cryptoscamdb_match",
+        "noytrix_scam_database_match",
         "obfuscated_wallet_drainer_javascript",
         "runtime_wallet_calls_with_obfuscation",
         "compromised_legitimate_site_wallet_flow",

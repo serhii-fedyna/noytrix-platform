@@ -1,5 +1,5 @@
 ﻿// app/_layout.js
-import "./i18n";
+import i18n from "./i18n";
 
 import React, { useEffect, useRef, useState } from "react";
 import { Stack, router } from "expo-router";
@@ -21,8 +21,10 @@ import { useAuthStore } from "./lib/store.auth";
 import { getAuthState } from "./lib/authApi";
 import { setAppAlertHandler } from "./lib/appAlert";
 import { initAnalytics } from "./lib/analytics";
+import { normalizeLang } from "./i18n/lang";
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
+const NOTIFICATIONS_PREF_KEY = "profile.notifications";
 
 function PremiumAlert({ alert, onClose }) {
   return (
@@ -112,6 +114,26 @@ export default function RootLayout() {
       console.log("[LAYOUT] init error:", e);
     }
   }, [init]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem("app.language");
+        const next = normalizeLang(saved || i18n.language);
+        if (!cancelled && next !== normalizeLang(i18n.language)) {
+          await i18n.changeLanguage(next);
+        }
+      } catch (e) {
+        console.log("[i18n] restore language error:", e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,9 +241,28 @@ export default function RootLayout() {
           console.log("[ONESIGNAL] pushSubscription observer error:", e);
         }
 
+        let notificationsEnabled = true;
+        try {
+          const savedPref = await AsyncStorage.getItem(NOTIFICATIONS_PREF_KEY);
+          notificationsEnabled = savedPref !== "0";
+        } catch (e) {
+          console.log("[ONESIGNAL] read notification pref error:", e);
+        }
+
+        if (!notificationsEnabled) {
+          try {
+            OneSignal.User.pushSubscription.optOut();
+            console.log("[ONESIGNAL] optOut called from saved preference");
+          } catch (e) {
+            console.log("[ONESIGNAL] optOut error:", e);
+          }
+          logSubscriptionState("disabled_by_user");
+          return;
+        }
+
         try {
           OneSignal.User.pushSubscription.optIn();
-          console.log("[ONESIGNAL] optIn called");
+          console.log("[ONESIGNAL] optIn called from saved preference");
         } catch (e) {
           console.log("[ONESIGNAL] optIn error:", e);
         }
