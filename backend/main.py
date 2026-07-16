@@ -3023,11 +3023,19 @@ def _looks_like_brand_spoof(host: str) -> Tuple[bool, list[dict]]:
     for hint in BRAND_SPOOF_HINTS:
         if hint in host:
             if root not in trusted_roots:
+                high_risk_phishing_words = {"login", "support", "verify", "wallet", "connect", "secure", "account"}
+                matched_phishing_words = sorted([w for w in high_risk_phishing_words if w in host])
+                severe = bool(matched_phishing_words)
                 evidence.append(
                     {
-                        "code": "brand_spoofing",
-                        "severity": 24,
-                        "text": f"Host contains well-known brand fragment '{hint}' but is not the official root domain.",
+                        "code": "brand_impersonation_plus_wallet_pressure" if severe else "brand_spoofing",
+                        "severity": 82 if severe else 24,
+                        "text": (
+                            f"Host contains well-known brand fragment '{hint}' together with phishing/support keywords "
+                            f"{', '.join(matched_phishing_words)} and is not the official root domain."
+                            if severe
+                            else f"Host contains well-known brand fragment '{hint}' but is not the official root domain."
+                        ),
                     }
                 )
                 return True, evidence
@@ -3095,10 +3103,12 @@ def _heuristics_for_host(host: str) -> list[dict]:
     brand_words = [x for x in BRAND_SPOOF_HINTS if x in host]
     scam_words = [x for x in SUSPICIOUS_HOST_KEYWORDS if x in host]
     if brand_words and scam_words:
+        high_risk_words = {"login", "support", "verify", "wallet", "connect", "secure", "account"}
+        severe = bool(set(scam_words) & high_risk_words)
         out.append(
             {
                 "code": "brand_plus_scam_keywords",
-                "severity": 28,
+                "severity": 78 if severe else 28,
                 "text": "Host mixes trusted-brand wording with common phishing/scam keywords.",
             }
         )
