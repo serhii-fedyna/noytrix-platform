@@ -1827,6 +1827,37 @@ def _profile_plan(uid: Optional[str]) -> str:
     p = str(row.get("plan") or "").strip().lower()
     return p if p else "free"
 
+def _has_confirmed_hard_evidence(data: dict) -> bool:
+    if not isinstance(data, dict):
+        return False
+    if bool(data.get("confirmed_red_flag")):
+        return True
+
+    details = data.get("details") if isinstance(data.get("details"), dict) else {}
+    if bool(details.get("hard_evidence_found")):
+        return True
+
+    score_trace = details.get("score_trace") if isinstance(details.get("score_trace"), dict) else {}
+    if bool(score_trace.get("hard_evidence_found")):
+        return True
+
+    raw = data.get("raw") if isinstance(data.get("raw"), dict) else {}
+    if raw and _has_confirmed_hard_evidence(raw):
+        return True
+
+    for item in data.get("evidence") or []:
+        if isinstance(item, dict) and bool(item.get("hard_evidence")):
+            return True
+
+    for source in data.get("sources") or []:
+        if not isinstance(source, dict):
+            continue
+        for item in source.get("evidence") or []:
+            if isinstance(item, dict) and bool(item.get("hard_evidence")):
+                return True
+
+    return False
+
 def _scan_client_safe_response(data: dict) -> dict:
     if not isinstance(data, dict):
         return data
@@ -1843,6 +1874,9 @@ def _scan_client_safe_response(data: dict) -> dict:
     score = int(data.get("score") or 0)
     level = text_value(data.get("level"), data.get("verdict"), "safe").lower()
     kind = text_value(data.get("kind"), data.get("risk_type"), "text").lower()
+    confirmed_red_flag = bool(data.get("confirmed_red_flag"))
+    if not confirmed_red_flag and score >= 85:
+        confirmed_red_flag = _has_confirmed_hard_evidence(data) or bool(data.get("malicious_sources"))
     verdict = text_value(
         data.get("verdict_localized"),
         data.get("ai_verdict_localized"),
@@ -1869,7 +1903,7 @@ def _scan_client_safe_response(data: dict) -> dict:
         "confidence": int(data.get("confidence") or data.get("confidence_score") or 0),
         "confidence_score": int(data.get("confidence_score") or data.get("confidence") or 0),
         "isPro": bool(data.get("isPro")),
-        "confirmed_red_flag": bool(data.get("confirmed_red_flag")),
+        "confirmed_red_flag": confirmed_red_flag,
         "ai_verdict": verdict or level,
         "ai_verdict_en": text_value(data.get("ai_verdict_en"), data.get("verdict_en"), verdict, level),
         "ai_verdict_ru": text_value(data.get("ai_verdict_ru"), data.get("verdict_ru"), verdict, level),
@@ -7166,6 +7200,9 @@ async def security_analyze_core(payload: dict) -> dict:
 
     data["confidence_score"] = confidence
     data["canonical_level"] = level
+    confirmed_red_flag = bool(data.get("confirmed_red_flag"))
+    if not confirmed_red_flag and score >= 85:
+        confirmed_red_flag = _has_confirmed_hard_evidence(data) or bool(data.get("malicious_sources"))
 
     unified = {
         "ok": True,
@@ -7189,6 +7226,7 @@ async def security_analyze_core(payload: dict) -> dict:
         "confidence_score": confidence,
         "level": level,
         "verdict": level,
+        "confirmed_red_flag": confirmed_red_flag,
         "risk_type": data.get("risk_type") or data.get("kind") or "unknown",
         "cached": bool(data.get("cached")),
         "cache_source": data.get("cache_source"),
@@ -7216,9 +7254,14 @@ async def security_analyze_core(payload: dict) -> dict:
     unified = _attach_pg_graph_context(unified)
 
     unified = apply_anti_false_positive_layer(unified)
+    unified["confirmed_red_flag"] = bool(unified.get("confirmed_red_flag"))
+    if not unified["confirmed_red_flag"] and int(unified.get("score") or 0) >= 85:
+        unified["confirmed_red_flag"] = _has_confirmed_hard_evidence(unified) or bool(unified.get("malicious_sources"))
 
     # Re-apply graph/reputation context after anti-FP, so malicious wallet reputation still affects wallet verdicts.
     unified = _attach_pg_graph_context(unified)
+    if not bool(unified.get("confirmed_red_flag")) and int(unified.get("score") or 0) >= 85:
+        unified["confirmed_red_flag"] = _has_confirmed_hard_evidence(unified) or bool(unified.get("malicious_sources"))
 
     if str(unified.get("kind") or "").lower() in {"wallet", "contract", "transaction", "runtime_web3"} or str(unified.get("normalized_input") or "").startswith("0x"):
         unified = _attach_multichain_fields(unified)
