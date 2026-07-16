@@ -5557,6 +5557,8 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     score_info = _apply_false_positive_safety_gate_to_url_score(score_info, evidence_trace)
     score_info = _apply_noytrix_database_verdict(score_info, noytrix_db_match)
     safety_gate = score_info.get("false_positive_safety_gate") or {}
+    if evidence_trace.get("hard_evidence_found") and int(score_info.get("score") or 0) >= 85:
+        score_info["confirmed_red_flag"] = True
     reputation_context = (score_info.get("noytrix_scam_database") or {}).get("source_reputation") or (noytrix_db_match or {}).get("source_reputation") or {}
     internal_verdict = build_internal_verdict(
         kind=input_kind,
