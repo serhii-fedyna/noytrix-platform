@@ -333,6 +333,7 @@ def tr(lang: str, key: str) -> str:
 # SIMPLE MEMORY CACHE
 # =========================================================
 _cache: Dict[str, Dict[str, Any]] = {}
+SCAN_URL_CACHE_VERSION = "v8-hard-evidence"
 
 def cache_get(key: str):
     rec = _cache.get(key)
@@ -4520,7 +4521,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     host = _extract_host(url)
 
     cache_mode = "internal" if internal_only else "full"
-    cache_key = f"scan:url:v7:{cache_mode}:{_sha256_short(url)}"
+    cache_key = f"scan:url:{SCAN_URL_CACHE_VERSION}:{cache_mode}:{_sha256_short(url)}"
     cached = cache_get(cache_key)
     if cached:
         out = dict(cached)
