@@ -28,6 +28,7 @@ import Constants from "expo-constants";
 import { useAuthStore } from "./lib/store.auth";
 import { useI18n } from "./i18n/useI18n";
 import { logEvent } from "./lib/analytics";
+import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { showAppAlert } from "./lib/appAlert";
 
 
@@ -2130,6 +2131,11 @@ ${uri}`,
         score: Number(normalized?.score ?? 0),
         kind: normalized?.kind || "text",
         backend_ok: true,
+      });
+      recordReviewPromptScan({
+        screen: "shield_pro",
+        level: normalized?.level || "n/a",
+        kind: normalized?.kind || "text",
       });
     } catch (e) {
       const msg = explainBackendMessage(String(e?.message || e || ""), currentLang);

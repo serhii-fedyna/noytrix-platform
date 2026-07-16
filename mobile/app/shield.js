@@ -14,6 +14,7 @@ import Constants from "expo-constants";
 import { useAuthStore } from "./lib/store.auth";
 import { useI18n } from "./i18n/useI18n";
 import { logEvent } from "./lib/analytics";
+import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { shareImagePremium } from "./lib/sharePremium";
 import { showAppAlert } from "./lib/appAlert";
 
@@ -1837,6 +1838,11 @@ export default function Shield() {
         kind: final?.kind || "text",
         backend_ok: true,
       });
+      recordReviewPromptScan({
+        screen: "shield",
+        level: final?.level || "n/a",
+        kind: final?.kind || "text",
+      });
     } catch (e) {
       setReport(null);
 
@@ -2685,7 +2691,6 @@ export default function Shield() {
     </LinearGradient>
   );
 }
-
 
 
 

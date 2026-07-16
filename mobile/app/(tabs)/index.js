@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 
 import { logEvent } from "../lib/analytics";
 import { showAppAlert } from "../lib/appAlert";
+import { recordReviewPromptScan } from "../lib/reviewPrompt";
 import { useAuthStore } from "../lib/store.auth";
 import NoyBot from "../../components/NoyBot";
 
@@ -964,6 +965,11 @@ export default function Home() {
         score: Number(final?.score ?? 0),
         kind: final?.kind || "text",
         backend_ok: true,
+      });
+      recordReviewPromptScan({
+        screen: "home",
+        level: final?.level || "n/a",
+        kind: final?.kind || "text",
       });
     } catch (e) {
       const humanMessage = explainBackendMessage(String(e?.message || e || ""), currentLang);

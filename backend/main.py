@@ -9171,3 +9171,71 @@ Message:
             smtp.send_message(msg)
 
     return {"ok": True, "saved": True, "emailSent": bool(smtp_user and smtp_pass)}
+
+
+@app.post("/api/app-feedback")
+async def api_app_feedback(payload: dict = Body(...)):
+    import datetime
+    import json
+    import pathlib
+
+    flow = str(payload.get("flow") or "").strip().lower()
+    if flow not in {"positive", "negative"}:
+        flow = "unknown"
+
+    def clean_text(value: Any, limit: int = 1200) -> str:
+        return str(value or "").strip()[:limit]
+
+    row = {
+        "ts": datetime.datetime.utcnow().isoformat() + "Z",
+        "app": clean_text(payload.get("app"), 80) or "noytrix_mobile",
+        "platform": clean_text(payload.get("platform"), 40),
+        "flow": flow,
+        "language": clean_text(payload.get("language"), 8),
+        "installUserId": clean_text(payload.get("installUserId"), 120),
+        "userId": clean_text(payload.get("userId"), 160),
+        "mostUseful": clean_text(payload.get("mostUseful"), 240),
+        "problem": clean_text(payload.get("problem"), 240),
+        "requestedFeature": clean_text(payload.get("requestedFeature"), 1200),
+        "dailyChange": clean_text(payload.get("dailyChange"), 1200),
+        "nps": payload.get("nps") if isinstance(payload.get("nps"), int) else None,
+        "raw": {
+            k: v
+            for k, v in payload.items()
+            if k
+            in {
+                "createdAt",
+                "app",
+                "platform",
+                "flow",
+                "language",
+                "mostUseful",
+                "problem",
+                "requestedFeature",
+                "dailyChange",
+                "nps",
+            }
+        },
+    }
+
+    path = pathlib.Path("/root/backend/data/app_feedback.jsonl")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    profile_key = row.get("userId") or row.get("installUserId")
+    if profile_key:
+        _profile_track_event(
+            profile_key,
+            "app_feedback",
+            object_ref=flow,
+            meta={
+                "flow": flow,
+                "language": row.get("language"),
+                "nps": row.get("nps"),
+                "mostUseful": row.get("mostUseful"),
+                "problem": row.get("problem"),
+            },
+        )
+
+    return {"ok": True, "saved": True}

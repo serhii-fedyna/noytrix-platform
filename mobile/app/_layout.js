@@ -21,6 +21,7 @@ import { useAuthStore } from "./lib/store.auth";
 import { getAuthState } from "./lib/authApi";
 import { setAppAlertHandler } from "./lib/appAlert";
 import { initAnalytics } from "./lib/analytics";
+import { ReviewPromptHost } from "./lib/reviewPrompt";
 import { normalizeLang } from "./i18n/lang";
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
@@ -84,6 +85,7 @@ function AppShell({ children, appAlert, setAppAlert }) {
       <StatusBar style="light" />
       {children}
       <PremiumAlert alert={appAlert} onClose={() => setAppAlert(null)} />
+      <ReviewPromptHost />
     </SafeAreaProvider>
   );
 }
