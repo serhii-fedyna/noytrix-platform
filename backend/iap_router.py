@@ -11,6 +11,8 @@ from db import get_db, Base, engine
 from auth.deps import get_current_user
 from auth.models import User
 from iap_models import IAPPurchase
+from identity import resolve_user_id
+from subscriptions import entitlement_status, sync_google_play_purchase
 
 Base.metadata.create_all(bind=engine)
 
@@ -59,38 +61,22 @@ def _to_naive_utc(dt_aware: datetime | None) -> datetime | None:
         return None
     return dt_aware.astimezone(timezone.utc).replace(tzinfo=None)
 
-def _sync_user_plan_from_db(current: User, db: Session) -> None:
-    """
-    Auto plan: Pro if user has at least one ACTIVE entitlement:
-    - lifetime inapp active
-    - subs active and not expired
-    """
-    now_naive = datetime.utcnow()
-
-    q = db.query(IAPPurchase).filter(IAPPurchase.user_id == current.id)
-
-    ent_active = False
-    for rec in q.all():
-        if (rec.status or "").lower() != "active":
-            continue
-
-        if (rec.product_type or "").lower() == "inapp":
-            ent_active = True
-            break
-
-        if (rec.product_type or "").lower() == "subs":
-            if rec.expiry_time_utc and rec.expiry_time_utc > now_naive:
-                ent_active = True
-                break
-
-    current.plan = "Pro" if ent_active else "Free"
-
 @router.get("/status")
 def iap_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # keep plan correct even if expiry passed
-    _sync_user_plan_from_db(current, db)
-    db.commit()
-    return {"ok": True, "plan": current.plan}
+    identity_user_id = resolve_user_id(
+        [("auth_user_id", str(current.id)), ("email", current.email)],
+        meta={"source": "iap_status"},
+    )
+    ent = entitlement_status([identity_user_id, current.email, str(current.id)], "pro")
+    active = bool(ent.get("active"))
+    return {
+        "ok": True,
+        "plan": "PRO" if active else "FREE",
+        "active": active,
+        "isPro": active,
+        "identityUserId": identity_user_id,
+        "entitlement": ent,
+    }
 
 @router.post("/google/verify")
 def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -164,6 +150,10 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
 
     raw_json = json.dumps(data, ensure_ascii=False)
     now = datetime.utcnow()
+    identity_user_id = resolve_user_id(
+        [("auth_user_id", str(current.id)), ("email", current.email), ("google_play_token", token)],
+        meta={"source": "iap_google_verify"},
+    )
 
     expiry_naive = _to_naive_utc(expiry_dt)
     purchase_naive = _to_naive_utc(purchase_dt)
@@ -216,8 +206,17 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
         rec.raw = raw_json
         rec.updated_at = now
 
-    # ===== Apply plan ONLY by DB truth (not just "active" flag from one verify) =====
-    _sync_user_plan_from_db(current, db)
+    subscription_id = sync_google_play_purchase(
+        user_id=identity_user_id,
+        product_type=ptype,
+        product_id=product_id,
+        purchase_token=token,
+        data=data,
+        active=active,
+        status=status,
+        expires_at=expiry_dt.isoformat() if expiry_dt else None,
+        environment="production",
+    )
 
     db.commit()
 
@@ -225,7 +224,9 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
         "ok": True,
         "active": active,
         "status": status,
-        "plan": current.plan,
+        "plan": "PRO" if active else "FREE",
+        "identityUserId": identity_user_id,
+        "subscriptionId": subscription_id,
         "expiryUtc": expiry_dt.isoformat() if expiry_dt else None,
         "orderId": order_id,
         "purchaseTimeUtc": purchase_dt.isoformat() if purchase_dt else None,
@@ -239,6 +240,10 @@ def sync_plans(current: User = Depends(get_current_user), db: Session = Depends(
     Manual sync endpoint for current user.
     You can call it after app starts, or on profile refresh.
     """
-    _sync_user_plan_from_db(current, db)
-    db.commit()
-    return {"ok": True, "plan": current.plan}
+    identity_user_id = resolve_user_id(
+        [("auth_user_id", str(current.id)), ("email", current.email)],
+        meta={"source": "iap_sync_plans"},
+    )
+    ent = entitlement_status([identity_user_id, current.email, str(current.id)], "pro")
+    active = bool(ent.get("active"))
+    return {"ok": True, "plan": "PRO" if active else "FREE", "active": active, "identityUserId": identity_user_id, "entitlement": ent}

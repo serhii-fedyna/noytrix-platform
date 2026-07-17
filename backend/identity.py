@@ -212,6 +212,29 @@ def identity_links_for(user_id: str) -> list[dict]:
         conn.close()
 
 
+def find_user_ids(links: Iterable[tuple[str, Any]]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    conn = _connect()
+    try:
+        cur = conn.cursor()
+        for kind, value in links:
+            k = str(kind or "").strip().lower()
+            v = normalize_identity(k, value)
+            if not k or not v:
+                continue
+            row = cur.execute(
+                "SELECT user_id FROM identity_links WHERE kind=? AND value_norm=? LIMIT 1",
+                (k, v),
+            ).fetchone()
+            if row and row["user_id"] not in seen:
+                out.append(row["user_id"])
+                seen.add(row["user_id"])
+        return out
+    finally:
+        conn.close()
+
+
 def resolve_from_request(request: Any, extra_links: Optional[Iterable[tuple[str, Any]]] = None) -> str:
     headers = getattr(request, "headers", {}) or {}
     links: list[tuple[str, Any]] = []

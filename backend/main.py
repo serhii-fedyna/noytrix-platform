@@ -88,6 +88,13 @@ from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
 from scamshield.url_intel.fusion import build_url_intelligence
 from identity import resolve_from_request, resolve_user_id, identity_links_for
+from subscriptions import (
+    entitlement_status,
+    grant_entitlement,
+    provider_from_source,
+    revoke_entitlement,
+    sync_google_play_purchase,
+)
 try:
     from scamshield.intelligence.postgres_intelligence import (
         upsert_entity as pg_upsert_entity,
@@ -1253,6 +1260,29 @@ def set_guest_pro(user_id: str, active: bool = True, source: str = "guest_iap", 
         conn.commit()
     finally:
         conn.close()
+    if active:
+        try:
+            grant_entitlement(
+                uid,
+                entitlement="pro",
+                source=source or "guest_iap",
+                expires_at=expires_at,
+                provider=provider_from_source(source),
+                raw={"legacy_table": "guest_pro"},
+            )
+        except Exception as e:
+            print("[subscriptions] grant guest entitlement error:", e)
+    else:
+        try:
+            revoke_entitlement(
+                uid,
+                entitlement="pro",
+                source=source or "guest_iap_inactive",
+                provider=provider_from_source(source),
+                raw={"legacy_table": "guest_pro"},
+            )
+        except Exception as e:
+            print("[subscriptions] revoke guest entitlement error:", e)
 
 def _parse_utc_iso(value: Any) -> Optional[datetime]:
     raw = str(value or "").strip()
@@ -1434,6 +1464,9 @@ def guest_has_pro(user_id: Optional[str]) -> bool:
     uid = (str(user_id or "")).strip()
     if not uid:
         return False
+    ent = entitlement_status([uid], "pro")
+    if ent.get("active"):
+        return True
     verified = _sync_guest_google_entitlement(uid)
     if verified.get("active"):
         return True
@@ -1456,6 +1489,17 @@ def guest_has_pro(user_id: Optional[str]) -> bool:
                     return False
             except Exception:
                 return False
+        try:
+            grant_entitlement(
+                uid,
+                entitlement="pro",
+                source=str(row[0] or "legacy_guest_pro"),
+                expires_at=expires_at or None,
+                provider=provider_from_source(str(row[0] or "")),
+                raw={"legacy_table": "guest_pro", "synced_by": "guest_has_pro"},
+            )
+        except Exception as e:
+            print("[subscriptions] legacy guest entitlement sync error:", e)
         return True
     finally:
         conn.close()
@@ -1479,10 +1523,13 @@ def _payload_bool(payload: dict, keys: list[str]) -> Optional[bool]:
 
 def _iap_status_payload(user_id: Optional[str]) -> dict:
     verified = _sync_guest_google_entitlement(str(user_id or "").strip())
-    active = guest_has_pro(user_id)
+    ent = entitlement_status([user_id], "pro")
+    active = bool(ent.get("active")) or guest_has_pro(user_id)
     expires_at = None
     source = verified.get("source")
     product_id = verified.get("productId")
+    provider = ent.get("provider")
+    entitlement_user_id = ent.get("userId")
     uid = str(user_id or "").strip()
     if uid:
         try:
@@ -1499,13 +1546,16 @@ def _iap_status_payload(user_id: Optional[str]) -> dict:
     return {
         "ok": True,
         "userId": (str(user_id or "").strip() or None),
+        "entitlementUserId": entitlement_user_id,
         "active": active,
         "isPro": active,
         "pro": active,
         "plan": "PRO" if active else "FREE",
-        "expiresAt": expires_at,
-        "source": source,
+        "expiresAt": ent.get("expiresAt") or expires_at,
+        "source": ent.get("source") or source,
+        "provider": provider,
         "productId": product_id,
+        "subscriptionId": ent.get("subscriptionId"),
         "verifiedGooglePlay": bool(verified.get("active")),
     }
 
@@ -1610,6 +1660,17 @@ async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
 
     data = _google_play_verify_purchase(product_type, package_name, product_id, purchase_token)
     active, status, expiry_dt = _active_from_google_purchase(product_type, data)
+    subscription_id = sync_google_play_purchase(
+        user_id=identity_user_id,
+        product_type=product_type,
+        product_id=product_id,
+        purchase_token=purchase_token,
+        data=data,
+        active=active,
+        status=status,
+        expires_at=expiry_dt.isoformat() if expiry_dt else None,
+        environment=str(payload.get("environment") or "production"),
+    )
     _upsert_guest_iap_purchase(
         user_id=user_id,
         product_type=product_type,
@@ -1640,6 +1701,7 @@ async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
         "active": bool(server_status.get("active")),
         "googleActive": active,
         "status": status,
+        "subscriptionId": subscription_id,
         "productType": product_type,
         "productId": product_id,
         "orderId": data.get("orderId"),
@@ -1696,6 +1758,23 @@ async def iap_guest_status(request: Request, userId: str | None = None):
         or str(request.headers.get("user-id") or "").strip()
     )
     return _iap_status_payload(uid)
+
+@app.get("/subscriptions/status")
+async def subscriptions_status(request: Request, userId: str | None = None, entitlement: str = "pro"):
+    uid = (
+        str(userId or "").strip()
+        or str(request.headers.get("x-noytrix-user-id") or "").strip()
+        or str(request.headers.get("x-install-user-id") or "").strip()
+        or str(request.headers.get("x-user-id") or "").strip()
+    )
+    auth_uid = _get_user_id(request, None)
+    candidates = [x for x in [uid, auth_uid] if x]
+    status = entitlement_status(candidates, entitlement)
+    return {
+        "ok": True,
+        "userId": uid or auth_uid,
+        **status,
+    }
 
 # =========================================================
 # QUOTA
@@ -1768,10 +1847,7 @@ def is_pro(user_id: Optional[str]) -> bool:
             uid_int = int(uid_raw)
             cur.execute("SELECT id, email, nick, plan FROM users WHERE id=?", (uid_int,))
             row = cur.fetchone()
-            if row and (
-                str((row[3] or "")).strip().lower() == "pro"
-                or _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower())
-            ):
+            if row and _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower()):
                 conn.close()
                 return True
         except Exception:
@@ -1779,19 +1855,13 @@ def is_pro(user_id: Optional[str]) -> bool:
 
         cur.execute("SELECT id, email, nick, plan FROM users WHERE lower(email)=lower(?)", (uid_raw,))
         row = cur.fetchone()
-        if row and (
-            str((row[3] or "")).strip().lower() == "pro"
-            or _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower())
-        ):
+        if row and _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower()):
             conn.close()
             return True
 
         cur.execute("SELECT id, email, nick, plan FROM users WHERE lower(nick)=lower(?)", (uid_raw,))
         row = cur.fetchone()
-        if row and (
-            str((row[3] or "")).strip().lower() == "pro"
-            or _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower())
-        ):
+        if row and _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower()):
             conn.close()
             return True
 
@@ -2092,9 +2162,7 @@ def _profile_email(uid: Optional[str]) -> Optional[str]:
 def _profile_plan(uid: Optional[str]) -> str:
     if is_pro(uid):
         return "pro"
-    row = _profile_resolve_user_row(uid)
-    p = str(row.get("plan") or "").strip().lower()
-    return p if p else "free"
+    return "free"
 
 def _has_confirmed_hard_evidence(data: dict) -> bool:
     if not isinstance(data, dict):
