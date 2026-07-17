@@ -34,6 +34,7 @@ ALLOWED_EVENTS = {
     "subscription_cancelled",
     "subscription_expired",
     "app_feedback_submitted",
+    "app_crashed",
 }
 
 SENSITIVE_KEY_PARTS = {
@@ -190,6 +191,86 @@ def _string(value: Any, limit: int = 160) -> Optional[str]:
     return raw[:limit]
 
 
+def _parse_dt(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _identity_key(row: sqlite3.Row | dict) -> Optional[str]:
+    return _string(row["user_id"] if row["user_id"] else row["anonymous_id"], 220)
+
+
+def _safe_props(row: sqlite3.Row | dict) -> dict:
+    try:
+        value = json.loads(row["properties_json"] or "{}")
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _num(value: Any) -> Optional[float]:
+    try:
+        if value is None or value == "":
+            return None
+        n = float(value)
+        return n if n >= 0 else None
+    except Exception:
+        return None
+
+
+def _money_from_props(props: dict) -> float:
+    for key in ("ad_spend", "spend", "campaign_spend", "cost", "cost_usd", "spend_usd"):
+        value = _num(props.get(key))
+        if value is not None:
+            return value
+    return 0.0
+
+
+def _percent(numerator: float, denominator: float) -> Optional[float]:
+    if not denominator:
+        return None
+    return round((float(numerator) / float(denominator)) * 100, 2)
+
+
+def _avg(values: list[float]) -> Optional[float]:
+    valid = [x for x in values if isinstance(x, (int, float)) and x >= 0]
+    if not valid:
+        return None
+    return round(sum(valid) / len(valid), 2)
+
+
+def _estimate_monthly_revenue(product_id: Any, raw_json: Any = None) -> Optional[float]:
+    text = " ".join([str(product_id or ""), str(raw_json or "")]).lower()
+    if any(x in text for x in ("lifetime", "prolifetime")):
+        return 0.0
+    if any(x in text for x in ("pro-1year", "annual", "year", "p1y", "p12m")):
+        return round(199.99 / 12, 2)
+    if any(x in text for x in ("pro6month", "6month", "six", "p6m")):
+        return round(49.99 / 6, 2)
+    if "pro_access" in text or "monthly" in text or "p1m" in text or "pro" in text:
+        return 9.99
+    return None
+
+
+def _blank_metric(value: Any, unit: str | None = None, note: str | None = None) -> dict:
+    return {"value": value, "unit": unit, "note": note}
+
+
+def _period_bounds(days: int) -> tuple[str, datetime]:
+    days = max(1, min(int(days or 30), 365))
+    cutoff_ts = datetime.now(timezone.utc).timestamp() - days * 86400
+    cutoff_dt = datetime.fromtimestamp(cutoff_ts, tz=timezone.utc).replace(microsecond=0)
+    return cutoff_dt.isoformat(), cutoff_dt
+
+
 def _resolve_user_id(user_id: Any, anonymous_id: Any, properties: dict) -> Optional[str]:
     links: list[tuple[str, Any]] = []
     if user_id:
@@ -338,6 +419,263 @@ def analytics_funnel(days: int = 30) -> dict:
             "campaigns": [dict(row) for row in campaign_rows],
             "primaryMetricNow": "scan_completed",
             "primaryMetricLater": "trial_started_or_purchase_completed",
+        }
+    finally:
+        conn.close()
+
+
+def company_dashboard(days: int = 30) -> dict:
+    cutoff_iso, cutoff_dt = _period_bounds(days)
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    today = now.date()
+    month_cutoff = now.timestamp() - 30 * 86400
+    conn = _connect()
+    try:
+        if SUBSCRIPTIONS_DB_PATH.exists():
+            conn.execute(f"ATTACH DATABASE '{SUBSCRIPTIONS_DB_PATH}' AS subdb")
+        excluded = """
+          COALESCE((SELECT is_test_user FROM subdb.user_flags uf WHERE uf.user_id=pe.user_id LIMIT 1), 0)=0
+          AND COALESCE((SELECT is_internal_user FROM subdb.user_flags uf WHERE uf.user_id=pe.user_id LIMIT 1), 0)=0
+        """ if SUBSCRIPTIONS_DB_PATH.exists() else "1=1"
+        event_rows = conn.execute(
+            f"""
+            SELECT *
+            FROM product_events pe
+            WHERE event_time >= ? AND {excluded}
+            ORDER BY event_time ASC
+            """,
+            (cutoff_iso,),
+        ).fetchall()
+
+        users_by_event: dict[str, set[str]] = {}
+        counts_by_event: dict[str, int] = {}
+        first_seen: dict[str, datetime] = {}
+        first_scan: dict[str, datetime] = {}
+        today_active: set[str] = set()
+        month_active: set[str] = set()
+        day_events: dict[str, dict[str, int]] = {}
+        source_rows: dict[tuple[str, str], dict[str, Any]] = {}
+        country_rows: dict[str, dict[str, Any]] = {}
+        total_ad_spend = 0.0
+        response_times: list[float] = []
+        useful_results = 0
+
+        for row in event_rows:
+            event = row["event_name"]
+            user = _identity_key(row)
+            dt = _parse_dt(row["event_time"])
+            props = _safe_props(row)
+            counts_by_event[event] = counts_by_event.get(event, 0) + 1
+            if user:
+                users_by_event.setdefault(event, set()).add(user)
+                if user not in first_seen or (dt and dt < first_seen[user]):
+                    first_seen[user] = dt or cutoff_dt
+                if event == "scan_completed" and (user not in first_scan or (dt and dt < first_scan[user])):
+                    first_scan[user] = dt or cutoff_dt
+                if dt and dt.date() == today:
+                    today_active.add(user)
+                if dt and dt.timestamp() >= month_cutoff:
+                    month_active.add(user)
+
+            day = (dt.date().isoformat() if dt else "unknown")
+            bucket = day_events.setdefault(day, {"events": 0, "scans": 0, "users": 0})
+            bucket["events"] += 1
+            if event == "scan_completed":
+                bucket["scans"] += 1
+
+            if event == "scan_completed":
+                rt = _num(props.get("response_time_ms") or props.get("duration_ms") or props.get("latency_ms"))
+                if rt is not None:
+                    response_times.append(rt)
+                status_text = str(props.get("status") or props.get("result") or "").lower()
+                if "error" not in status_text and "fail" not in status_text:
+                    useful_results += 1
+
+            total_ad_spend += _money_from_props(props)
+            source = row["source"] or props.get("source") or "unknown"
+            campaign = row["campaign"] or props.get("campaign") or ""
+            source_key = (str(source or "unknown"), str(campaign or ""))
+            source_item = source_rows.setdefault(
+                source_key,
+                {"source": source_key[0], "campaign": source_key[1], "installs": 0, "registrations": 0, "scans": 0, "paywalls": 0, "purchases": 0, "spend": 0.0},
+            )
+            source_item["spend"] += _money_from_props(props)
+            if event == "app_first_open":
+                source_item["installs"] += 1
+            elif event == "signup_completed":
+                source_item["registrations"] += 1
+            elif event == "scan_completed":
+                source_item["scans"] += 1
+            elif event == "paywall_viewed":
+                source_item["paywalls"] += 1
+            elif event == "purchase_completed":
+                source_item["purchases"] += 1
+
+            country = row["country"] or props.get("country") or "unknown"
+            country_item = country_rows.setdefault(str(country or "unknown"), {"country": str(country or "unknown"), "users": set(), "events": 0, "installs": 0, "scans": 0})
+            if user:
+                country_item["users"].add(user)
+            country_item["events"] += 1
+            if event == "app_first_open":
+                country_item["installs"] += 1
+            elif event == "scan_completed":
+                country_item["scans"] += 1
+
+        install_users = users_by_event.get("app_first_open", set())
+        scan_users = users_by_event.get("scan_completed", set())
+        signup_users = users_by_event.get("signup_completed", set())
+        paywall_users = users_by_event.get("paywall_viewed", set())
+        purchase_users = users_by_event.get("purchase_completed", set())
+
+        first_scan_minutes = []
+        for user, scan_dt in first_scan.items():
+            start_dt = first_seen.get(user)
+            if start_dt and scan_dt:
+                first_scan_minutes.append(max(0.0, (scan_dt - start_dt).total_seconds() / 60.0))
+
+        d1_returned = set()
+        d7_returned = set()
+        activity_days: dict[str, set[str]] = {}
+        for row in event_rows:
+            user = _identity_key(row)
+            dt = _parse_dt(row["event_time"])
+            if not user or not dt:
+                continue
+            activity_days.setdefault(user, set()).add(dt.date().isoformat())
+        for user, start_dt in first_seen.items():
+            days_seen = activity_days.get(user, set())
+            if (start_dt.date().toordinal() + 1) in {datetime.fromisoformat(d).date().toordinal() for d in days_seen}:
+                d1_returned.add(user)
+            if (start_dt.date().toordinal() + 7) in {datetime.fromisoformat(d).date().toordinal() for d in days_seen}:
+                d7_returned.add(user)
+
+        active_paid = 0
+        active_subscriptions = 0
+        mrr_values: list[float] = []
+        cancellations = 0
+        refunds = 0
+        payment_errors = counts_by_event.get("purchase_failed", 0)
+        if SUBSCRIPTIONS_DB_PATH.exists():
+            active_paid = conn.execute(
+                """
+                SELECT COUNT(DISTINCT e.user_id)
+                FROM subdb.entitlements e
+                LEFT JOIN subdb.user_flags uf ON uf.user_id=e.user_id
+                WHERE e.entitlement='pro' AND e.is_active=1
+                  AND COALESCE(uf.is_test_user,0)=0
+                  AND COALESCE(uf.is_internal_user,0)=0
+                """
+            ).fetchone()[0]
+            sub_rows = conn.execute(
+                """
+                SELECT s.*
+                FROM subdb.subscriptions s
+                LEFT JOIN subdb.user_flags uf ON uf.user_id=s.user_id
+                WHERE COALESCE(uf.is_test_user,0)=0
+                  AND COALESCE(uf.is_internal_user,0)=0
+                """
+            ).fetchall()
+            for sub in sub_rows:
+                status = str(sub["status"] or "").lower()
+                if status in {"active", "trial", "trialing"}:
+                    active_subscriptions += 1
+                    value = _estimate_monthly_revenue(sub["product_id"], sub["raw_json"])
+                    if value is not None:
+                        mrr_values.append(value)
+                if status in {"canceled", "cancelled"}:
+                    cancellations += 1
+            event_sub_rows = conn.execute(
+                """
+                SELECT event_type
+                FROM subdb.purchase_events
+                WHERE created_at >= ?
+                """,
+                (cutoff_iso,),
+            ).fetchall()
+            for row in event_sub_rows:
+                event_type = str(row["event_type"] or "").lower()
+                if "refund" in event_type:
+                    refunds += 1
+                if "cancel" in event_type:
+                    cancellations += 1
+
+        installs = counts_by_event.get("app_first_open", 0)
+        registrations = counts_by_event.get("signup_completed", 0)
+        scan_completed = counts_by_event.get("scan_completed", 0)
+        scan_failed = counts_by_event.get("scan_failed", 0)
+        scan_started = counts_by_event.get("scan_started", 0)
+        scan_total = scan_completed + scan_failed
+
+        sources = []
+        for item in source_rows.values():
+            spend = round(item["spend"], 2)
+            sources.append({
+                **item,
+                "spend": spend if spend else None,
+                "cpi": round(spend / item["installs"], 2) if spend and item["installs"] else None,
+                "cpr": round(spend / item["registrations"], 2) if spend and item["registrations"] else None,
+            })
+        sources.sort(key=lambda x: (x["purchases"], x["scans"], x["installs"]), reverse=True)
+
+        countries = []
+        for item in country_rows.values():
+            countries.append({**item, "users": len(item["users"])})
+        countries.sort(key=lambda x: (x["users"], x["scans"], x["installs"]), reverse=True)
+
+        daily = []
+        for day, item in sorted(day_events.items())[-30:]:
+            daily.append({"day": day, **item})
+
+        return {
+            "ok": True,
+            "generatedAt": now.isoformat(),
+            "windowDays": max(1, min(int(days or 30), 365)),
+            "dataFreshness": {
+                "lastEventAt": event_rows[-1]["event_time"] if event_rows else None,
+                "eventRows": len(event_rows),
+                "subscriptionsDb": SUBSCRIPTIONS_DB_PATH.exists(),
+            },
+            "acquisition": {
+                "installs": _blank_metric(installs),
+                "costPerInstall": _blank_metric(round(total_ad_spend / installs, 2) if total_ad_spend and installs else None, "USD"),
+                "registrations": _blank_metric(registrations),
+                "costPerRegistration": _blank_metric(round(total_ad_spend / registrations, 2) if total_ad_spend and registrations else None, "USD"),
+                "sources": sources[:20],
+                "countries": countries[:20],
+            },
+            "activation": {
+                "firstAnalysisUsers": _blank_metric(len(scan_users)),
+                "installToAnalysisConversion": _blank_metric(_percent(len(scan_users & install_users) or len(scan_users), len(install_users)), "%"),
+                "averageMinutesToFirstAnalysis": _blank_metric(_avg(first_scan_minutes), "min"),
+                "usefulResultsWithoutError": _blank_metric(useful_results),
+                "usefulResultRate": _blank_metric(_percent(useful_results, scan_total or scan_completed), "%"),
+            },
+            "retention": {
+                "returnedNextDay": _blank_metric(len(d1_returned)),
+                "returnedDay7": _blank_metric(len(d7_returned)),
+                "analysesPerActiveUser": _blank_metric(round(scan_completed / len(month_active), 2) if month_active else None),
+                "dailyActiveUsers": _blank_metric(len(today_active)),
+                "monthlyActiveUsers": _blank_metric(len(month_active)),
+            },
+            "revenue": {
+                "paywallViewedUsers": _blank_metric(len(paywall_users)),
+                "purchaseStartedUsers": _blank_metric(len(users_by_event.get("purchase_started", set()))),
+                "purchaseCompletedUsers": _blank_metric(len(purchase_users)),
+                "activePaidSubscriptions": _blank_metric(active_paid),
+                "monthlyRecurringRevenue": _blank_metric(round(sum(mrr_values), 2) if mrr_values else None, "USD", "estimated from active product ids"),
+                "cancellations": _blank_metric(cancellations),
+                "refunds": _blank_metric(refunds),
+                "activeSubscriptionRows": _blank_metric(active_subscriptions),
+            },
+            "quality": {
+                "analysisErrorRate": _blank_metric(_percent(scan_failed, scan_total), "%"),
+                "averageResponseTimeMs": _blank_metric(_avg(response_times), "ms"),
+                "appCrashes": _blank_metric(counts_by_event.get("app_crashed", 0), None, "requires app_crashed events from clients"),
+                "paymentErrors": _blank_metric(payment_errors),
+                "apiAvailability": _blank_metric(round(100 - (_percent(scan_failed, scan_total) or 0), 2) if scan_total else None, "%", "proxy based on scan failures"),
+            },
+            "events": {name: {"events": counts_by_event.get(name, 0), "users": len(users_by_event.get(name, set()))} for name in sorted(ALLOWED_EVENTS)},
+            "daily": daily,
         }
     finally:
         conn.close()
