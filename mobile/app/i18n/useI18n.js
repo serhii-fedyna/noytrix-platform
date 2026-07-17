@@ -2,6 +2,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import { normalizeLang } from "./lang";
+import { syncPushLanguageTag } from "../lib/pushLanguage";
 
 export function useI18n() {
   const { t, i18n } = useTranslation();
@@ -18,6 +19,7 @@ export function useI18n() {
     if (v !== normalizeLang(i18n.language)) {
       await i18n.changeLanguage(v);
     }
+    await syncPushLanguageTag(v);
   };
 
   return { t, i18n, lang, language: lang, isRu, isUk, setLang };

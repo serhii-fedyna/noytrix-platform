@@ -780,6 +780,10 @@ export default function Home() {
           ["app.language", next],
           ["app_lang", next],
         ]);
+        try {
+          const { syncPushLanguageTag } = await import("../lib/pushLanguage");
+          await syncPushLanguageTag(next);
+        } catch {}
         logEvent("language_change", { screen: "home", lang: next });
       } catch {}
     },

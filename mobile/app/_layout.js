@@ -24,6 +24,7 @@ import { initAnalytics } from "./lib/analytics";
 import { logEvent } from "./lib/analytics";
 import { ReviewPromptHost } from "./lib/reviewPrompt";
 import { normalizeLang } from "./i18n/lang";
+import { syncPushLanguageTag } from "./lib/pushLanguage";
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 const NOTIFICATIONS_PREF_KEY = "profile.notifications";
@@ -353,6 +354,7 @@ export default function RootLayout() {
         if (!cancelled && next !== normalizeLang(i18n.language)) {
           await i18n.changeLanguage(next);
         }
+        await syncPushLanguageTag(next);
       } catch (e) {
         console.log("[i18n] restore language error:", e);
       }
@@ -409,6 +411,7 @@ export default function RootLayout() {
           OneSignal.initialize(ONESIGNAL_APP_ID);
           globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__ = true;
         }
+        await syncPushLanguageTag(i18n.language);
 
         console.log("[ONESIGNAL] initialized");
 

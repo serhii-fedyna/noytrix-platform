@@ -25,6 +25,7 @@ import SignIn from "../auth/signin";
 import { getPushSubscriptionState, setPushNotificationsEnabled } from "../lib/notifications";
 import { BACKEND } from "../lib/backend";
 import { normalizeLang, pickLang } from "../i18n/lang";
+import { syncPushLanguageTag } from "../lib/pushLanguage";
 
 const BG = { start: "#06080f", mid: "#0a1233", end: "#0b1c4f" };
 const UI = {
@@ -134,6 +135,7 @@ export default function ProfileScreen() {
           await i18n.changeLanguage(normalized);
         }
       } catch {}
+      await syncPushLanguageTag(normalized);
     },
     [i18n]
   );
