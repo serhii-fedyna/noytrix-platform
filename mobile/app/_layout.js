@@ -2,7 +2,7 @@
 import i18n from "./i18n";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Stack, router } from "expo-router";
+import { Stack, router, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
@@ -21,11 +21,231 @@ import { useAuthStore } from "./lib/store.auth";
 import { getAuthState } from "./lib/authApi";
 import { setAppAlertHandler } from "./lib/appAlert";
 import { initAnalytics } from "./lib/analytics";
+import { logEvent } from "./lib/analytics";
 import { ReviewPromptHost } from "./lib/reviewPrompt";
 import { normalizeLang } from "./i18n/lang";
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 const NOTIFICATIONS_PREF_KEY = "profile.notifications";
+const PRO_NUDGE_STATE_KEY = "noytrix.proNudge.v1";
+const PRO_NUDGE_MIN_DELAY_MS = 10 * 60 * 1000;
+const PRO_NUDGE_REPEAT_MS = 3 * 24 * 60 * 60 * 1000;
+
+function proNudgeCopy() {
+  const lang = normalizeLang(i18n.language);
+  if (lang === "uk") {
+    return {
+      title: "PRO може захистити більше",
+      text: "Ви вже бачили PRO. Якщо часто перевіряєте посилання, гаманці або токени, повний доступ дасть більше перевірок і глибший аналіз перед дією.",
+      primary: "Відкрити PRO",
+      later: "Пізніше",
+      note: "Без обіцянок прибутку. Це інструмент перевірки ризику.",
+    };
+  }
+  if (lang === "ru") {
+    return {
+      title: "PRO может защитить больше",
+      text: "Ты уже смотрел PRO. Если часто проверяешь ссылки, кошельки или токены, полный доступ даст больше проверок и более глубокий анализ перед действием.",
+      primary: "Открыть PRO",
+      later: "Позже",
+      note: "Без обещаний прибыли. Это инструмент проверки риска.",
+    };
+  }
+  return {
+    title: "PRO can protect more",
+    text: "You already viewed PRO. If you often check links, wallets or tokens, full access gives more checks and deeper risk analysis before you act.",
+    primary: "Open PRO",
+    later: "Later",
+    note: "No profit promises. This is a risk-checking tool.",
+  };
+}
+
+async function readJsonState(key) {
+  try {
+    const raw = await AsyncStorage.getItem(key);
+    return raw ? JSON.parse(raw) || {} : {};
+  } catch {
+    return {};
+  }
+}
+
+async function hasLocalPro() {
+  try {
+    const values = await AsyncStorage.multiGet([
+      "isPro",
+      "noytrix.isPro",
+      "pro",
+      "proActive",
+      "subscription.pro",
+      "iap.isPro",
+      "entitlement.pro",
+      "noytrix_pro_flag",
+    ]);
+    return values.some(([, value]) => {
+      const v = String(value || "").toLowerCase();
+      return v === "true" || v === "1" || v === "active" || v === "pro";
+    });
+  } catch {
+    return false;
+  }
+}
+
+function ProNudgeHost() {
+  const pathname = usePathname();
+  const [visible, setVisible] = useState(false);
+  const [state, setState] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        if (String(pathname || "").includes("/pro")) return;
+        if (await hasLocalPro()) return;
+
+        const current = await readJsonState(PRO_NUDGE_STATE_KEY);
+        const ts = Date.now();
+        if (!current.hasViewedPaywall) return;
+        if (Number(current.convertedAt || 0)) return;
+        if (Number(current.lastViewedAt || 0) && ts - Number(current.lastViewedAt) < PRO_NUDGE_MIN_DELAY_MS) return;
+        if (Number(current.postponedUntil || 0) > ts) return;
+        if (Number(current.lastNudgeAt || 0) && ts - Number(current.lastNudgeAt) < PRO_NUDGE_REPEAT_MS) return;
+
+        if (!cancelled) {
+          setState(current);
+          setVisible(true);
+          const next = {
+            ...current,
+            lastNudgeAt: ts,
+            nudgeCount: Number(current.nudgeCount || 0) + 1,
+          };
+          await AsyncStorage.setItem(PRO_NUDGE_STATE_KEY, JSON.stringify(next));
+          logEvent("paywall_nudge_viewed", {
+            source: "global_popup",
+            paywall_views: Number(current.viewCount || 0),
+            minutes_since_paywall: Math.round((ts - Number(current.lastViewedAt || ts)) / 60000),
+          });
+        }
+      } catch (e) {
+        console.log("[PRO NUDGE] show error:", e);
+      }
+    }, 25000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [pathname]);
+
+  const closeLater = async () => {
+    const ts = Date.now();
+    setVisible(false);
+    try {
+      const current = await readJsonState(PRO_NUDGE_STATE_KEY);
+      await AsyncStorage.setItem(
+        PRO_NUDGE_STATE_KEY,
+        JSON.stringify({
+          ...current,
+          postponedUntil: ts + PRO_NUDGE_REPEAT_MS,
+          lastDismissedAt: ts,
+        })
+      );
+      logEvent("paywall_nudge_dismissed", { source: "global_popup" });
+    } catch {}
+  };
+
+  const openPro = async () => {
+    setVisible(false);
+    try {
+      const current = await readJsonState(PRO_NUDGE_STATE_KEY);
+      await AsyncStorage.setItem(
+        PRO_NUDGE_STATE_KEY,
+        JSON.stringify({
+          ...current,
+          lastClickedAt: Date.now(),
+        })
+      );
+      logEvent("paywall_nudge_clicked", {
+        source: "global_popup",
+        paywall_views: Number(state?.viewCount || current.viewCount || 0),
+      });
+    } catch {}
+    router.push("/pro");
+  };
+
+  const copy = proNudgeCopy();
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={closeLater}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "rgba(0,0,0,0.70)",
+          justifyContent: "center",
+          padding: 22,
+        }}
+      >
+        <View
+          style={{
+            borderRadius: 24,
+            overflow: "hidden",
+            borderWidth: 1,
+            borderColor: "rgba(255,176,32,0.36)",
+            backgroundColor: "#081020",
+          }}
+        >
+          <View style={{ padding: 20 }}>
+            <View
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: 16,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "rgba(255,176,32,0.12)",
+                borderWidth: 1,
+                borderColor: "rgba(255,176,32,0.28)",
+                marginBottom: 12,
+              }}
+            >
+              <Text style={{ color: "#ffb020", fontSize: 24, fontWeight: "900" }}>★</Text>
+            </View>
+            <Text style={{ color: "#ffffff", fontSize: 22, fontWeight: "900", marginBottom: 8 }}>
+              {copy.title}
+            </Text>
+            <Text style={{ color: "#A8B4CF", fontSize: 15, lineHeight: 22 }}>
+              {copy.text}
+            </Text>
+            <Text style={{ color: "rgba(168,180,207,0.76)", fontSize: 12, lineHeight: 17, marginTop: 12 }}>
+              {copy.note}
+            </Text>
+
+            <TouchableOpacity
+              onPress={openPro}
+              activeOpacity={0.9}
+              style={{
+                marginTop: 18,
+                borderRadius: 18,
+                paddingVertical: 14,
+                alignItems: "center",
+                backgroundColor: "#ffb020",
+              }}
+            >
+              <Text style={{ color: "#071020", fontSize: 16, fontWeight: "900" }}>{copy.primary}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={closeLater}
+              activeOpacity={0.85}
+              style={{ alignItems: "center", paddingVertical: 14 }}
+            >
+              <Text style={{ color: "#A8B4CF", fontSize: 14, fontWeight: "800" }}>{copy.later}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
 function PremiumAlert({ alert, onClose }) {
   return (
@@ -86,6 +306,7 @@ function AppShell({ children, appAlert, setAppAlert }) {
       {children}
       <PremiumAlert alert={appAlert} onClose={() => setAppAlert(null)} />
       <ReviewPromptHost />
+      <ProNudgeHost />
     </SafeAreaProvider>
   );
 }

@@ -72,6 +72,7 @@ const plans = [
 const usd = (n) => `$${Number(n).toFixed(2)}`;
 const LOCAL_PRICES = { m: 9.99, h: 49.99, l: 199.99 };
 const REVIEW_STATE_KEY = "noytrix.reviewPrompt.v1";
+const PRO_NUDGE_STATE_KEY = "noytrix.proNudge.v1";
 
 function normalizeProductId(product) {
   return String(product?.id || product?.productId || "").trim();
@@ -96,6 +97,12 @@ async function syncLocalProFlags(ent) {
       await AsyncStorage.setItem("entitlement.pro", "active");
       await AsyncStorage.setItem("entitlement.id", "pro");
       await AsyncStorage.setItem("entitlementId", "pro");
+      const rawNudge = await AsyncStorage.getItem(PRO_NUDGE_STATE_KEY).catch(() => null);
+      const currentNudge = rawNudge ? JSON.parse(rawNudge) : {};
+      await AsyncStorage.setItem(
+        PRO_NUDGE_STATE_KEY,
+        JSON.stringify({ ...currentNudge, convertedAt: Date.now(), conversionSource: "purchase_or_restore" })
+      );
     } else {
       await AsyncStorage.setItem("isPro", "false");
       await AsyncStorage.setItem("noytrix.isPro", "false");
@@ -135,6 +142,20 @@ export default function ProScreen() {
     logEvent("pro_screen_open", { screen: "pro" });
     (async () => {
       try {
+        const ts = Date.now();
+        const rawNudge = await AsyncStorage.getItem(PRO_NUDGE_STATE_KEY).catch(() => null);
+        const currentNudge = rawNudge ? JSON.parse(rawNudge) : {};
+        await AsyncStorage.setItem(
+          PRO_NUDGE_STATE_KEY,
+          JSON.stringify({
+            ...currentNudge,
+            hasViewedPaywall: true,
+            firstViewedAt: currentNudge.firstViewedAt || ts,
+            lastViewedAt: ts,
+            viewCount: Number(currentNudge.viewCount || 0) + 1,
+          })
+        );
+
         const raw = await AsyncStorage.getItem(REVIEW_STATE_KEY);
         const parsed = raw ? JSON.parse(raw) : {};
         const next = {
