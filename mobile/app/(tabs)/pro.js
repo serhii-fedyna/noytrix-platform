@@ -22,7 +22,6 @@ import {
   buyProYearly,
   restorePurchases,
   checkEntitlements,
-  getRevenueCatAppUserId,
   chooseSubscriptionOffer,
 } from "../lib/iap";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -43,8 +42,6 @@ const C = {
   black: "#1B2333",
   blue: "#9DB5FF",
 };
-
-const BACKEND = "https://api.noytrixapp.com";
 
 function showAppAlert(title, message) {
   Alert.alert(String(title || ""), String(message || ""));
@@ -85,10 +82,6 @@ function priceFromOffer(offer) {
   return recurring?.formattedPrice || "";
 }
 
-async function getOrCreateInstallUserId() {
-  return getRevenueCatAppUserId();
-}
-
 async function syncLocalProFlags(ent) {
   try {
     const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly);
@@ -103,60 +96,19 @@ async function syncLocalProFlags(ent) {
       await AsyncStorage.setItem("entitlement.id", "pro");
       await AsyncStorage.setItem("entitlementId", "pro");
     } else {
-      const serverOrManualPro =
-        (await AsyncStorage.getItem("noytrix_pro_flag")) === "1" ||
-        (await AsyncStorage.getItem("pro.active")) === "true" ||
-        (await AsyncStorage.getItem("pro.isPro")) === "true";
-
-      if (!serverOrManualPro) {
-        await AsyncStorage.setItem("isPro", "false");
-        await AsyncStorage.setItem("noytrix.isPro", "false");
-        await AsyncStorage.setItem("pro", "false");
-        await AsyncStorage.setItem("proActive", "false");
-        await AsyncStorage.setItem("subscription.pro", "false");
-        await AsyncStorage.setItem("entitlement.pro", "inactive");
-        await AsyncStorage.setItem("entitlement.id", "");
-        await AsyncStorage.setItem("entitlementId", "");
-      }
+      await AsyncStorage.setItem("isPro", "false");
+      await AsyncStorage.setItem("noytrix.isPro", "false");
+      await AsyncStorage.setItem("pro", "false");
+      await AsyncStorage.setItem("proActive", "false");
+      await AsyncStorage.setItem("subscription.pro", "false");
+      await AsyncStorage.setItem("iap.isPro", "false");
+      await AsyncStorage.setItem("iap.pro", "false");
+      await AsyncStorage.setItem("entitlement.pro", "inactive");
+      await AsyncStorage.setItem("entitlement.id", "");
+      await AsyncStorage.setItem("entitlementId", "");
+      await AsyncStorage.setItem("noytrix_pro_flag", "0");
     }
   } catch {}
-}
-
-async function syncGuestProOnServer(ent) {
-  try {
-    const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly);
-    if (!hasPro) return;
-
-    const userId = await getOrCreateInstallUserId();
-
-    const response = await fetch(`${BACKEND}/iap/guest/activate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Id": userId,
-      },
-      body: JSON.stringify({
-        userId,
-        hasPro,
-        source: "google_play_guest",
-      }),
-    });
-    const server = await response.json().catch(() => null);
-    if (server?.active) {
-      await AsyncStorage.setItem("isPro", "true");
-      await AsyncStorage.setItem("noytrix.isPro", "true");
-      await AsyncStorage.setItem("pro", "true");
-      await AsyncStorage.setItem("proActive", "true");
-      await AsyncStorage.setItem("subscription.pro", "true");
-      await AsyncStorage.setItem("iap.isPro", "true");
-      await AsyncStorage.setItem("entitlement.pro", "active");
-      await AsyncStorage.setItem("entitlement.id", "pro");
-      await AsyncStorage.setItem("entitlementId", "pro");
-      await AsyncStorage.setItem("noytrix_pro_flag", "1");
-    }
-  } catch (e) {
-    console.log("[PRO] syncGuestProOnServer error:", e);
-  }
 }
 
 export default function ProScreen() {
@@ -223,7 +175,6 @@ export default function ProScreen() {
         const e = await checkEntitlements({ skipRestore: true });
         setEnt(e);
         await syncLocalProFlags(e);
-        await syncGuestProOnServer(e);
       } catch (err) {
         console.log("ProScreen init error", err);
       } finally {
@@ -248,7 +199,6 @@ export default function ProScreen() {
       const e = await checkEntitlements();
       setEnt(e);
       await syncLocalProFlags(e);
-      await syncGuestProOnServer(e);
       logEvent("purchase_success", { screen: "pro", plan: planId, price_label: priceFor(planId), pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
 
       showAppAlert(t("pro.alerts.purchaseTitle"), t("pro.alerts.purchaseBody"));
@@ -272,7 +222,6 @@ export default function ProScreen() {
       const e = await restorePurchases();
       setEnt(e);
       await syncLocalProFlags(e);
-      await syncGuestProOnServer(e);
       logEvent("restore_success", { screen: "pro", pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
 
       const restored = !!(e?.proMonthly || e?.pro6m || e?.proYearly);

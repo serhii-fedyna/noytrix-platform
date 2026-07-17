@@ -41,6 +41,12 @@ const SUBSCRIPTION_BASE_PLAN = {
   l: "pro-1year",
 };
 
+const SUBSCRIPTION_BILLING_PERIOD = {
+  m: ["P1M"],
+  h: ["P6M"],
+  l: ["P1Y", "P12M"],
+};
+
 let iapConfigured = false;
 let cachedProducts = { products: [], subs: [] };
 let updateSub = null;
@@ -82,6 +88,23 @@ async function persistPro(active, meta = {}) {
   );
 }
 
+async function clearPro(meta = {}) {
+  await AsyncStorage.multiSet([
+    ["isPro", "false"],
+    ["noytrix.isPro", "false"],
+    ["pro", "false"],
+    ["proActive", "false"],
+    ["subscription.pro", "false"],
+    ["iap.isPro", "false"],
+    ["iap.pro", "false"],
+    ["entitlement.pro", "inactive"],
+    ["entitlement.id", ""],
+    ["entitlementId", ""],
+    ["noytrix_pro_flag", "0"],
+    ["iap.lastGooglePlayVerify", JSON.stringify({ ...meta, active: false, updatedAt: Date.now() })],
+  ]);
+}
+
 function productIdOf(purchase) {
   return String(purchase?.productId || purchase?.id || "").trim();
 }
@@ -111,6 +134,18 @@ function entitlementFromProduct(productId) {
 export function chooseSubscriptionOffer(product, planId) {
   const offers = product?.subscriptionOfferDetailsAndroid || [];
   if (!offers.length) return null;
+
+  const billingPeriodOf = (offer) => {
+    const phases = offer?.pricingPhases?.pricingPhaseList || [];
+    const recurring = phases.find((p) => Number(p?.recurrenceMode) === 1) || phases[phases.length - 1] || phases[0];
+    return String(recurring?.billingPeriod || "").trim().toUpperCase();
+  };
+
+  const expectedPeriods = SUBSCRIPTION_BILLING_PERIOD[planId] || [];
+  if (expectedPeriods.length) {
+    const byPeriod = offers.find((offer) => expectedPeriods.includes(billingPeriodOf(offer)));
+    if (byPeriod) return byPeriod;
+  }
 
   const offerText = (offer) =>
     [
@@ -445,6 +480,7 @@ export async function checkEntitlements(options = {}) {
     }
 
     if (options?.skipRestore) {
+      await clearPro({ source: "server_status_inactive" });
       return { proMonthly: false, pro6m: false, proYearly: false, bot: false };
     }
 
@@ -452,6 +488,7 @@ export async function checkEntitlements(options = {}) {
     if (restored.proMonthly || restored.pro6m || restored.proYearly || restored.bot) {
       return restored;
     }
+    await clearPro({ source: "restore_empty" });
   } catch (e) {
     console.log("[IAP] checkEntitlements error:", e);
   }

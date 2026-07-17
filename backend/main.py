@@ -1161,6 +1161,34 @@ def init_guest_pro_db():
         if "expires_at" not in cols:
             cur.execute("ALTER TABLE guest_pro ADD COLUMN expires_at TEXT")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_pro_active ON guest_pro(is_active)")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS guest_iap_purchases (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              user_id TEXT NOT NULL,
+              provider TEXT NOT NULL DEFAULT 'google',
+              product_type TEXT NOT NULL,
+              product_id TEXT NOT NULL,
+              package_name TEXT NOT NULL,
+              purchase_token TEXT NOT NULL UNIQUE,
+              status TEXT NOT NULL,
+              is_active INTEGER NOT NULL DEFAULT 0,
+              expiry_time_utc TEXT,
+              order_id TEXT,
+              purchase_time_utc TEXT,
+              linked_purchase_token TEXT,
+              acknowledgement_state INTEGER,
+              payment_state INTEGER,
+              cancel_reason INTEGER,
+              purchase_state INTEGER,
+              raw TEXT,
+              created_at TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_iap_user_active ON guest_iap_purchases(user_id, is_active)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_guest_iap_token ON guest_iap_purchases(purchase_token)")
         conn.commit()
     finally:
         conn.close()
@@ -1191,10 +1219,189 @@ def set_guest_pro(user_id: str, active: bool = True, source: str = "guest_iap", 
     finally:
         conn.close()
 
+def _parse_utc_iso(value: Any) -> Optional[datetime]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+def _upsert_guest_iap_purchase(
+    user_id: str,
+    product_type: str,
+    product_id: str,
+    package_name: str,
+    purchase_token: str,
+    data: dict,
+    active: bool,
+    status: str,
+    expiry_dt: Optional[datetime],
+) -> None:
+    uid = (user_id or "").strip()
+    token = (purchase_token or "").strip()
+    if not uid or not token:
+        return
+
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    purchase_dt = _dt_from_google_ms(data.get("purchaseTimeMillis"))
+    raw_json = json.dumps(data or {}, ensure_ascii=False)
+
+    conn = _guest_pro_connect()
+    try:
+        cur = conn.cursor()
+        linked_token = str(data.get("linkedPurchaseToken") or "").strip()
+        if linked_token:
+            cur.execute(
+                """
+                UPDATE guest_iap_purchases
+                SET status='canceled', is_active=0, updated_at=?
+                WHERE purchase_token=? AND is_active=1
+                """,
+                (now_iso, linked_token),
+            )
+        cur.execute(
+            """
+            INSERT INTO guest_iap_purchases(
+              user_id, provider, product_type, product_id, package_name, purchase_token,
+              status, is_active, expiry_time_utc, order_id, purchase_time_utc,
+              linked_purchase_token, acknowledgement_state, payment_state, cancel_reason,
+              purchase_state, raw, created_at, updated_at
+            )
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(purchase_token) DO UPDATE SET
+              user_id=excluded.user_id,
+              product_type=excluded.product_type,
+              product_id=excluded.product_id,
+              package_name=excluded.package_name,
+              status=excluded.status,
+              is_active=excluded.is_active,
+              expiry_time_utc=excluded.expiry_time_utc,
+              order_id=excluded.order_id,
+              purchase_time_utc=excluded.purchase_time_utc,
+              linked_purchase_token=excluded.linked_purchase_token,
+              acknowledgement_state=excluded.acknowledgement_state,
+              payment_state=excluded.payment_state,
+              cancel_reason=excluded.cancel_reason,
+              purchase_state=excluded.purchase_state,
+              raw=excluded.raw,
+              updated_at=excluded.updated_at
+            """,
+            (
+                uid,
+                "google",
+                (product_type or "").strip().lower(),
+                (product_id or "").strip(),
+                (package_name or "").strip(),
+                token,
+                (status or "unknown"),
+                1 if active else 0,
+                expiry_dt.isoformat() if expiry_dt else None,
+                str(data.get("orderId")) if data.get("orderId") else None,
+                purchase_dt.isoformat() if purchase_dt else None,
+                linked_token or None,
+                int(data.get("acknowledgementState")) if data.get("acknowledgementState") is not None else None,
+                int(data.get("paymentState")) if data.get("paymentState") is not None else None,
+                int(data.get("cancelReason")) if data.get("cancelReason") is not None else None,
+                int(data.get("purchaseState")) if data.get("purchaseState") is not None else None,
+                raw_json,
+                now_iso,
+                now_iso,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+def _verified_guest_iap_status(user_id: Optional[str]) -> dict:
+    uid = str(user_id or "").strip()
+    out = {
+        "active": False,
+        "expiresAt": None,
+        "source": None,
+        "productId": None,
+        "status": "free",
+    }
+    if not uid:
+        return out
+
+    now = datetime.now(timezone.utc)
+    conn = _guest_pro_connect()
+    try:
+        cur = conn.cursor()
+        rows = cur.execute(
+            """
+            SELECT id, product_type, product_id, status, is_active, expiry_time_utc
+            FROM guest_iap_purchases
+            WHERE user_id=?
+            ORDER BY updated_at DESC, id DESC
+            """,
+            (uid,),
+        ).fetchall()
+        changed = False
+        for row in rows:
+            rec_id, ptype, product_id, status, is_active, expiry_raw = row
+            active = int(is_active or 0) == 1 and str(status or "").lower() == "active"
+            expiry = _parse_utc_iso(expiry_raw)
+            if active and str(ptype or "").lower() == "subs" and (not expiry or expiry <= now):
+                cur.execute(
+                    "UPDATE guest_iap_purchases SET status='expired', is_active=0, updated_at=? WHERE id=?",
+                    (now.replace(microsecond=0).isoformat(), rec_id),
+                )
+                changed = True
+                active = False
+            if active:
+                out.update(
+                    {
+                        "active": True,
+                        "expiresAt": expiry.isoformat() if expiry else None,
+                        "source": "google_play_verified",
+                        "productId": product_id,
+                        "status": "active",
+                    }
+                )
+                break
+        if changed:
+            conn.commit()
+        return out
+    finally:
+        conn.close()
+
+def _sync_guest_google_entitlement(user_id: str) -> dict:
+    uid = (user_id or "").strip()
+    verified = _verified_guest_iap_status(uid)
+    if not uid:
+        return verified
+    if verified.get("active"):
+        set_guest_pro(
+            uid,
+            active=True,
+            source=f"google_play_verified:{verified.get('productId') or 'unknown'}",
+            expires_at=verified.get("expiresAt"),
+        )
+        return verified
+
+    conn = _guest_pro_connect()
+    try:
+        row = conn.execute("SELECT source FROM guest_pro WHERE user_id=? LIMIT 1", (uid,)).fetchone()
+    finally:
+        conn.close()
+    source = str(row[0] or "").strip().lower() if row else ""
+    if source.startswith("google_play"):
+        set_guest_pro(uid, active=False, source="google_play_expired_or_inactive", expires_at=None)
+    return verified
+
 def guest_has_pro(user_id: Optional[str]) -> bool:
     uid = (str(user_id or "")).strip()
     if not uid:
         return False
+    verified = _sync_guest_google_entitlement(uid)
+    if verified.get("active"):
+        return True
     conn = _guest_pro_connect()
     try:
         cur = conn.cursor()
@@ -1236,15 +1443,20 @@ def _payload_bool(payload: dict, keys: list[str]) -> Optional[bool]:
     return None
 
 def _iap_status_payload(user_id: Optional[str]) -> dict:
+    verified = _sync_guest_google_entitlement(str(user_id or "").strip())
     active = guest_has_pro(user_id)
     expires_at = None
+    source = verified.get("source")
+    product_id = verified.get("productId")
     uid = str(user_id or "").strip()
     if uid:
         try:
             conn = _guest_pro_connect()
             try:
-                row = conn.execute("SELECT expires_at FROM guest_pro WHERE user_id=? LIMIT 1", (uid,)).fetchone()
-                expires_at = str(row[0] or "").strip() or None if row else None
+                row = conn.execute("SELECT source, expires_at FROM guest_pro WHERE user_id=? LIMIT 1", (uid,)).fetchone()
+                if row:
+                    source = source or (str(row[0] or "").strip() or None)
+                    expires_at = verified.get("expiresAt") or (str(row[1] or "").strip() or None)
             finally:
                 conn.close()
         except Exception:
@@ -1257,6 +1469,9 @@ def _iap_status_payload(user_id: Optional[str]) -> dict:
         "pro": active,
         "plan": "PRO" if active else "FREE",
         "expiresAt": expires_at,
+        "source": source,
+        "productId": product_id,
+        "verifiedGooglePlay": bool(verified.get("active")),
     }
 
 def _google_play_access_token() -> str:
@@ -1352,19 +1567,33 @@ async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
 
     data = _google_play_verify_purchase(product_type, package_name, product_id, purchase_token)
     active, status, expiry_dt = _active_from_google_purchase(product_type, data)
+    _upsert_guest_iap_purchase(
+        user_id=user_id,
+        product_type=product_type,
+        product_id=product_id,
+        package_name=package_name,
+        purchase_token=purchase_token,
+        data=data,
+        active=active,
+        status=status,
+        expiry_dt=expiry_dt,
+    )
 
     if active:
         set_guest_pro(
             user_id,
             active=True,
-            source=f"google_play:{product_id}",
+            source=f"google_play_verified:{product_id}",
             expires_at=expiry_dt.isoformat() if expiry_dt else None,
         )
+    else:
+        _sync_guest_google_entitlement(user_id)
 
+    server_status = _iap_status_payload(user_id)
     return {
         "ok": True,
         "userId": user_id,
-        "active": guest_has_pro(user_id),
+        "active": bool(server_status.get("active")),
         "googleActive": active,
         "status": status,
         "productType": product_type,
@@ -1403,8 +1632,16 @@ async def iap_guest_activate(request: Request, payload: dict = Body(...), lang: 
         })
         return out
 
-    set_guest_pro(user_id, active=has_pro, source=source)
-    return _iap_status_payload(user_id)
+    # Public clients must not be able to grant PRO by sending a local flag.
+    # Google Play access is granted only by /iap/google/guest/verify after
+    # Android Publisher verifies the purchase token on the server.
+    out = _iap_status_payload(user_id)
+    out.update({
+        "ignored": True,
+        "reason": "client_activation_disabled_use_google_verify",
+        "requestedSource": source,
+    })
+    return out
 
 @app.get("/iap/guest/status")
 async def iap_guest_status(request: Request, userId: str | None = None):
@@ -1474,19 +1711,7 @@ def is_pro(user_id: Optional[str]) -> bool:
         candidates = [str(x or "").strip() for x in ids if str(x or "").strip()]
         if not candidates:
             return False
-        try:
-            conn = _guest_pro_connect()
-            try:
-                q = ",".join(["?"] * len(candidates))
-                row = conn.execute(
-                    f"SELECT 1 FROM guest_pro WHERE is_active=1 AND user_id IN ({q}) LIMIT 1",
-                    candidates,
-                ).fetchone()
-                return bool(row)
-            finally:
-                conn.close()
-        except Exception:
-            return False
+        return any(guest_has_pro(candidate) for candidate in candidates)
 
     if _guest_pro_active(uid_raw, uid_raw.lower()):
         return True
