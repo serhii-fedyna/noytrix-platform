@@ -8967,6 +8967,102 @@ async def immunity_analyze(payload: ImmunityAnalyzeRequest, request: Request):
 # =========================================================
 # PUSH SENDER (OneSignal)
 # =========================================================
+PUSH_DEDUPE_DB_PATH = DATA_DIR / "push_dedupe.sqlite3"
+PUSH_DEFAULT_DEDUPE_SEC = 12 * 60 * 60
+
+def _push_dedupe_connect():
+    conn = sqlite3.connect(PUSH_DEDUPE_DB_PATH, timeout=20)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_push_dedupe_db():
+    conn = _push_dedupe_connect()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sent_push_alerts (
+              dedupe_key TEXT PRIMARY KEY,
+              title TEXT,
+              body TEXT,
+              data_json TEXT,
+              first_sent_at TEXT NOT NULL,
+              last_sent_at TEXT NOT NULL,
+              send_count INTEGER NOT NULL DEFAULT 1
+            )
+            """
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+init_push_dedupe_db()
+
+def _push_norm_target(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    try:
+        u = raw if raw.startswith(("http://", "https://")) else "http://" + raw
+        host = (urlparse(u).hostname or raw).lower()
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return raw.split("?")[0].strip("/")
+
+def _push_dedupe_key(title: str, body: str, data: dict | None = None) -> str:
+    data = data if isinstance(data, dict) else {}
+    alert_type = str(data.get("type") or data.get("alert_type") or "").strip().lower()
+    source = str(data.get("source") or "").strip().lower()
+    target = _push_norm_target(data.get("input") or data.get("target") or data.get("url"))
+    if target:
+        base = f"{source}:{alert_type}:{target}"
+    else:
+        base = f"title_body:{str(title or '').strip().lower()}::{str(body or '').strip().lower()}"
+    return hashlib.sha256(base.encode("utf-8", errors="ignore")).hexdigest()
+
+def _push_recently_sent(dedupe_key: str, cooldown_sec: int = PUSH_DEFAULT_DEDUPE_SEC) -> bool:
+    if not dedupe_key:
+        return False
+    cutoff = datetime.now(timezone.utc).timestamp() - max(60, int(cooldown_sec or PUSH_DEFAULT_DEDUPE_SEC))
+    conn = _push_dedupe_connect()
+    try:
+        row = conn.execute(
+            "SELECT last_sent_at FROM sent_push_alerts WHERE dedupe_key=? LIMIT 1",
+            (dedupe_key,),
+        ).fetchone()
+        if not row:
+            return False
+        dt = datetime.fromisoformat(str(row["last_sent_at"]).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp() >= cutoff
+    except Exception:
+        return False
+    finally:
+        conn.close()
+
+def _push_mark_sent(dedupe_key: str, title: str, body: str, data: dict | None = None) -> None:
+    if not dedupe_key:
+        return
+    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    conn = _push_dedupe_connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO sent_push_alerts(dedupe_key, title, body, data_json, first_sent_at, last_sent_at, send_count)
+            VALUES(?,?,?,?,?,?,1)
+            ON CONFLICT(dedupe_key) DO UPDATE SET
+              title=excluded.title,
+              body=excluded.body,
+              data_json=excluded.data_json,
+              last_sent_at=excluded.last_sent_at,
+              send_count=send_count+1
+            """,
+            (dedupe_key, str(title or "")[:240], str(body or "")[:1000], json.dumps(data or {}, ensure_ascii=False), now_iso, now_iso),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
 async def send_onesignal_push(title: str, body: str) -> dict:
     if not ONESIGNAL_APP_ID or not ONESIGNAL_API_KEY:
         raise RuntimeError("OneSignal is not configured")
@@ -9012,8 +9108,15 @@ async def push_register(request: Request, payload: dict = Body(...), lang: str |
     return {"ok": False, "reason": "bad token"}
 
 async def broadcast_push(title: str, body: str):
+    extra_data = globals().get("_ONESIGNAL_NEXT_DATA", None)
+    dedupe_key = _push_dedupe_key(title, body, extra_data if isinstance(extra_data, dict) else None)
+    if _push_recently_sent(dedupe_key):
+        globals().pop("_ONESIGNAL_NEXT_DATA", None)
+        print("[broadcast_push] duplicate skipped", {"dedupe_key": dedupe_key, "title": title, "data": extra_data})
+        return {"ok": True, "provider": "onesignal", "skipped": True, "reason": "duplicate_recent_push"}
     try:
         resp = await send_onesignal_push(title, body)
+        _push_mark_sent(dedupe_key, title, body, extra_data if isinstance(extra_data, dict) else None)
         return {"ok": True, "provider": "onesignal", "response": resp}
     except Exception as e:
         print("[broadcast_push] onesignal error:", e)

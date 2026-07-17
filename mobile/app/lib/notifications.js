@@ -6,7 +6,9 @@ const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 
 function initOneSignalSafe() {
   try {
+    if (globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__) return;
     OneSignal.initialize(ONESIGNAL_APP_ID);
+    globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__ = true;
   } catch (e) {
     console.log("[PUSH] OneSignal.initialize skipped/error:", e);
   }

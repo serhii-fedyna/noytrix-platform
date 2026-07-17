@@ -8,7 +8,9 @@ const KEY_IDX = "@notif_ids_by_event";
 
 function initOneSignal() {
   try {
+    if (globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__) return;
     OneSignal.initialize(ONESIGNAL_APP_ID);
+    globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__ = true;
   } catch (e) {
     console.log("[notify] OneSignal init error:", e);
   }

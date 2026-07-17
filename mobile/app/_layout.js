@@ -405,7 +405,10 @@ export default function RootLayout() {
     const initOneSignal = async () => {
       try {
         OneSignal.Debug.setLogLevel(LogLevel.Verbose);
-        OneSignal.initialize(ONESIGNAL_APP_ID);
+        if (!globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__) {
+          OneSignal.initialize(ONESIGNAL_APP_ID);
+          globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__ = true;
+        }
 
         console.log("[ONESIGNAL] initialized");
 
