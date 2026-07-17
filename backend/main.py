@@ -1772,8 +1772,9 @@ async def subscriptions_status(request: Request, userId: str | None = None, enti
     status = entitlement_status(candidates, entitlement)
     return {
         "ok": True,
-        "userId": uid or auth_uid,
         **status,
+        "userId": uid or auth_uid or status.get("userId"),
+        "entitlementUserId": status.get("userId"),
     }
 
 # =========================================================
