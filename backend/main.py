@@ -478,6 +478,7 @@ COMPANY_DASHBOARD_HTML = r"""
             <option value="7">7 дней</option>
             <option value="30" selected>30 дней</option>
             <option value="90">90 дней</option>
+            <option value="0">За всё время</option>
           </select>
           <button onclick="loadData()">Обновить</button>
           <button onclick="logout()">Выйти</button>
@@ -547,9 +548,11 @@ COMPANY_DASHBOARD_HTML = r"""
       document.getElementById("freshness").textContent = data.dataFreshness?.lastEventAt ? `Последнее событие: ${data.dataFreshness.lastEventAt}` : "Событий пока нет";
       document.getElementById("status").innerHTML = `
         <span>Обновлено: ${data.generatedAt}</span>
-        <span>Период: ${data.windowDays} дней</span>
-        <span>Событий в базе: ${data.dataFreshness?.eventRows || 0}</span>
+        <span>Период: ${data.windowDays === 0 ? "за всё время" : `${data.windowDays} дней`}</span>
+        <span>Новые события в базе: ${data.dataFreshness?.eventRows || 0}</span>
+        <span>Старые события анализов: ${data.dataFreshness?.historicProfileEvents || 0}</span>
         <span>База подписок: ${data.dataFreshness?.subscriptionsDb ? "подключена" : "не найдена"}</span>
+        <span>Старая база анализов: ${data.dataFreshness?.profileDb ? "подключена" : "не найдена"}</span>
         <span>Если написано “Пока нет данных” - значит сервер ещё не получил такое событие от приложения или рекламы.</span>
       `;
       const a = data.acquisition || {}, ac = data.activation || {}, r = data.retention || {}, rev = data.revenue || {}, q = data.quality || {};
@@ -578,7 +581,11 @@ COMPANY_DASHBOARD_HTML = r"""
           card("Открыли экран оплаты", rev.paywallViewedUsers),
           card("Нажали купить", rev.purchaseStartedUsers),
           card("Покупка успешно завершена", rev.purchaseCompletedUsers),
-          card("Активные платные PRO-подписки", rev.activePaidSubscriptions),
+          card("Реальные платные PRO сейчас", rev.activePaidSubscriptions),
+          card("PRO-доступ включен всего", rev.totalActiveProAccess),
+          card("Старый перенесенный PRO", rev.legacyActiveProAccess),
+          card("Ручной PRO-доступ", rev.manualActiveProAccess),
+          card("Тестовые PRO-аккаунты", rev.testActiveProAccess),
           card("Примерная ежемесячная выручка", rev.monthlyRecurringRevenue),
           card("Отмены подписок", rev.cancellations),
           card("Возвраты денег", rev.refunds),

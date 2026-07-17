@@ -13,6 +13,7 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 ANALYTICS_DB_PATH = DATA_DIR / "product_analytics.sqlite3"
 SUBSCRIPTIONS_DB_PATH = DATA_DIR / "subscriptions.sqlite3"
+PROFILE_DB_PATH = DATA_DIR / "profile.sqlite3"
 
 ALLOWED_EVENTS = {
     "app_first_open",
@@ -264,10 +265,15 @@ def _blank_metric(value: Any, unit: str | None = None, note: str | None = None) 
     return {"value": value, "unit": unit, "note": note}
 
 
-def _period_bounds(days: int) -> tuple[str, datetime]:
-    days = max(1, min(int(days or 30), 365))
-    cutoff_ts = datetime.now(timezone.utc).timestamp() - days * 86400
+def _period_bounds(days: int) -> tuple[str, datetime, int]:
+    raw_days = int(30 if days is None else days)
+    if raw_days <= 0:
+        cutoff_dt = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        return cutoff_dt.isoformat(), cutoff_dt, 0
+    days_norm = max(1, min(raw_days, 365))
+    cutoff_ts = datetime.now(timezone.utc).timestamp() - days_norm * 86400
     cutoff_dt = datetime.fromtimestamp(cutoff_ts, tz=timezone.utc).replace(microsecond=0)
+    return cutoff_dt.isoformat(), cutoff_dt, days_norm
     return cutoff_dt.isoformat(), cutoff_dt
 
 
@@ -425,7 +431,7 @@ def analytics_funnel(days: int = 30) -> dict:
 
 
 def company_dashboard(days: int = 30) -> dict:
-    cutoff_iso, cutoff_dt = _period_bounds(days)
+    cutoff_iso, cutoff_dt, days_norm = _period_bounds(days)
     now = datetime.now(timezone.utc).replace(microsecond=0)
     today = now.date()
     month_cutoff = now.timestamp() - 30 * 86400
@@ -459,6 +465,7 @@ def company_dashboard(days: int = 30) -> dict:
         total_ad_spend = 0.0
         response_times: list[float] = []
         useful_results = 0
+        historic_profile_events = 0
 
         for row in event_rows:
             event = row["event_name"]
@@ -521,6 +528,55 @@ def company_dashboard(days: int = 30) -> dict:
             elif event == "scan_completed":
                 country_item["scans"] += 1
 
+        if PROFILE_DB_PATH.exists():
+            try:
+                conn.execute(f"ATTACH DATABASE '{PROFILE_DB_PATH}' AS profdb")
+                profile_rows = conn.execute(
+                    """
+                    SELECT user_key, event_type, object_ref, meta_json, created_at
+                    FROM profdb.profile_events
+                    WHERE created_at >= ?
+                      AND event_type IN ('scamshield_scan','immunity_analyze','app_feedback')
+                    ORDER BY created_at ASC
+                    """,
+                    (cutoff_iso,),
+                ).fetchall()
+                historic_profile_events = len(profile_rows)
+                for row in profile_rows:
+                    raw_event = str(row["event_type"] or "")
+                    event = "scan_completed" if raw_event in {"scamshield_scan", "immunity_analyze"} else "app_feedback_submitted"
+                    user = _string(row["user_key"], 220)
+                    dt = _parse_dt(row["created_at"])
+                    props = {}
+                    try:
+                        parsed = json.loads(row["meta_json"] or "{}")
+                        props = parsed if isinstance(parsed, dict) else {}
+                    except Exception:
+                        props = {}
+
+                    counts_by_event[event] = counts_by_event.get(event, 0) + 1
+                    if user:
+                        users_by_event.setdefault(event, set()).add(user)
+                        if user not in first_seen or (dt and dt < first_seen[user]):
+                            first_seen[user] = dt or cutoff_dt
+                        if event == "scan_completed" and (user not in first_scan or (dt and dt < first_scan[user])):
+                            first_scan[user] = dt or cutoff_dt
+                        if dt and dt.date() == today:
+                            today_active.add(user)
+                        if dt and dt.timestamp() >= month_cutoff:
+                            month_active.add(user)
+
+                    day = (dt.date().isoformat() if dt else "unknown")
+                    bucket = day_events.setdefault(day, {"events": 0, "scans": 0, "users": 0})
+                    bucket["events"] += 1
+                    if event == "scan_completed":
+                        bucket["scans"] += 1
+                        verdict = str(props.get("verdict") or props.get("level") or "").lower()
+                        if "error" not in verdict and "fail" not in verdict:
+                            useful_results += 1
+            except Exception as e:
+                print("[product_analytics] historical profile dashboard error:", e)
+
         install_users = users_by_event.get("app_first_open", set())
         scan_users = users_by_event.get("scan_completed", set())
         signup_users = users_by_event.get("signup_completed", set())
@@ -551,6 +607,10 @@ def company_dashboard(days: int = 30) -> dict:
 
         active_paid = 0
         active_subscriptions = 0
+        total_active_pro_access = 0
+        legacy_active_pro_access = 0
+        manual_active_pro_access = 0
+        test_or_internal_active_pro_access = 0
         mrr_values: list[float] = []
         cancellations = 0
         refunds = 0
@@ -560,10 +620,57 @@ def company_dashboard(days: int = 30) -> dict:
                 """
                 SELECT COUNT(DISTINCT e.user_id)
                 FROM subdb.entitlements e
+                JOIN subdb.subscriptions s ON s.id=e.subscription_id
+                LEFT JOIN subdb.user_flags uf ON uf.user_id=e.user_id
+                WHERE e.entitlement='pro' AND e.is_active=1
+                  AND e.provider IN ('google_play','revenuecat')
+                  AND s.status IN ('active','trial','trialing')
+                  AND s.environment='production'
+                  AND COALESCE(e.source,'') NOT LIKE 'legacy_guest_pro:%'
+                  AND COALESCE(s.source,'') NOT LIKE 'legacy_guest_pro:%'
+                  AND COALESCE(uf.is_test_user,0)=0
+                  AND COALESCE(uf.is_internal_user,0)=0
+                """
+            ).fetchone()[0]
+            total_active_pro_access = conn.execute(
+                """
+                SELECT COUNT(DISTINCT e.user_id)
+                FROM subdb.entitlements e
                 LEFT JOIN subdb.user_flags uf ON uf.user_id=e.user_id
                 WHERE e.entitlement='pro' AND e.is_active=1
                   AND COALESCE(uf.is_test_user,0)=0
                   AND COALESCE(uf.is_internal_user,0)=0
+                """
+            ).fetchone()[0]
+            legacy_active_pro_access = conn.execute(
+                """
+                SELECT COUNT(DISTINCT e.user_id)
+                FROM subdb.entitlements e
+                LEFT JOIN subdb.user_flags uf ON uf.user_id=e.user_id
+                WHERE e.entitlement='pro' AND e.is_active=1
+                  AND COALESCE(e.source,'') LIKE 'legacy_guest_pro:%'
+                  AND COALESCE(uf.is_test_user,0)=0
+                  AND COALESCE(uf.is_internal_user,0)=0
+                """
+            ).fetchone()[0]
+            manual_active_pro_access = conn.execute(
+                """
+                SELECT COUNT(DISTINCT e.user_id)
+                FROM subdb.entitlements e
+                LEFT JOIN subdb.user_flags uf ON uf.user_id=e.user_id
+                WHERE e.entitlement='pro' AND e.is_active=1
+                  AND e.provider='manual'
+                  AND COALESCE(uf.is_test_user,0)=0
+                  AND COALESCE(uf.is_internal_user,0)=0
+                """
+            ).fetchone()[0]
+            test_or_internal_active_pro_access = conn.execute(
+                """
+                SELECT COUNT(DISTINCT e.user_id)
+                FROM subdb.entitlements e
+                LEFT JOIN subdb.user_flags uf ON uf.user_id=e.user_id
+                WHERE e.entitlement='pro' AND e.is_active=1
+                  AND (COALESCE(uf.is_test_user,0)=1 OR COALESCE(uf.is_internal_user,0)=1)
                 """
             ).fetchone()[0]
             sub_rows = conn.execute(
@@ -577,11 +684,15 @@ def company_dashboard(days: int = 30) -> dict:
             ).fetchall()
             for sub in sub_rows:
                 status = str(sub["status"] or "").lower()
+                source = str(sub["source"] or "")
+                provider = str(sub["provider"] or "")
+                is_live_paid = provider in {"google_play", "revenuecat"} and not source.startswith("legacy_guest_pro:")
                 if status in {"active", "trial", "trialing"}:
                     active_subscriptions += 1
-                    value = _estimate_monthly_revenue(sub["product_id"], sub["raw_json"])
-                    if value is not None:
-                        mrr_values.append(value)
+                    if is_live_paid:
+                        value = _estimate_monthly_revenue(sub["product_id"], sub["raw_json"])
+                        if value is not None:
+                            mrr_values.append(value)
                 if status in {"canceled", "cancelled"}:
                     cancellations += 1
             event_sub_rows = conn.execute(
@@ -629,11 +740,14 @@ def company_dashboard(days: int = 30) -> dict:
         return {
             "ok": True,
             "generatedAt": now.isoformat(),
-            "windowDays": max(1, min(int(days or 30), 365)),
+            "windowDays": days_norm,
+            "windowLabel": "all_time" if days_norm == 0 else f"{days_norm}_days",
             "dataFreshness": {
                 "lastEventAt": event_rows[-1]["event_time"] if event_rows else None,
                 "eventRows": len(event_rows),
+                "historicProfileEvents": historic_profile_events,
                 "subscriptionsDb": SUBSCRIPTIONS_DB_PATH.exists(),
+                "profileDb": PROFILE_DB_PATH.exists(),
             },
             "acquisition": {
                 "installs": _blank_metric(installs),
@@ -661,8 +775,12 @@ def company_dashboard(days: int = 30) -> dict:
                 "paywallViewedUsers": _blank_metric(len(paywall_users)),
                 "purchaseStartedUsers": _blank_metric(len(users_by_event.get("purchase_started", set()))),
                 "purchaseCompletedUsers": _blank_metric(len(purchase_users)),
-                "activePaidSubscriptions": _blank_metric(active_paid),
-                "monthlyRecurringRevenue": _blank_metric(round(sum(mrr_values), 2) if mrr_values else None, "долл.", "примерная сумма по активным тарифам"),
+                "activePaidSubscriptions": _blank_metric(active_paid, None, "только реальные активные оплаты Google Play / RevenueCat, без legacy и ручных выдач"),
+                "totalActiveProAccess": _blank_metric(total_active_pro_access, None, "все, у кого сейчас включен PRO-доступ, включая старые и ручные выдачи"),
+                "legacyActiveProAccess": _blank_metric(legacy_active_pro_access, None, "старые перенесенные доступы; это не равно реальным платным клиентам"),
+                "manualActiveProAccess": _blank_metric(manual_active_pro_access, None, "доступ, выданный вручную или как восстановление"),
+                "testActiveProAccess": _blank_metric(test_or_internal_active_pro_access, None, "тестовые и внутренние аккаунты"),
+                "monthlyRecurringRevenue": _blank_metric(round(sum(mrr_values), 2) if mrr_values else 0, "долл.", "считается только по реальным активным оплатам, legacy не учитывается"),
                 "cancellations": _blank_metric(cancellations),
                 "refunds": _blank_metric(refunds),
                 "activeSubscriptionRows": _blank_metric(active_subscriptions),
