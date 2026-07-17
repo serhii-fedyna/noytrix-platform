@@ -374,6 +374,8 @@ def _candidate_user_ids(values: Iterable[Any]) -> list[str]:
         else:
             links.append(("guest", raw))
             links.append(("auth_user_id", raw))
+            links.append(("revenuecat", raw))
+            links.append(("revenuecat_transaction", raw))
     for uid in find_user_ids(links):
         if uid and uid not in seen:
             out.append(uid)
@@ -737,19 +739,29 @@ def process_revenuecat_webhook(payload: dict) -> dict:
             subscription_id=sub_id if active else (int(fallback_active["id"]) if fallback_active else sub_id),
         )
 
-    event_row_id = record_purchase_event(
-        user_id=user_id,
-        provider="revenuecat",
-        external_event_id=event_id,
-        event_type=event_type.lower(),
-        product_id=product_id,
-        status=status,
-        purchase_token=transaction_id,
-        transaction_id=transaction_id,
-        original_transaction_id=original,
-        environment=environment,
-        raw={"api_version": body.get("api_version"), "event": event},
-    )
+    try:
+        event_row_id = record_purchase_event(
+            user_id=user_id,
+            provider="revenuecat",
+            external_event_id=event_id,
+            event_type=event_type.lower(),
+            product_id=product_id,
+            status=status,
+            purchase_token=transaction_id,
+            transaction_id=transaction_id,
+            original_transaction_id=original,
+            environment=environment,
+            raw={"api_version": body.get("api_version"), "event": event},
+        )
+    except sqlite3.IntegrityError:
+        existing_after_race = purchase_event_exists("revenuecat", event_id)
+        return {
+            "ok": True,
+            "duplicate": True,
+            "purchaseEventId": existing_after_race,
+            "eventId": event_id,
+            "eventType": event_type,
+        }
     return {
         "ok": True,
         "duplicate": False,
