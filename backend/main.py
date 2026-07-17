@@ -313,7 +313,7 @@ COMPANY_DASHBOARD_HTML = r"""
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Noytrix Company Dashboard</title>
+  <title>Noytrix - ежедневная статистика</title>
   <style>
     :root {
       --bg: #06080f;
@@ -453,12 +453,12 @@ COMPANY_DASHBOARD_HTML = r"""
       <div class="brand">
         <div class="logo">N</div>
         <div>
-          <h1>Noytrix Company Dashboard</h1>
-          <div class="sub">Private daily metrics for the product suite.</div>
+          <h1>Статистика Noytrix</h1>
+          <div class="sub">Закрытая страница с реальными данными по приложению и оплатам.</div>
         </div>
       </div>
-      <input id="password" type="password" placeholder="Dashboard password" autocomplete="current-password" />
-      <button onclick="login()">Open dashboard</button>
+      <input id="password" type="password" placeholder="Пароль" autocomplete="current-password" />
+      <button onclick="login()">Открыть статистику</button>
       <div id="loginError" class="error"></div>
     </section>
 
@@ -467,20 +467,20 @@ COMPANY_DASHBOARD_HTML = r"""
         <div class="brand">
           <div class="logo">N</div>
           <div>
-            <h1>Noytrix Company Dashboard</h1>
-            <div class="sub">Acquisition, activation, retention, revenue and quality. Real backend data only.</div>
+            <h1>Статистика Noytrix</h1>
+            <div class="sub">Привлечение, первые действия, возвраты, оплаты и качество. Только реальные данные с сервера.</div>
           </div>
         </div>
         <div class="controls">
-          <span class="pill" id="freshness">Loading</span>
+          <span class="pill" id="freshness">Загрузка</span>
           <select id="days" onchange="loadData()">
-            <option value="1">Today</option>
-            <option value="7">7 days</option>
-            <option value="30" selected>30 days</option>
-            <option value="90">90 days</option>
+            <option value="1">Сегодня</option>
+            <option value="7">7 дней</option>
+            <option value="30" selected>30 дней</option>
+            <option value="90">90 дней</option>
           </select>
-          <button onclick="loadData()">Refresh</button>
-          <button onclick="logout()">Logout</button>
+          <button onclick="loadData()">Обновить</button>
+          <button onclick="logout()">Выйти</button>
         </div>
       </header>
 
@@ -494,7 +494,7 @@ COMPANY_DASHBOARD_HTML = r"""
     let refreshTimer = null;
 
     function fmtMetric(metric) {
-      if (!metric || metric.value === null || metric.value === undefined || metric.value === "") return '<span class="empty">No data yet</span>';
+      if (!metric || metric.value === null || metric.value === undefined || metric.value === "") return '<span class="empty">Пока нет данных</span>';
       const unit = metric.unit ? ` ${metric.unit}` : "";
       if (typeof metric.value === "number") return `${metric.value.toLocaleString("en-US")}${unit}`;
       return `${metric.value}${unit}`;
@@ -512,15 +512,15 @@ COMPANY_DASHBOARD_HTML = r"""
     function table(title, rows, cols) {
       const head = cols.map(c => `<th>${c.label}</th>`).join("");
       const body = (rows || []).slice(0, 20).map(row => `<tr>${cols.map(c => `<td>${row[c.key] ?? ""}</td>`).join("")}</tr>`).join("");
-      return `<div class="tablebox"><table><thead><tr><th colspan="${cols.length}">${title}</th></tr><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}">No data yet</td></tr>`}</tbody></table></div>`;
+      return `<div class="tablebox"><table><thead><tr><th colspan="${cols.length}">${title}</th></tr><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}">Пока нет данных</td></tr>`}</tbody></table></div>`;
     }
 
     function dailyBars(rows) {
       const max = Math.max(1, ...(rows || []).map(x => x.scans || 0));
-      return `<section class="section"><h2>Daily scan trend</h2>${(rows || []).map(x => {
+      return `<section class="section"><h2>Проверки по дням</h2>${(rows || []).map(x => {
         const pct = Math.round(((x.scans || 0) / max) * 100);
         return `<div class="barrow"><span>${x.day}</span><div class="bar"><span style="width:${pct}%"></span></div><strong>${x.scans || 0}</strong></div>`;
-      }).join("") || '<div class="note">No daily data yet</div>'}</section>`;
+      }).join("") || '<div class="note">Пока нет ежедневных данных.</div>'}</section>`;
     }
 
     async function fetchDashboard() {
@@ -529,7 +529,7 @@ COMPANY_DASHBOARD_HTML = r"""
       const response = await fetch(`/admin/company-dashboard/data?days=${encodeURIComponent(days)}`, {
         headers: { "X-Dashboard-Password": password }
       });
-      if (!response.ok) throw new Error(response.status === 401 ? "Wrong dashboard password." : `Dashboard request failed: ${response.status}`);
+      if (!response.ok) throw new Error(response.status === 401 ? "Неверный пароль." : `Не удалось загрузить статистику: ${response.status}`);
       return response.json();
     }
 
@@ -539,66 +539,67 @@ COMPANY_DASHBOARD_HTML = r"""
         render(data);
       } catch (error) {
         document.getElementById("status").innerHTML = `<span class="error">${String(error.message || error)}</span>`;
-        if (String(error.message || "").includes("Wrong")) logout(false);
+        if (String(error.message || "").includes("Невер")) logout(false);
       }
     }
 
     function render(data) {
-      document.getElementById("freshness").textContent = data.dataFreshness?.lastEventAt ? `Last event ${data.dataFreshness.lastEventAt}` : "No events yet";
+      document.getElementById("freshness").textContent = data.dataFreshness?.lastEventAt ? `Последнее событие: ${data.dataFreshness.lastEventAt}` : "Событий пока нет";
       document.getElementById("status").innerHTML = `
-        <span>Generated: ${data.generatedAt}</span>
-        <span>Window: ${data.windowDays} days</span>
-        <span>Events: ${data.dataFreshness?.eventRows || 0}</span>
-        <span>Subscriptions DB: ${data.dataFreshness?.subscriptionsDb ? "connected" : "missing"}</span>
+        <span>Обновлено: ${data.generatedAt}</span>
+        <span>Период: ${data.windowDays} дней</span>
+        <span>Событий в базе: ${data.dataFreshness?.eventRows || 0}</span>
+        <span>База подписок: ${data.dataFreshness?.subscriptionsDb ? "подключена" : "не найдена"}</span>
+        <span>Если написано “Пока нет данных” - значит сервер ещё не получил такое событие от приложения или рекламы.</span>
       `;
       const a = data.acquisition || {}, ac = data.activation || {}, r = data.retention || {}, rev = data.revenue || {}, q = data.quality || {};
       document.getElementById("sections").innerHTML = [
-        section("Acquisition", [
-          card("Installs", a.installs),
-          card("Cost per install", a.costPerInstall),
-          card("Registrations", a.registrations),
-          card("Cost per registration", a.costPerRegistration),
+        section("Привлечение пользователей", [
+          card("Установки приложения", a.installs),
+          card("Цена одной установки", a.costPerInstall),
+          card("Регистрации", a.registrations),
+          card("Цена одной регистрации", a.costPerRegistration),
         ]),
-        section("Activation", [
-          card("Users with first analysis", ac.firstAnalysisUsers),
-          card("Install to analysis conversion", ac.installToAnalysisConversion),
-          card("Avg. time to first analysis", ac.averageMinutesToFirstAnalysis),
-          card("Useful results without error", ac.usefulResultsWithoutError),
-          card("Useful result rate", ac.usefulResultRate),
+        section("Первые действия в приложении", [
+          card("Пользователи, которые сделали первый анализ", ac.firstAnalysisUsers),
+          card("Сколько установивших дошли до анализа", ac.installToAnalysisConversion),
+          card("Среднее время до первого анализа", ac.averageMinutesToFirstAnalysis),
+          card("Успешные анализы без ошибки", ac.usefulResultsWithoutError),
+          card("Доля успешных анализов", ac.usefulResultRate),
         ]),
-        section("Retention", [
-          card("Returned next day", r.returnedNextDay),
-          card("Returned day 7", r.returnedDay7),
-          card("Analyses per active user", r.analysesPerActiveUser),
-          card("Daily active users", r.dailyActiveUsers),
-          card("Monthly active users", r.monthlyActiveUsers),
+        section("Возвраты пользователей", [
+          card("Вернулись на следующий день", r.returnedNextDay),
+          card("Вернулись через 7 дней", r.returnedDay7),
+          card("Анализов на одного активного пользователя", r.analysesPerActiveUser),
+          card("Активные пользователи сегодня", r.dailyActiveUsers),
+          card("Активные пользователи за месяц", r.monthlyActiveUsers),
         ]),
-        section("Revenue", [
-          card("Paywall opened", rev.paywallViewedUsers),
-          card("Purchase started", rev.purchaseStartedUsers),
-          card("Purchase completed", rev.purchaseCompletedUsers),
-          card("Active paid subscriptions", rev.activePaidSubscriptions),
-          card("MRR", rev.monthlyRecurringRevenue),
-          card("Cancellations", rev.cancellations),
-          card("Refunds", rev.refunds),
-          card("Active subscription rows", rev.activeSubscriptionRows),
+        section("Деньги и подписки", [
+          card("Открыли экран оплаты", rev.paywallViewedUsers),
+          card("Нажали купить", rev.purchaseStartedUsers),
+          card("Покупка успешно завершена", rev.purchaseCompletedUsers),
+          card("Активные платные PRO-подписки", rev.activePaidSubscriptions),
+          card("Примерная ежемесячная выручка", rev.monthlyRecurringRevenue),
+          card("Отмены подписок", rev.cancellations),
+          card("Возвраты денег", rev.refunds),
+          card("Активные записи подписок в базе", rev.activeSubscriptionRows),
         ]),
-        section("Quality", [
-          card("Analysis error rate", q.analysisErrorRate),
-          card("Avg. response time", q.averageResponseTimeMs),
-          card("App crashes", q.appCrashes),
-          card("Payment errors", q.paymentErrors),
-          card("API availability", q.apiAvailability),
+        section("Качество работы", [
+          card("Процент ошибок анализа", q.analysisErrorRate),
+          card("Среднее время ответа сервера", q.averageResponseTimeMs),
+          card("Падения приложения", q.appCrashes),
+          card("Ошибки оплаты", q.paymentErrors),
+          card("Доступность проверок", q.apiAvailability),
         ]),
-        `<section class="section"><h2>Sources and countries</h2><div class="tables">
-          ${table("Sources", a.sources || [], [
-            {key:"source", label:"Source"}, {key:"campaign", label:"Campaign"}, {key:"installs", label:"Installs"},
-            {key:"registrations", label:"Reg"}, {key:"scans", label:"Scans"}, {key:"paywalls", label:"Paywall"},
-            {key:"purchases", label:"Purchases"}, {key:"cpi", label:"CPI"}, {key:"cpr", label:"CPR"}
+        `<section class="section"><h2>Откуда приходят пользователи и страны</h2><div class="tables">
+          ${table("Источники", a.sources || [], [
+            {key:"source", label:"Источник"}, {key:"campaign", label:"Кампания"}, {key:"installs", label:"Установки"},
+            {key:"registrations", label:"Регистрации"}, {key:"scans", label:"Анализы"}, {key:"paywalls", label:"Экран оплаты"},
+            {key:"purchases", label:"Покупки"}, {key:"cpi", label:"Цена установки"}, {key:"cpr", label:"Цена регистрации"}
           ])}
-          ${table("Countries", a.countries || [], [
-            {key:"country", label:"Country"}, {key:"users", label:"Users"}, {key:"events", label:"Events"},
-            {key:"installs", label:"Installs"}, {key:"scans", label:"Scans"}
+          ${table("Страны", a.countries || [], [
+            {key:"country", label:"Страна"}, {key:"users", label:"Пользователи"}, {key:"events", label:"События"},
+            {key:"installs", label:"Установки"}, {key:"scans", label:"Анализы"}
           ])}
         </div></section>`,
         dailyBars(data.daily || []),
