@@ -122,6 +122,19 @@ def init_subscriptions_db() -> None:
             );
             """
         )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_flags (
+              user_id TEXT PRIMARY KEY,
+              is_test_user INTEGER NOT NULL DEFAULT 0,
+              is_internal_user INTEGER NOT NULL DEFAULT 0,
+              environment TEXT NOT NULL DEFAULT 'production',
+              classification TEXT,
+              reason TEXT,
+              updated_at TEXT NOT NULL
+            );
+            """
+        )
         columns = {
             row["name"]
             for row in cur.execute("PRAGMA table_info(purchase_events)").fetchall()
@@ -134,6 +147,7 @@ def init_subscriptions_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_entitlements_active ON entitlements(entitlement, is_active)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_purchase_events_user ON purchase_events(user_id, created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_purchase_events_token ON purchase_events(provider, purchase_token)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_user_flags_environment ON user_flags(environment, is_test_user, is_internal_user)")
         cur.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_events_external
@@ -307,6 +321,70 @@ def purchase_event_exists(provider: str, external_event_id: str | None) -> Optio
             (normalize_provider(provider), event_id),
         ).fetchone()
         return int(row["id"]) if row else None
+    finally:
+        conn.close()
+
+
+def set_user_flags(
+    user_id: str,
+    *,
+    is_test_user: bool = False,
+    is_internal_user: bool = False,
+    environment: str = "production",
+    classification: str | None = None,
+    reason: str | None = None,
+) -> None:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return
+    conn = _connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO user_flags(user_id, is_test_user, is_internal_user, environment, classification, reason, updated_at)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(user_id) DO UPDATE SET
+              is_test_user=excluded.is_test_user,
+              is_internal_user=excluded.is_internal_user,
+              environment=excluded.environment,
+              classification=excluded.classification,
+              reason=excluded.reason,
+              updated_at=excluded.updated_at
+            """,
+            (
+                uid,
+                1 if is_test_user else 0,
+                1 if is_internal_user else 0,
+                normalize_environment(environment),
+                classification,
+                reason,
+                _now_iso(),
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def user_flags(user_id: str) -> dict:
+    uid = str(user_id or "").strip()
+    if not uid:
+        return {"isTestUser": False, "isInternalUser": False, "environment": "production"}
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT is_test_user, is_internal_user, environment, classification, reason FROM user_flags WHERE user_id=? LIMIT 1",
+            (uid,),
+        ).fetchone()
+        if not row:
+            return {"isTestUser": False, "isInternalUser": False, "environment": "production"}
+        return {
+            "isTestUser": bool(row["is_test_user"]),
+            "isInternalUser": bool(row["is_internal_user"]),
+            "environment": row["environment"] or "production",
+            "classification": row["classification"],
+            "reason": row["reason"],
+        }
     finally:
         conn.close()
 

@@ -96,6 +96,7 @@ from subscriptions import (
     revoke_entitlement,
     process_revenuecat_webhook,
     sync_google_play_purchase,
+    user_flags,
 )
 try:
     from scamshield.intelligence.postgres_intelligence import (
@@ -175,6 +176,7 @@ FREE_SCAN_DAILY_FREE_LIMIT = DAILY_FREE_LIMIT  # legacy alias
 NOYTRIX_APP_KEY = (os.getenv("NOYTRIX_APP_KEY") or "").strip()
 APP_KEY_HEADER = "x-app-key"
 REVENUECAT_WEBHOOK_SECRET = (os.getenv("REVENUECAT_WEBHOOK_SECRET") or os.getenv("REVENUECAT_WEBHOOK_AUTH") or "").strip()
+LEGACY_GUEST_PRO_READ = str(os.getenv("LEGACY_GUEST_PRO_READ") or "0").strip().lower() in {"1", "true", "yes", "on"}
 
 ONESIGNAL_APP_ID = (os.getenv("ONESIGNAL_APP_ID") or "").strip()
 ONESIGNAL_API_KEY = (os.getenv("ONESIGNAL_API_KEY") or "").strip()
@@ -1479,6 +1481,8 @@ def _sync_guest_google_entitlement(user_id: str) -> dict:
             expires_at=verified.get("expiresAt"),
         )
         return verified
+    if not LEGACY_GUEST_PRO_READ:
+        return verified
 
     conn = _guest_pro_connect()
     try:
@@ -1500,6 +1504,8 @@ def guest_has_pro(user_id: Optional[str]) -> bool:
     verified = _sync_guest_google_entitlement(uid)
     if verified.get("active"):
         return True
+    if not LEGACY_GUEST_PRO_READ:
+        return False
     conn = _guest_pro_connect()
     try:
         cur = conn.cursor()
@@ -1561,7 +1567,7 @@ def _iap_status_payload(user_id: Optional[str]) -> dict:
     provider = ent.get("provider")
     entitlement_user_id = ent.get("userId")
     uid = str(user_id or "").strip()
-    if uid:
+    if uid and LEGACY_GUEST_PRO_READ:
         try:
             conn = _guest_pro_connect()
             try:
@@ -1586,6 +1592,8 @@ def _iap_status_payload(user_id: Optional[str]) -> dict:
         "provider": provider,
         "productId": product_id,
         "subscriptionId": ent.get("subscriptionId"),
+        "flags": user_flags(entitlement_user_id or uid),
+        "legacyGuestProRead": LEGACY_GUEST_PRO_READ,
         "verifiedGooglePlay": bool(verified.get("active")),
     }
 
@@ -7140,17 +7148,8 @@ def telegram_profile(request: Request, telegram_id: str, lang: str | None = None
         if linked.get("email"):
             user_ids.append(str(linked["email"]).lower())
 
-    try:
-        gp = sqlite3.connect(str(DATA_DIR / "guest_pro.sqlite3"))
-        q = ",".join(["?"] * len(user_ids))
-        r = gp.execute(
-            f"SELECT user_id FROM guest_pro WHERE is_active=1 AND user_id IN ({q}) LIMIT 1",
-            user_ids,
-        ).fetchone()
-        guest_pro = bool(r)
-        gp.close()
-    except Exception:
-        guest_pro = False
+    ent = entitlement_status(user_ids, "pro")
+    guest_pro = bool(ent.get("active"))
 
     conn = sqlite3.connect(str(APP_DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -7174,6 +7173,7 @@ def telegram_profile(request: Request, telegram_id: str, lang: str | None = None
         "linked": linked,
         "isPro": guest_pro,
         "plan": "PRO" if guest_pro else "FREE",
+        "entitlement": ent,
         "stats": stats,
     }
 
