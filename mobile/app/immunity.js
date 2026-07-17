@@ -1053,8 +1053,8 @@ function buildScenarios({ market, user, lang = "en" }) {
 
   return { bull, base, bear, worst };
 }
-function buildLiveReview10({ market, user, level, topReasons, contractScan, isRu }) {
-  const lang = isRu ? "ru" : "en";
+function buildLiveReview10({ market, user, level, topReasons, contractScan, currentLang, isRu }) {
+  const lang = normalizeLang(currentLang || (isRu ? "ru" : "en"));
   const reasons = Array.isArray(topReasons) ? topReasons : [];
   const prob = estimateProbability({ level, market, user });
   const probability = `${Math.round(prob * 100)}%`;
@@ -1736,6 +1736,7 @@ export default function ImmunityScreen() {
             level,
             topReasons: Array.isArray(live?.topReasons) ? live.topReasons : local.topReasons,
             contractScan: contractScan || null,
+            currentLang: lang,
             isRu: lang === "ru",
           }),
         lang

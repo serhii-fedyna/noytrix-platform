@@ -123,7 +123,12 @@ export default function RootLayout() {
     (async () => {
       try {
         const saved = await AsyncStorage.getItem("app.language");
-        const next = normalizeLang(saved || i18n.language);
+        const legacy = saved ? null : await AsyncStorage.getItem("app_lang").catch(() => null);
+        const next = normalizeLang(saved || legacy || i18n.language);
+        await AsyncStorage.multiSet([
+          ["app.language", next],
+          ["app_lang", next],
+        ]);
         if (!cancelled && next !== normalizeLang(i18n.language)) {
           await i18n.changeLanguage(next);
         }

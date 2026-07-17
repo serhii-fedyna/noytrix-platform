@@ -11,7 +11,10 @@ export function useI18n() {
 
   const setLang = async (next) => {
     const v = normalizeLang(next);
-    await AsyncStorage.setItem("app.language", v);
+    await AsyncStorage.multiSet([
+      ["app.language", v],
+      ["app_lang", v],
+    ]);
     if (v !== normalizeLang(i18n.language)) {
       await i18n.changeLanguage(v);
     }

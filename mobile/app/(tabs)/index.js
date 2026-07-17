@@ -775,7 +775,10 @@ export default function Home() {
         if (next === lang) return;
         await i18n.changeLanguage(next);
         setLangState(next);
-        await AsyncStorage.setItem("app.language", next);
+        await AsyncStorage.multiSet([
+          ["app.language", next],
+          ["app_lang", next],
+        ]);
         logEvent("language_change", { screen: "home", lang: next });
       } catch {}
     },
@@ -1337,17 +1340,21 @@ export default function Home() {
 
           <BlurCard style={{ borderColor: "rgba(255,176,32,0.28)" }}>
             <Text style={{ color: C.text, fontWeight: "900", fontSize: 20, marginBottom: 8, textAlign: "center" }}>
-              {isPro ? TT("home.new.proActiveTitle", "PRO IS ACTIVE", "PRO АКТИВЕН") : TT("home.new.proTitle", "NEED UNLIMITED PROTECTION?", "НУЖНА ЗАЩИТА БЕЗ ЛИМИТОВ?")}
+              {isPro
+                ? TT("home.new.proActiveTitle", "PRO IS ACTIVE", "PRO АКТИВЕН", "PRO АКТИВНИЙ")
+                : TT("home.new.proTitle", "NEED UNLIMITED PROTECTION?", "НУЖНА ЗАЩИТА БЕЗ ЛИМИТОВ?", "ПОТРІБЕН ЗАХИСТ БЕЗ ЛІМІТІВ?")}
             </Text>
 
             <Text style={{ color: C.dim, lineHeight: 21, fontSize: 15, marginBottom: 14, textAlign: "center" }}>
               {isPro
-                ? TT("home.new.proActiveText", "Open ScamShield PRO for deeper analysis.", "Открой ScamShield PRO для более глубокого анализа.")
-                : TT("home.new.proText", "PRO removes daily limits and unlocks deeper source details.", "PRO убирает дневные лимиты и открывает более глубокие детали источников.")}
+                ? TT("home.new.proActiveText", "Open ScamShield PRO for deeper analysis.", "Открой ScamShield PRO для более глубокого анализа.", "Відкрий ScamShield PRO для глибшого аналізу.")
+                : TT("home.new.proText", "PRO removes daily limits and unlocks deeper source details.", "PRO убирает дневные лимиты и открывает более глубокие детали источников.", "PRO прибирає денні ліміти й відкриває глибші деталі джерел.")}
             </Text>
 
             <PrimaryButton
-              title={isPro ? TT("home.new.openPro", "OPEN SCAMSHIELD PRO", "ОТКРЫТЬ SCAMSHIELD PRO") : TT("home.new.upgradePro", "OPEN PRO", "ОТКРЫТЬ PRO")}
+              title={isPro
+                ? TT("home.new.openPro", "OPEN SCAMSHIELD PRO", "ОТКРЫТЬ SCAMSHIELD PRO", "ВІДКРИТИ SCAMSHIELD PRO")
+                : TT("home.new.upgradePro", "OPEN PRO", "ОТКРЫТЬ PRO", "ВІДКРИТИ PRO")}
               onPress={openPro}
               leftIcon={<Ionicons name={isPro ? "shield-checkmark" : "flash"} size={18} color={C.accentText} />}
             />
@@ -1355,26 +1362,26 @@ export default function Home() {
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginTop: 2 }}>
             <ToolCard
-              title={TT("home.qt.scan", "SCAMSHIELD", "СКАМ ШИЛД")}
-              sub={TT("home.qt.scanSub", "Full anti-scam report", "Полный анти-скам разбор")}
+              title={TT("home.qt.scan", "SCAMSHIELD", "СКАМ ШИЛД", "СКАМ ШИЛД")}
+              sub={TT("home.qt.scanSub", "Full anti-scam report", "Полный анти-скам разбор", "Повний анти-скам розбір")}
               icon="shield-checkmark"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "shield" }); router.push("/shield"); }}
             />
             <ToolCard
-              title={TT("home.qt.immunity", "IMMUNITY", "ИММУНИТЕТ")}
-              sub={TT("home.qt.immunitySub", "Your protection score", "Твой уровень защиты")}
+              title={TT("home.qt.immunity", "IMMUNITY", "ИММУНИТЕТ", "ІМУНІТЕТ")}
+              sub={TT("home.qt.immunitySub", "Your protection score", "Твой уровень защиты", "Твій рівень захисту")}
               icon="shield-outline"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "immunity" }); router.push("/immunity"); }}
             />
             <ToolCard
-              title={TT("home.qt.explain", "EXPLAIN", "EXPLAIN")}
-              sub={TT("home.qt.explainSub", "Understand the risk", "Понять риск простыми словами")}
+              title={TT("home.qt.explain", "EXPLAIN", "EXPLAIN", "ПОЯСНЕННЯ")}
+              sub={TT("home.qt.explainSub", "Understand the risk", "Понять риск простыми словами", "Зрозуміти ризик простими словами")}
               icon="book"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "explain" }); router.push("/explain"); }}
             />
             <ToolCard
-              title={TT("home.qt.calendar", "CALENDAR", "КАЛЕНДАРЬ")}
-              sub={TT("home.qt.calendarSub", "Events that move market", "События, которые двигают рынок")}
+              title={TT("home.qt.calendar", "CALENDAR", "КАЛЕНДАРЬ", "КАЛЕНДАР")}
+              sub={TT("home.qt.calendarSub", "Events that move market", "События, которые двигают рынок", "Події, які рухають ринок")}
               icon="calendar"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "calendar" }); router.push("/calendar"); }}
             />

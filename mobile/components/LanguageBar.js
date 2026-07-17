@@ -3,24 +3,34 @@ import { View, Text, Pressable, Modal } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 
-const LANG_KEY = "app_lang";
+const LANG_KEY = "app.language";
+
+function normalizeLang(value) {
+  const raw = String(value || "en").toLowerCase();
+  if (raw.startsWith("ru")) return "ru";
+  if (raw.startsWith("uk") || raw.startsWith("ua")) return "uk";
+  return "en";
+}
 
 export default function LanguageBar({ onChange }) {
-  const [lang, setLang] = useState("ru");
+  const [lang, setLang] = useState("en");
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(LANG_KEY).then((v) => {
-      const val = v || "ru";
+    AsyncStorage.getItem(LANG_KEY).then(async (v) => {
+      const legacy = v ? null : await AsyncStorage.getItem("app_lang").catch(() => null);
+      const val = normalizeLang(v || legacy || "en");
       setLang(val);
       onChange?.(val);
     });
   }, []);
 
   const choose = async (v) => {
-    setLang(v);
-    await AsyncStorage.setItem(LANG_KEY, v);
-    onChange?.(v);
+    const next = normalizeLang(v);
+    setLang(next);
+    await AsyncStorage.setItem(LANG_KEY, next);
+    await AsyncStorage.setItem("app_lang", next);
+    onChange?.(next);
     setOpen(false);
   };
 
@@ -69,7 +79,7 @@ export default function LanguageBar({ onChange }) {
               width: 160,
             }}
           >
-            {["ru", "en", "ua"].map((v) => (
+            {["en", "ru", "uk"].map((v) => (
               <Pressable
                 key={v}
                 onPress={() => choose(v)}

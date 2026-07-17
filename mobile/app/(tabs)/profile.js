@@ -24,6 +24,7 @@ import { useAuthStore } from "../lib/store.auth";
 import SignIn from "../auth/signin";
 import { getPushSubscriptionState, setPushNotificationsEnabled } from "../lib/notifications";
 import { BACKEND } from "../lib/backend";
+import { normalizeLang, pickLang } from "../i18n/lang";
 
 const BG = { start: "#06080f", mid: "#0a1233", end: "#0b1c4f" };
 const UI = {
@@ -98,12 +99,7 @@ export default function ProfileScreen() {
   const header = <Stack.Screen options={{ headerShown: false }} />;
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const rawLang = String(i18n?.language || "en").toLowerCase();
-  const currentLang = rawLang.startsWith("ru")
-    ? "ru"
-    : rawLang.startsWith("uk") || rawLang.startsWith("ua")
-    ? "uk"
-    : "en";
+  const currentLang = normalizeLang(i18n?.language);
 
   const isAuth = useAuthStore((s) => s.isAuth);
   const user = useAuthStore((s) => s.user);
@@ -123,6 +119,24 @@ export default function ProfileScreen() {
   const [profileData, setProfileData] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileRefreshing, setProfileRefreshing] = useState(false);
+
+  const chooseLanguage = useCallback(
+    async (next) => {
+      const normalized = normalizeLang(next);
+      try {
+        await AsyncStorage.multiSet([
+          ["app.language", normalized],
+          ["app_lang", normalized],
+        ]);
+      } catch {}
+      try {
+        if (normalizeLang(i18n?.language) !== normalized) {
+          await i18n.changeLanguage(normalized);
+        }
+      } catch {}
+    },
+    [i18n]
+  );
 
   useEffect(() => {
     (async () => {
@@ -862,6 +876,53 @@ export default function ProfileScreen() {
                         true: "rgba(255,176,32,0.45)",
                       }}
                     />
+                  }
+                />
+
+                <RowCard
+                  icon="language-outline"
+                  title={t("profile.language.title", {
+                    defaultValue: pickLang(currentLang, "Язык приложения", "App language", "Мова застосунку"),
+                  })}
+                  subtitle={t("profile.language.text", {
+                    defaultValue: pickLang(
+                      currentLang,
+                      "Один выбранный язык для всех экранов Noytrix.",
+                      "Use the same language across all Noytrix screens.",
+                      "Одна вибрана мова для всіх екранів Noytrix."
+                    ),
+                  })}
+                  right={
+                    <View style={{ flexDirection: "row", gap: 6 }}>
+                      {[
+                        { code: "en", label: "EN" },
+                        { code: "ru", label: "RU" },
+                        { code: "uk", label: "UK" },
+                      ].map((item) => {
+                        const active = currentLang === item.code;
+                        return (
+                          <TouchableOpacity
+                            key={item.code}
+                            onPress={() => chooseLanguage(item.code)}
+                            activeOpacity={0.86}
+                            style={{
+                              minWidth: 38,
+                              height: 34,
+                              borderRadius: 999,
+                              alignItems: "center",
+                              justifyContent: "center",
+                              borderWidth: 1,
+                              borderColor: active ? "rgba(255,176,32,0.82)" : "rgba(255,255,255,0.12)",
+                              backgroundColor: active ? "rgba(255,176,32,0.18)" : "rgba(255,255,255,0.04)",
+                            }}
+                          >
+                            <Text style={{ color: active ? UI.brand : UI.text, fontWeight: "900", fontSize: 12 }}>
+                              {item.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   }
                 />
 
