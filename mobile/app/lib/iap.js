@@ -10,10 +10,10 @@ import {
   requestPurchase,
 } from "react-native-iap";
 import { logEvent } from "./analytics";
+import { getInstallUserId, identityHeaders, identifyUser } from "./identity";
 
 const BACKEND = "https://api.noytrixapp.com";
 const PACKAGE_NAME = "com.noytrix.app";
-const INSTALL_UID_KEY = "noytrix.installUserId";
 
 const PRODUCT_IDS = {
   proSubscription: "pro_access",
@@ -53,21 +53,8 @@ let updateSub = null;
 let errorSub = null;
 let pendingPurchase = null;
 
-function makeRandomId() {
-  return `guest_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 export async function getRevenueCatAppUserId() {
-  try {
-    const existing = await AsyncStorage.getItem(INSTALL_UID_KEY);
-    if (existing && String(existing).trim()) return String(existing).trim();
-
-    const next = makeRandomId();
-    await AsyncStorage.setItem(INSTALL_UID_KEY, next);
-    return next;
-  } catch {
-    return makeRandomId();
-  }
+  return getInstallUserId();
 }
 
 async function persistPro(active, meta = {}) {
@@ -194,7 +181,7 @@ export function chooseSubscriptionOffer(product, planId) {
 async function serverStatus() {
   const userId = await getRevenueCatAppUserId();
   const response = await fetch(`${BACKEND}/iap/guest/status?userId=${encodeURIComponent(userId)}`, {
-    headers: { "X-User-Id": userId },
+    headers: await identityHeaders({ "X-User-Id": userId }),
   });
   return response.json().catch(() => null);
 }
@@ -213,6 +200,7 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...(await identityHeaders()),
       "X-User-Id": userId,
     },
     body: JSON.stringify({
@@ -232,6 +220,12 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
 
   if (body.active || body.googleActive) {
     await persistPro(true, { productId, productType, orderId: body.orderId, source: "google_play" });
+    await identifyUser({
+      purchaseToken,
+      productId,
+      revenueCatAppUserId: userId,
+      installUserId: userId,
+    }).catch(() => null);
   }
 
   return { ...entitlementFromProduct(productId), active: !!(body.active || body.googleActive), server: body };

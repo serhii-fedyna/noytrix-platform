@@ -1,5 +1,5 @@
 # auth/router.py
-from fastapi import APIRouter, Depends, HTTPException, status, Body
+from fastapi import APIRouter, Depends, HTTPException, status, Body, Request
 from auth.deps import get_current_user
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
@@ -13,6 +13,7 @@ from auth.schemas import (
 )
 from auth.security import hash_password, verify_password, make_access_token, make_refresh_token
 from auth.emailer import send_code_email
+from identity import resolve_user_id
 
 Base.metadata.create_all(bind=engine)
 
@@ -75,8 +76,41 @@ def me(current: User = Depends(get_current_user)):
     return current
 
 
+def _identity_links_from_request(request: Request | None, email: str | None = None, auth_user_id: int | None = None, google_sub: str | None = None) -> list[tuple[str, str]]:
+    links: list[tuple[str, str]] = []
+    if request is not None:
+        for header_name, kind in (
+            ("x-install-user-id", "guest"),
+            ("x-guest-id", "guest"),
+            ("x-revenuecat-app-user-id", "revenuecat"),
+            ("x-user-id", "guest"),
+        ):
+            value = request.headers.get(header_name)
+            if value:
+                links.append((kind, str(value)))
+    if email:
+        links.append(("email", str(email).lower().strip()))
+    if auth_user_id is not None:
+        links.append(("auth_user_id", str(auth_user_id)))
+    if google_sub:
+        links.append(("google_sub", str(google_sub)))
+    return links
+
+
+def _sync_identity(request: Request | None, email: str | None = None, user: User | None = None, google_sub: str | None = None, source: str = "auth") -> str:
+    return resolve_user_id(
+        _identity_links_from_request(
+            request,
+            email=email or (user.email if user else None),
+            auth_user_id=(user.id if user else None),
+            google_sub=google_sub,
+        ),
+        meta={"source": source},
+    )
+
+
 @router.post("/register", response_model=AuthBundle)
-def register_legacy(payload: dict = Body(...), db: Session = Depends(get_db)):
+def register_legacy(request: Request, payload: dict = Body(...), db: Session = Depends(get_db)):
     """
     Упрощённая регистрация в один шаг для старого клиента:
     ожидает { email, password, confirm?, nick? } и сразу создаёт user.
@@ -107,6 +141,7 @@ def register_legacy(payload: dict = Body(...), db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    _sync_identity(request, user=user, source="register_legacy")
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)
@@ -123,8 +158,9 @@ def register_legacy(payload: dict = Body(...), db: Session = Depends(get_db)):
 
 
 @router.post("/register/start")
-def register_start(body: RegisterStartReq, db: Session = Depends(get_db)):
+def register_start(request: Request, body: RegisterStartReq, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
+    _sync_identity(request, email=email, source="register_start")
 
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=409, detail="Email уже зарегистрирован. Войдите.")
@@ -164,7 +200,7 @@ def register_start(body: RegisterStartReq, db: Session = Depends(get_db)):
 
 
 @router.post("/register/verify", response_model=AuthBundle)
-def register_verify(body: RegisterVerifyReq, db: Session = Depends(get_db)):
+def register_verify(request: Request, body: RegisterVerifyReq, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
     code = body.code.strip()
 
@@ -189,6 +225,7 @@ def register_verify(body: RegisterVerifyReq, db: Session = Depends(get_db)):
     else:
         user.email_verified = True
         db.commit()
+    _sync_identity(request, user=user, source="register_verify")
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)
@@ -203,7 +240,7 @@ def register_verify(body: RegisterVerifyReq, db: Session = Depends(get_db)):
 
 
 @router.post("/register/complete", response_model=AuthBundle)
-def register_complete(body: RegisterStartReq, db: Session = Depends(get_db)):
+def register_complete(request: Request, body: RegisterStartReq, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
 
@@ -219,6 +256,7 @@ def register_complete(body: RegisterStartReq, db: Session = Depends(get_db)):
     user.provider = "local"
     db.commit()
     db.refresh(user)
+    _sync_identity(request, user=user, source="register_complete")
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)
@@ -229,7 +267,7 @@ def register_complete(body: RegisterStartReq, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=AuthBundle)
-def login(body: LoginReq, db: Session = Depends(get_db)):
+def login(request: Request, body: LoginReq, db: Session = Depends(get_db)):
     email = body.email.lower().strip()
     user = db.query(User).filter(User.email == email).first()
 
@@ -334,7 +372,7 @@ def reset_confirm(body: ResetConfirmReq, db: Session = Depends(get_db)):
 
 
 @router.post("/google", response_model=AuthBundle)
-def google_login(body: GoogleAuthReq, db: Session = Depends(get_db)):
+def google_login(request: Request, body: GoogleAuthReq, db: Session = Depends(get_db)):
     r = requests.get(
         "https://www.googleapis.com/oauth2/v3/userinfo",
         headers={"Authorization": f"Bearer {body.access_token}"},
@@ -366,6 +404,7 @@ def google_login(body: GoogleAuthReq, db: Session = Depends(get_db)):
         if not user.email_verified:
             user.email_verified = True
         db.commit()
+    _sync_identity(request, user=user, google_sub=p.get("sub"), source="google_login")
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)

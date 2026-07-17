@@ -1,6 +1,7 @@
 // app/lib/authApi.js
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BACKEND, API as API_BASE } from "./backend";
+import { identityHeaders, identifyUser } from "./identity";
 
 const AUTH_KEY = "auth_state_v1";
 
@@ -99,10 +100,12 @@ async function refreshAccessToken(refresh_token) {
 }
 
 async function rawJsonFetch(url, { method = "GET", body, token } = {}) {
+  const idHeaders = await identityHeaders();
   const res = await fetch(url, {
     method,
     headers: {
       "Content-Type": "application/json",
+      ...idHeaders,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: body ? JSON.stringify(body) : undefined,
@@ -197,14 +200,17 @@ export async function login({ email, password }) {
     null;
 
   await saveAuthState({ user, access_token: access, refresh_token: refresh });
+  await identifyUser({ email: user?.email || email, authUserId: user?.id });
   return data;
 }
 
 export async function registerStart({ email, password, nick }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  await identifyUser({ email: normalizedEmail });
   return jsonFetch(API.registerStart, {
     method: "POST",
     body: {
-      email: String(email || "").trim().toLowerCase(),
+      email: normalizedEmail,
       password,
       nick: String(nick || "").trim(),
     },
@@ -241,6 +247,7 @@ export async function registerVerify({ email, code, nick, password }) {
       access_token: verifyAccess,
       refresh_token: verifyRefresh,
     });
+    await identifyUser({ email: verifyUser?.email || normalizedEmail, authUserId: verifyUser?.id });
 
     
     
@@ -274,6 +281,7 @@ export async function registerVerify({ email, code, nick, password }) {
             access_token: completeAccess || verifyAccess,
             refresh_token: completeRefresh || verifyRefresh,
           });
+          await identifyUser({ email: (completeUser || verifyUser)?.email || normalizedEmail, authUserId: (completeUser || verifyUser)?.id });
           return completeData;
         }
       } catch {
@@ -312,6 +320,7 @@ export async function registerVerify({ email, code, nick, password }) {
     access_token: completeAccess,
     refresh_token: completeRefresh,
   });
+  await identifyUser({ email: completeUser?.email || normalizedEmail, authUserId: completeUser?.id });
 
   return completeData;
 }

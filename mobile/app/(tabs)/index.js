@@ -28,6 +28,7 @@ import { logEvent } from "../lib/analytics";
 import { showAppAlert } from "../lib/appAlert";
 import { recordReviewPromptScan } from "../lib/reviewPrompt";
 import { useAuthStore } from "../lib/store.auth";
+import { identityHeaders } from "../lib/identity";
 import NoyBot from "../../components/NoyBot";
 
 const BACKEND = "https://noytrix.com";
@@ -880,6 +881,7 @@ export default function Home() {
 
     try {
       const headers = {
+        ...(await identityHeaders()),
         "Accept-Language": currentLang,
         "X-Lang": currentLang,
         "X-Language": currentLang,

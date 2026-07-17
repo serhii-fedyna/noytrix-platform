@@ -87,6 +87,7 @@ from scamshield.url_intel.infrastructure import analyze_infrastructure
 from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
 from scamshield.url_intel.fusion import build_url_intelligence
+from identity import resolve_from_request, resolve_user_id, identity_links_for
 try:
     from scamshield.intelligence.postgres_intelligence import (
         upsert_entity as pg_upsert_entity,
@@ -192,6 +193,40 @@ app.add_middleware(
 app.include_router(calendar_router, prefix="/api")
 app.include_router(auth_router, prefix="/auth")
 app.include_router(iap_router, prefix="/iap")
+
+@app.post("/identity/identify")
+async def identity_identify(request: Request, payload: dict = Body(default={})):
+    payload = dict(payload or {})
+    links: list[tuple[str, Any]] = []
+
+    for kind, *names in (
+        ("guest", "guest_id", "guestId", "install_user_id", "installUserId", "device_id", "deviceId"),
+        ("revenuecat", "revenuecat_app_user_id", "revenueCatAppUserId", "app_user_id", "appUserId"),
+        ("email", "email"),
+        ("telegram", "telegram_id", "telegramId"),
+        ("google_play_token", "purchase_token", "purchaseToken", "googlePlayPurchaseToken"),
+        ("api_email", "api_email", "apiEmail", "owner_email", "ownerEmail"),
+        ("auth_user_id", "auth_user_id", "authUserId", "user_db_id", "userDbId"),
+    ):
+        for name in names:
+            value = payload.get(name)
+            if value:
+                links.append((kind, value))
+
+    auth_uid = _get_user_id(request, None)
+    if auth_uid:
+        if "@" in str(auth_uid):
+            links.append(("email", auth_uid))
+        else:
+            links.append(("auth_user_id", auth_uid))
+
+    user_id = resolve_from_request(request, links)
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "userId": user_id,
+        "links": identity_links_for(user_id),
+    }
 
 # =========================================================
 # I18N
@@ -1564,6 +1599,14 @@ async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
     product_id = str(payload.get("productId") or "").strip()
     package_name = str(payload.get("packageName") or "com.noytrix.app").strip()
     purchase_token = str(payload.get("purchaseToken") or "").strip()
+    identity_user_id = resolve_from_request(
+        request,
+        [
+            ("guest", user_id),
+            ("revenuecat", user_id),
+            ("google_play_token", purchase_token),
+        ],
+    )
 
     data = _google_play_verify_purchase(product_type, package_name, product_id, purchase_token)
     active, status, expiry_dt = _active_from_google_purchase(product_type, data)
@@ -1593,6 +1636,7 @@ async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
     return {
         "ok": True,
         "userId": user_id,
+        "identityUserId": identity_user_id,
         "active": bool(server_status.get("active")),
         "googleActive": active,
         "status": status,
@@ -6739,11 +6783,17 @@ def telegram_link(request: Request, payload: dict = Body(...), lang: str | None 
     finally:
         conn.close()
 
+    identity_user_id = resolve_user_id(
+        [("telegram", telegram_id), ("email", email), ("guest", user_id)],
+        meta={"source": "telegram_link"},
+    )
+
     return {
         "ok": True,
         "telegram_id": telegram_id,
         "user_id": user_id,
         "email": email,
+        "identityUserId": identity_user_id,
     }
 
 
@@ -6816,11 +6866,17 @@ def telegram_link_code_confirm(request: Request, payload: dict = Body(...), lang
     finally:
         conn.close()
 
+    identity_user_id = resolve_user_id(
+        [("telegram", telegram_id), ("email", email), ("guest", user_id)],
+        meta={"source": "telegram_link_code_confirm"},
+    )
+
     return {
         "ok": True,
         "telegram_id": telegram_id,
         "user_id": user_id,
         "email": email,
+        "identityUserId": identity_user_id,
     }
 
 
@@ -7120,7 +7176,18 @@ def _require_b2b_api_key(request: Request):
                     "rate_limit_per_minute": rpm
                 })
 
-        return dict(row)
+        api_key = dict(row)
+        try:
+            resolve_user_id(
+                [
+                    ("api_email", api_key.get("owner_email")),
+                    ("api_key", api_key.get("key_prefix")),
+                ],
+                meta={"source": "b2b_api_key"},
+            )
+        except Exception as e:
+            print("[identity] api key link error:", e)
+        return api_key
     finally:
         conn.close()
 
@@ -7897,6 +7964,7 @@ async def scan(
 
     L = get_lang(request, lang)
     uid = _get_user_id(request, userId)
+    identity_uid = resolve_from_request(request, [("guest", uid)] if uid else [])
     client_host = str(request.client.host if request.client else "")
     is_internal_test = client_host in {"127.0.0.1", "localhost", "::1"}
 
@@ -7938,6 +8006,7 @@ async def scan(
             "is_pro": pro,
         })
         data["isPro"] = pro
+        data["identityUserId"] = identity_uid
         data["quota"] = {
             "freeLimit": quota_info.get("freeLimit", DAILY_FREE_LIMIT),
             "feature": quota_info.get("feature", "scan"),
@@ -7973,10 +8042,11 @@ async def scan(
             level = _canonical_level(data.get("level"), data.get("score"))
             verdict_tag = level
             _profile_track_event(
-                uid,
+                identity_uid or uid,
                 "scamshield_scan",
                 object_ref=target,
                 meta={
+                    "legacy_user_id": uid,
                     "verdict": verdict_tag,
                     "level": data.get("level"),
                     "kind": data.get("kind"),
