@@ -1,10 +1,11 @@
 import json
 import sqlite3
+import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from identity import find_user_ids
+from identity import find_user_ids, resolve_user_id
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -108,6 +109,7 @@ def init_subscriptions_db() -> None:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               user_id TEXT NOT NULL,
               provider TEXT NOT NULL,
+              external_event_id TEXT,
               event_type TEXT NOT NULL,
               product_id TEXT,
               status TEXT,
@@ -120,12 +122,25 @@ def init_subscriptions_db() -> None:
             );
             """
         )
+        columns = {
+            row["name"]
+            for row in cur.execute("PRAGMA table_info(purchase_events)").fetchall()
+        }
+        if "external_event_id" not in columns:
+            cur.execute("ALTER TABLE purchase_events ADD COLUMN external_event_id TEXT")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_user ON subscriptions(user_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_provider_token ON subscriptions(provider, purchase_token)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_subscriptions_original ON subscriptions(provider, original_transaction_id)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_entitlements_active ON entitlements(entitlement, is_active)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_purchase_events_user ON purchase_events(user_id, created_at)")
         cur.execute("CREATE INDEX IF NOT EXISTS idx_purchase_events_token ON purchase_events(provider, purchase_token)")
+        cur.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_events_external
+            ON purchase_events(provider, external_event_id)
+            WHERE external_event_id IS NOT NULL
+            """
+        )
         conn.commit()
     finally:
         conn.close()
@@ -240,6 +255,7 @@ def record_purchase_event(
     user_id: str,
     provider: str,
     event_type: str,
+    external_event_id: str | None = None,
     product_id: str | None = None,
     status: str | None = None,
     purchase_token: str | None = None,
@@ -254,14 +270,15 @@ def record_purchase_event(
         cur.execute(
             """
             INSERT INTO purchase_events(
-              user_id, provider, event_type, product_id, status, purchase_token,
+              user_id, provider, external_event_id, event_type, product_id, status, purchase_token,
               transaction_id, original_transaction_id, environment, raw_json, created_at
             )
-            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
             """,
             (
                 str(user_id or "").strip(),
                 normalize_provider(provider),
+                str(external_event_id or "").strip() or None,
                 str(event_type or "unknown"),
                 product_id,
                 status,
@@ -275,6 +292,21 @@ def record_purchase_event(
         )
         conn.commit()
         return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def purchase_event_exists(provider: str, external_event_id: str | None) -> Optional[int]:
+    event_id = str(external_event_id or "").strip()
+    if not event_id:
+        return None
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT id FROM purchase_events WHERE provider=? AND external_event_id=? LIMIT 1",
+            (normalize_provider(provider), event_id),
+        ).fetchone()
+        return int(row["id"]) if row else None
     finally:
         conn.close()
 
@@ -573,3 +605,160 @@ def sync_google_play_purchase(
         raw=data,
     )
     return sub_id
+
+
+def _ms_to_iso(value: Any) -> str | None:
+    try:
+        raw = int(value)
+    except Exception:
+        return None
+    if raw <= 0:
+        return None
+    return datetime.fromtimestamp(raw / 1000, tz=timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _subscriber_attribute_value(attrs: dict, *names: str) -> str | None:
+    if not isinstance(attrs, dict):
+        return None
+    for name in names:
+        item = attrs.get(name)
+        if isinstance(item, dict):
+            value = item.get("value")
+        else:
+            value = item
+        if value:
+            return str(value).strip()
+    return None
+
+
+def _revenuecat_status(event_type: str, period_type: str | None, expires_at: str | None) -> tuple[str, bool, bool]:
+    kind = str(event_type or "").strip().upper()
+    period = str(period_type or "").strip().upper()
+    now = datetime.now(timezone.utc)
+    expiry = _parse_iso(expires_at)
+    not_expired = not expiry or expiry > now
+
+    if kind in {"INITIAL_PURCHASE", "RENEWAL", "NON_RENEWING_PURCHASE", "PRODUCT_CHANGE", "UNCANCELLATION", "TEMPORARY_ENTITLEMENT_GRANT", "PURCHASE_REDEEMED", "SUBSCRIPTION_EXTENDED"}:
+        return ("trial" if period == "TRIAL" else "active", True, kind != "NON_RENEWING_PURCHASE")
+    if kind == "CANCELLATION":
+        return "cancelled", bool(not_expired), False
+    if kind in {"BILLING_ISSUE", "SUBSCRIPTION_PAUSED"}:
+        return kind.lower(), bool(not_expired), False
+    if kind in {"EXPIRATION", "REFUND", "PRODUCT_NOT_PROVIDED"}:
+        return kind.lower(), False, False
+    if kind == "TRANSFER":
+        return "transferred", False, False
+    return kind.lower() or "unknown", bool(not_expired), False
+
+
+def process_revenuecat_webhook(payload: dict) -> dict:
+    body = dict(payload or {})
+    event = body.get("event") if isinstance(body.get("event"), dict) else body
+    if not isinstance(event, dict):
+        raise ValueError("missing_revenuecat_event")
+
+    event_type = str(event.get("type") or "UNKNOWN").strip().upper()
+    event_id = str(event.get("id") or "").strip()
+    if not event_id:
+        base = "|".join(
+            str(event.get(k) or "")
+            for k in ("type", "app_user_id", "transaction_id", "original_transaction_id", "event_timestamp_ms")
+        )
+        event_id = "rc:" + hashlib.sha256(base.encode("utf-8", errors="ignore")).hexdigest()
+
+    existing = purchase_event_exists("revenuecat", event_id)
+    if existing:
+        return {"ok": True, "duplicate": True, "purchaseEventId": existing, "eventId": event_id, "eventType": event_type}
+
+    aliases = event.get("aliases") if isinstance(event.get("aliases"), list) else []
+    attrs = event.get("subscriber_attributes") if isinstance(event.get("subscriber_attributes"), dict) else {}
+    email = _subscriber_attribute_value(attrs, "$email", "email", "Email")
+
+    app_user_id = str(event.get("app_user_id") or "").strip()
+    original_app_user_id = str(event.get("original_app_user_id") or "").strip()
+    links: list[tuple[str, Any]] = []
+    for value in [app_user_id, original_app_user_id, *aliases]:
+        if value:
+            links.append(("revenuecat", value))
+    if email:
+        links.append(("email", email))
+    if event.get("original_transaction_id"):
+        links.append(("revenuecat_transaction", event.get("original_transaction_id")))
+    if event.get("transaction_id"):
+        links.append(("revenuecat_transaction", event.get("transaction_id")))
+    if event_type == "TRANSFER":
+        for value in event.get("transferred_to") or []:
+            if value:
+                links.append(("revenuecat", value))
+    if not links:
+        links.append(("revenuecat", event_id))
+
+    user_id = resolve_user_id(links, meta={"source": "revenuecat_webhook", "event_id": event_id, "event_type": event_type})
+    product_id = str(event.get("product_id") or "").strip() or None
+    transaction_id = str(event.get("transaction_id") or "").strip() or None
+    original = str(event.get("original_transaction_id") or transaction_id or event_id).strip()
+    environment = normalize_environment(event.get("environment"))
+    period_type = str(event.get("period_type") or "").strip() or None
+    purchased_at = _ms_to_iso(event.get("purchased_at_ms")) or _ms_to_iso(event.get("event_timestamp_ms"))
+    expires_at = _ms_to_iso(event.get("expiration_at_ms"))
+    status, active, auto_renew = _revenuecat_status(event_type, period_type, expires_at)
+    source = f"revenuecat_webhook:{event_type.lower()}"
+
+    sub_id = upsert_subscription(
+        user_id=user_id,
+        provider="revenuecat",
+        product_id=product_id,
+        status=status,
+        started_at=purchased_at,
+        expires_at=expires_at,
+        auto_renew=auto_renew,
+        environment=environment,
+        original_transaction_id=original,
+        purchase_token=transaction_id,
+        source=source,
+        raw=event,
+    )
+
+    fallback_active = None if active else _active_subscription_for_user(user_id)
+    entitlement_ids = event.get("entitlement_ids")
+    if not isinstance(entitlement_ids, list) or not entitlement_ids:
+        entitlement_ids = [event.get("entitlement_id") or "pro"]
+    entitlements = [str(x or "").strip().lower() for x in entitlement_ids if str(x or "").strip()]
+    if not entitlements:
+        entitlements = ["pro"]
+    if any(x in {"pro", "premium", "noytrix_pro", "scamshield_pro"} for x in entitlements) or product_id:
+        set_entitlement(
+            user_id=user_id,
+            entitlement="pro",
+            is_active=bool(active or fallback_active),
+            expires_at=expires_at if active else (fallback_active["expires_at"] if fallback_active else None),
+            source=source if active else (fallback_active["source"] if fallback_active else source),
+            provider="revenuecat" if active else (fallback_active["provider"] if fallback_active else "revenuecat"),
+            subscription_id=sub_id if active else (int(fallback_active["id"]) if fallback_active else sub_id),
+        )
+
+    event_row_id = record_purchase_event(
+        user_id=user_id,
+        provider="revenuecat",
+        external_event_id=event_id,
+        event_type=event_type.lower(),
+        product_id=product_id,
+        status=status,
+        purchase_token=transaction_id,
+        transaction_id=transaction_id,
+        original_transaction_id=original,
+        environment=environment,
+        raw={"api_version": body.get("api_version"), "event": event},
+    )
+    return {
+        "ok": True,
+        "duplicate": False,
+        "userId": user_id,
+        "provider": "revenuecat",
+        "eventId": event_id,
+        "eventType": event_type,
+        "status": status,
+        "active": active,
+        "subscriptionId": sub_id,
+        "purchaseEventId": event_row_id,
+    }

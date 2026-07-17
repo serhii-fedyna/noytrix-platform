@@ -38,6 +38,7 @@ import sqlite3
 import smtplib
 from email.mime.text import MIMEText
 import hashlib
+import hmac
 import pathlib as _p
 import feedparser
 import html
@@ -93,6 +94,7 @@ from subscriptions import (
     grant_entitlement,
     provider_from_source,
     revoke_entitlement,
+    process_revenuecat_webhook,
     sync_google_play_purchase,
 )
 try:
@@ -172,6 +174,7 @@ FREE_SCAN_DAILY_FREE_LIMIT = DAILY_FREE_LIMIT  # legacy alias
 
 NOYTRIX_APP_KEY = (os.getenv("NOYTRIX_APP_KEY") or "").strip()
 APP_KEY_HEADER = "x-app-key"
+REVENUECAT_WEBHOOK_SECRET = (os.getenv("REVENUECAT_WEBHOOK_SECRET") or os.getenv("REVENUECAT_WEBHOOK_AUTH") or "").strip()
 
 ONESIGNAL_APP_ID = (os.getenv("ONESIGNAL_APP_ID") or "").strip()
 ONESIGNAL_API_KEY = (os.getenv("ONESIGNAL_API_KEY") or "").strip()
@@ -234,6 +237,33 @@ async def identity_identify(request: Request, payload: dict = Body(default={})):
         "userId": user_id,
         "links": identity_links_for(user_id),
     }
+
+
+def _valid_revenuecat_webhook_auth(request: Request) -> bool:
+    got = (request.headers.get("authorization") or request.headers.get("Authorization") or "").strip()
+    secrets = []
+    if REVENUECAT_WEBHOOK_SECRET:
+        secrets.append(REVENUECAT_WEBHOOK_SECRET)
+        if not REVENUECAT_WEBHOOK_SECRET.lower().startswith("bearer "):
+            secrets.append(f"Bearer {REVENUECAT_WEBHOOK_SECRET}")
+    if NOYTRIX_APP_KEY:
+        key = NOYTRIX_APP_KEY.strip().strip('"').strip("'")
+        secrets.extend([key, f"Bearer {key}"])
+    return any(hmac.compare_digest(got, str(secret or "").strip()) for secret in secrets if str(secret or "").strip())
+
+
+@app.post("/webhooks/revenuecat")
+async def revenuecat_webhook(request: Request, payload: dict = Body(default={})):
+    if not _valid_revenuecat_webhook_auth(request):
+        raise HTTPException(status_code=401, detail="invalid_revenuecat_webhook_authorization")
+    try:
+        result = process_revenuecat_webhook(dict(payload or {}))
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        print("[revenuecat_webhook] error:", e)
+        raise HTTPException(status_code=500, detail="revenuecat_webhook_failed")
 
 # =========================================================
 # I18N

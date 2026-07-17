@@ -27,7 +27,7 @@ def normalize_identity(kind: str, value: Any) -> str:
     k = str(kind or "").strip().lower()
     if k in {"email", "api_email"}:
         return raw.lower()
-    if k in {"guest", "device", "install", "revenuecat", "auth_user_id", "telegram", "google_play_token"}:
+    if k in {"guest", "device", "install", "revenuecat", "revenuecat_transaction", "auth_user_id", "telegram", "google_play_token"}:
         return raw
     return raw.lower()
 
