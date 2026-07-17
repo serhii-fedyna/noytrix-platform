@@ -71,6 +71,7 @@ const plans = [
 
 const usd = (n) => `$${Number(n).toFixed(2)}`;
 const LOCAL_PRICES = { m: 9.99, h: 49.99, l: 199.99 };
+const REVIEW_STATE_KEY = "noytrix.reviewPrompt.v1";
 
 function normalizeProductId(product) {
   return String(product?.id || product?.productId || "").trim();
@@ -114,6 +115,11 @@ async function syncLocalProFlags(ent) {
 export default function ProScreen() {
   const [openFaq, setOpenFaq] = useState(-1);
   const [loading, setLoading] = useState(true);
+  const [paywallStats, setPaywallStats] = useState({
+    scanCount: 0,
+    lastLevel: "",
+    appOpens: 0,
+  });
   const [ent, setEnt] = useState({
     proMonthly: false,
     pro6m: false,
@@ -127,6 +133,26 @@ export default function ProScreen() {
 
   useEffect(() => {
     logEvent("pro_screen_open", { screen: "pro" });
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(REVIEW_STATE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        const next = {
+          scanCount: Number(parsed?.scanCount || 0),
+          lastLevel: String(parsed?.lastScanMeta?.level || ""),
+          appOpens: Number(parsed?.appOpens || 0),
+        };
+        setPaywallStats(next);
+        logEvent("paywall_value_viewed", {
+          screen: "pro",
+          scans_before_paywall: next.scanCount,
+          last_risk_level: next.lastLevel,
+          app_opens: next.appOpens,
+        });
+      } catch {
+        logEvent("paywall_value_viewed", { screen: "pro" });
+      }
+    })();
   }, []);
 
   const toggleFaq = (i) => {
@@ -185,6 +211,8 @@ export default function ProScreen() {
 
   const handleBuy = async (planId) => {
     try {
+      logEvent("paywall_plan_selected", { screen: "pro", plan: planId, price_label: priceFor(planId) });
+      logEvent("paywall_cta_clicked", { screen: "pro", plan: planId, price_label: priceFor(planId) });
       logEvent("purchase_start", { screen: "pro", plan: planId, price_label: priceFor(planId) });
       setLoading(true);
 
@@ -217,12 +245,14 @@ export default function ProScreen() {
 
   const handleRestore = async () => {
     try {
+      logEvent("paywall_restore_clicked", { screen: "pro" });
       logEvent("restore_click", { screen: "pro" });
       setLoading(true);
       const e = await restorePurchases();
       setEnt(e);
       await syncLocalProFlags(e);
       logEvent("restore_success", { screen: "pro", pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
+      logEvent("paywall_restore_completed", { screen: "pro", restored: !!(e?.proMonthly || e?.pro6m || e?.proYearly) });
 
       const restored = !!(e?.proMonthly || e?.pro6m || e?.proYearly);
       showAppAlert(
@@ -234,6 +264,7 @@ export default function ProScreen() {
     } catch (err) {
       console.log("handleRestore error", err);
       logEvent("restore_error", { screen: "pro", err: String(err?.message || err || "error") });
+      logEvent("paywall_restore_failed", { screen: "pro", err: String(err?.message || err || "error") });
       showAppAlert(t("pro.alerts.errorTitle"), err?.message || t("pro.alerts.errorFallback"));
     } finally {
       setLoading(false);
@@ -265,12 +296,12 @@ export default function ProScreen() {
           <View style={{ marginTop: 8, marginBottom: 12 }}>
             <Text style={s.pageTitle}>Noytrix PRO</Text>
             <Text style={s.heroTitle}>
-              {t("pro.heroTitle", "DonвЂ™t get rekt. Check before you trust.")}
+              {t("proValue.heroTitle", "Проверяй крипто-риск до покупки, подписи или перевода")}
             </Text>
             <Text style={s.pageSub}>
               {t(
-                "pro.heroSubtitle",
-                "Avoid losing money in crypto. Noytrix PRO shows risk, detects scams and gives clear actions before you lose funds."
+                "proValue.heroSubtitle",
+                "Noytrix помогает понять, где опасная ссылка, кошелёк, токен или контракт. PRO открывает больше проверок и более глубокий анализ, но не обещает прибыль."
               )}
             </Text>
           </View>
@@ -278,31 +309,80 @@ export default function ProScreen() {
           <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={30} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
               <View style={s.alertHeader}>
-                <Ionicons name="shield-checkmark-outline" size={22} color={C.accent} />
+                <Ionicons name="gift-outline" size={22} color={C.accent} />
                 <Text style={s.title}>
-                  {t("pro.moneyTitle", "Protect your money + trade smarter")}
+                  {t("proValue.freeTitle", "Что ты уже получил бесплатно")}
                 </Text>
               </View>
 
               <Text style={s.textStrong}>
                 {t(
-                  "pro.moneyText",
-                  "Scam protection and trading decisions in one app вЂ” before you connect, buy, send or enter a trade."
+                  "proValue.freeText",
+                  "Ты уже можешь проверить часть крипто-рисков без оплаты. Мы показываем базовый вердикт и предупреждаем, если видим опасные сигналы."
+                )}
+              </Text>
+
+              <View style={s.valueGrid}>
+                <ValueTile
+                  icon="scan-outline"
+                  label={t("proValue.freeScansLabel", "Бесплатных проверок")}
+                  value={String(paywallStats.scanCount || 0)}
+                />
+                <ValueTile
+                  icon="warning-outline"
+                  label={t("proValue.lastRiskLabel", "Последний риск")}
+                  value={paywallStats.lastLevel || t("proValue.noRiskYet", "ещё нет")}
+                />
+                <ValueTile
+                  icon="phone-portrait-outline"
+                  label={t("proValue.opensLabel", "Заходов в приложение")}
+                  value={String(paywallStats.appOpens || 0)}
+                />
+              </View>
+
+              <View style={{ marginTop: 12 }}>
+                <Bullet
+                  icon="checkmark-circle-outline"
+                  text={t("proValue.freePointOne", "Базовая проверка помогает понять, стоит ли доверять объекту.")}
+                />
+                <Bullet
+                  icon="checkmark-circle-outline"
+                  text={t("proValue.freePointTwo", "Если Noytrix видит красный флаг, лучше остановиться и не спешить.")}
+                />
+              </View>
+            </BlurView>
+          </View>
+
+          <View style={[cardChrome(), { marginBottom: 14 }]}>
+            <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
+              <View style={s.alertHeader}>
+                <Ionicons name="shield-checkmark-outline" size={22} color={C.accent} />
+                <Text style={s.title}>{t("proValue.proTitle", "Что даёт PRO")}</Text>
+              </View>
+
+              <Text style={s.textStrong}>
+                {t(
+                  "proValue.proText",
+                  "PRO нужен тем, кто проверяет крипто-объекты регулярно и хочет меньше слепых решений. Он даёт больше проверок, глубже анализ и понятные объяснения."
                 )}
               </Text>
 
               <View style={{ marginTop: 12 }}>
                 <Bullet
-                  icon="warning-outline"
-                  text={t("pro.benefits.tradeRisk", "See if a trade is too risky BEFORE you enter")}
+                  icon="infinite-outline"
+                  text={t("proValue.proPointOne", "Больше проверок и меньше ограничений для активного пользователя.")}
                 />
                 <Bullet
-                  icon="shield-outline"
-                  text={t("pro.benefits.scamDetect", "Detect scam links, wallets and suspicious crypto traps")}
+                  icon="search-outline"
+                  text={t("proValue.proPointTwo", "Глубже анализ ссылок, кошельков, токенов, контрактов и подозрительных схем.")}
                 />
                 <Bullet
-                  icon="analytics-outline"
-                  text={t("pro.benefits.mistakes", "Track mistakes and stop losing money on bad decisions")}
+                  icon="chatbubble-ellipses-outline"
+                  text={t("proValue.proPointThree", "Простой ответ человеческим языком: почему опасно и что лучше сделать.")}
+                />
+                <Bullet
+                  icon="refresh-outline"
+                  text={t("proValue.proPointFour", "Покупку можно восстановить через Google Play, если сменил телефон или переустановил приложение.")}
                 />
               </View>
             </BlurView>
@@ -316,27 +396,22 @@ export default function ProScreen() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={s.caseTitle}>
-                    {t("pro.caseTitle", "User almost lost $500 on a scam")}
+                    {t("proValue.whyWorthTitle", "Почему это выгодно")}
                   </Text>
                   <Text style={s.caseText}>
                     {t(
-                      "pro.caseText",
-                      "Noytrix detected suspicious signals before the user trusted the link."
+                      "proValue.whyWorthText",
+                      "Одна ошибка с фейковой ссылкой, токеном или подписью может стоить намного дороже подписки. PRO не зарабатывает деньги за тебя, но помогает не действовать вслепую."
                     )}
                   </Text>
                 </View>
               </View>
-
-              <View style={s.fomoRow}>
-                <MiniStat
-                  icon="flash-outline"
-                  text={t("pro.fomo.one", "Most users upgrade after first check")}
-                />
-                <MiniStat
-                  icon="lock-open-outline"
-                  text={t("pro.fomo.two", "PRO unlocks full protection")}
-                />
-              </View>
+              <Text style={s.disclaimer}>
+                {t(
+                  "proValue.noProfitPromise",
+                  "Важно: это не инвестиционный совет и не обещание прибыли. Решение всегда остаётся за тобой."
+                )}
+              </Text>
             </BlurView>
           </View>
 
@@ -604,6 +679,16 @@ function MiniStat({ icon, text }) {
   );
 }
 
+function ValueTile({ icon, label, value }) {
+  return (
+    <View style={s.valueTile}>
+      <Ionicons name={icon} size={18} color={C.accent} />
+      <Text style={s.valueNumber}>{value}</Text>
+      <Text style={s.valueLabel}>{label}</Text>
+    </View>
+  );
+}
+
 function Para({ children }) {
   return <Text style={s.text}>{children}</Text>;
 }
@@ -659,6 +744,33 @@ const s = StyleSheet.create({
     gap: 10,
   },
   bulletRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 },
+  valueGrid: {
+    marginTop: 12,
+    flexDirection: "row",
+    gap: 8,
+  },
+  valueTile: {
+    flex: 1,
+    minHeight: 92,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255,165,0,0.18)",
+    backgroundColor: "rgba(255,165,0,0.07)",
+    padding: 10,
+    justifyContent: "space-between",
+  },
+  valueNumber: {
+    color: C.text,
+    fontSize: 20,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  valueLabel: {
+    color: C.sub,
+    fontSize: 11,
+    lineHeight: 14,
+    fontWeight: "800",
+  },
   caseBox: {
     flexDirection: "row",
     alignItems: "flex-start",
