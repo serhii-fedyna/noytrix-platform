@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from identity import find_user_ids, resolve_user_id
+from product_analytics import record_product_event_safe
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -684,6 +685,26 @@ def sync_google_play_purchase(
         environment=environment,
         raw=data,
     )
+    status_norm = str(status or "").lower()
+    analytics_event = (
+        "purchase_completed"
+        if active
+        else ("subscription_expired" if status_norm in {"expired", "canceled", "cancelled"} else "purchase_failed")
+    )
+    record_product_event_safe({
+        "event_id": f"google_play:{purchase_token}:{analytics_event}",
+        "user_id": user_id,
+        "platform": "android",
+        "event_name": analytics_event,
+        "source": "google_play",
+        "properties": {
+            "provider": provider,
+            "product_id": product_id,
+            "product_type": product_type,
+            "status": status,
+            "expires_at": expires_at,
+        },
+    })
     return sub_id
 
 
@@ -729,6 +750,23 @@ def _revenuecat_status(event_type: str, period_type: str | None, expires_at: str
     if kind == "TRANSFER":
         return "transferred", False, False
     return kind.lower() or "unknown", bool(not_expired), False
+
+
+def _revenuecat_analytics_event(event_type: str, status: str, active: bool) -> str:
+    kind = str(event_type or "").strip().upper()
+    if kind == "INITIAL_PURCHASE":
+        return "trial_started" if status == "trial" else "purchase_completed"
+    if kind in {"RENEWAL", "SUBSCRIPTION_EXTENDED"}:
+        return "subscription_renewed"
+    if kind in {"CANCELLATION", "SUBSCRIPTION_PAUSED"}:
+        return "subscription_cancelled"
+    if kind in {"EXPIRATION", "REFUND", "PRODUCT_NOT_PROVIDED"}:
+        return "subscription_expired"
+    if kind == "BILLING_ISSUE":
+        return "purchase_failed"
+    if kind in {"NON_RENEWING_PURCHASE", "PRODUCT_CHANGE", "UNCANCELLATION", "TEMPORARY_ENTITLEMENT_GRANT", "PURCHASE_REDEEMED"}:
+        return "purchase_completed" if active else "purchase_failed"
+    return "purchase_completed" if active else "purchase_failed"
 
 
 def process_revenuecat_webhook(payload: dict) -> dict:
@@ -840,6 +878,25 @@ def process_revenuecat_webhook(payload: dict) -> dict:
             "eventId": event_id,
             "eventType": event_type,
         }
+    analytics_event = _revenuecat_analytics_event(event_type, status, active)
+    record_product_event_safe({
+        "event_id": f"revenuecat:{event_id}:{analytics_event}",
+        "user_id": user_id,
+        "anonymous_id": app_user_id or original_app_user_id or None,
+        "platform": "mobile",
+        "event_name": analytics_event,
+        "country": event.get("country_code"),
+        "source": "revenuecat",
+        "properties": {
+            "provider": "revenuecat",
+            "event_type": event_type,
+            "product_id": product_id,
+            "status": status,
+            "active": active,
+            "expires_at": expires_at,
+            "environment": environment,
+        },
+    })
     return {
         "ok": True,
         "duplicate": False,

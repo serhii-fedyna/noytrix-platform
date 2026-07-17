@@ -77,7 +77,10 @@ export const useAuthStore = create((set, get) => ({
     return get().user;
   },
 
-  registerStart: async (payload) => apiRegisterStart(payload),
+  registerStart: async (payload) => {
+    await logEvent("signup_started", { source: "email", has_email: !!payload?.email });
+    return apiRegisterStart(payload);
+  },
 
   registerVerify: async (payload) => {
     await apiRegisterVerify(payload); 

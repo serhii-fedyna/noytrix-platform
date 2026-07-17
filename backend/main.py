@@ -98,6 +98,7 @@ from subscriptions import (
     sync_google_play_purchase,
     user_flags,
 )
+from product_analytics import analytics_funnel, record_product_event
 try:
     from scamshield.intelligence.postgres_intelligence import (
         upsert_entity as pg_upsert_entity,
@@ -266,6 +267,23 @@ async def revenuecat_webhook(request: Request, payload: dict = Body(default={}))
     except Exception as e:
         print("[revenuecat_webhook] error:", e)
         raise HTTPException(status_code=500, detail="revenuecat_webhook_failed")
+
+
+@app.post("/analytics/events")
+async def analytics_events(request: Request, payload: dict = Body(default={})):
+    data = dict(payload or {})
+    if not data.get("user_id"):
+        uid = _get_user_id(request, None)
+        if uid:
+            data["user_id"] = uid
+    result = record_product_event(data)
+    return result
+
+
+@app.get("/analytics/funnel")
+async def analytics_funnel_endpoint(request: Request, days: int = 30):
+    require_app_key(request, "en")
+    return analytics_funnel(days=days)
 
 # =========================================================
 # I18N
