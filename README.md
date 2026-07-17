@@ -36,6 +36,3 @@ NOYTRIX-Code/
 
 - `docs/intelligence-platform-roadmap.md` - target architecture and phased roadmap for the Noytrix first-party threat-intelligence platform.
 
-## Safety
-
-Do not push or deploy without explicit confirmation. Do not commit `.env*`, databases, logs, signing keys, archives, or generated dependency folders.
