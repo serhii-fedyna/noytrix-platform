@@ -27,10 +27,16 @@ google-services.json
 *.sqlite*
 *.log
 *.pid
+*.pyc
+*.pyo
 
 # Archives
 *.tar.gz
 *.zip
+*.bak
+*.bak*
+*.backup
+*.backup*
 
 # Build and generated output
 dist/
@@ -39,8 +45,11 @@ build/
 .next/
 web-build/
 __pycache__/
+.cxx/
+**/.cxx/
 expo-env.d.ts
 *.tsbuildinfo
+*.inspect.ndjson
 backend/tests/reports/
 
 # Native and tooling
@@ -61,6 +70,16 @@ upload-keystore*
 keys/
 **/keys/
 push_tokens.json
+.codex-remote-attachments/
+
+# Independent product repositories managed by their own Git history
+/web/
+/extension/
+/trader/
+
+# Telegram bot runtime output
+/telegram-bot/data/
+/telegram-bot/untranslated.txt
 
 # Cleanup-preserved local secrets and repository metadata
 infrastructure/deploy/preserved-local-state/

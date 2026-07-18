@@ -555,7 +555,7 @@ export default function ProScreen() {
               <Para>
                 {t(
                   "pro.includes.actionDesc",
-                  "Not just numbers вЂ” Noytrix explains what to avoid, what to check and what to do next."
+                  "Not just numbers - Noytrix explains what to avoid, what to check and what to do next."
                 )}
               </Para>
 

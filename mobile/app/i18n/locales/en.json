@@ -247,6 +247,13 @@
       "placeholder": "Type your name…",
       "save": "Save",
       "cancel": "Cancel"
+    },
+    "language": {
+      "title": "App language",
+      "text": "Use one selected language across all Noytrix screens.",
+      "english": "English",
+      "russian": "Russian",
+      "ukrainian": "Ukrainian"
     }
   },
   "immunity": {
@@ -1566,5 +1573,26 @@
       "errorTitle": "Error",
       "errorText": "Could not send request. Try again later."
     }
+  },
+  "proValue": {
+    "heroTitle": "Check crypto risk before buying, signing or sending",
+    "heroSubtitle": "Noytrix helps you understand where a dangerous link, wallet, token or contract may be hiding. PRO unlocks more checks and deeper analysis, without promising profit.",
+    "freeTitle": "What you already got for free",
+    "freeText": "You can already check part of the crypto risk without paying. We show a basic verdict and warn you when we see dangerous signals.",
+    "freeScansLabel": "Free checks",
+    "lastRiskLabel": "Last risk",
+    "opensLabel": "App opens",
+    "noRiskYet": "not yet",
+    "freePointOne": "Basic checks help you understand whether an object deserves trust.",
+    "freePointTwo": "If Noytrix sees a red flag, it is better to stop and avoid rushing.",
+    "proTitle": "What PRO gives you",
+    "proText": "PRO is for people who check crypto objects regularly and want fewer blind decisions. It gives more checks, deeper analysis and clear explanations.",
+    "proPointOne": "More checks and fewer limits for active users.",
+    "proPointTwo": "Deeper analysis of links, wallets, tokens, contracts and suspicious schemes.",
+    "proPointThree": "A simple human answer: why it is dangerous and what to do next.",
+    "proPointFour": "You can restore the purchase through Google Play if you change phone or reinstall the app.",
+    "whyWorthTitle": "Why it is worth it",
+    "whyWorthText": "One mistake with a fake link, token or signature can cost much more than the subscription. PRO does not make money for you, but helps you avoid acting blindly.",
+    "noProfitPromise": "Important: this is not investment advice and not a promise of profit. The final decision is always yours."
   }
 }

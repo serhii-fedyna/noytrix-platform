@@ -24,7 +24,7 @@ import { useAuthStore } from "../lib/store.auth";
 import SignIn from "../auth/signin";
 import { getPushSubscriptionState, setPushNotificationsEnabled } from "../lib/notifications";
 import { BACKEND } from "../lib/backend";
-import { normalizeLang, pickLang } from "../i18n/lang";
+import { normalizeLang } from "../i18n/lang";
 import { syncPushLanguageTag } from "../lib/pushLanguage";
 
 const BG = { start: "#06080f", mid: "#0a1233", end: "#0b1c4f" };
@@ -883,23 +883,14 @@ export default function ProfileScreen() {
 
                 <RowCard
                   icon="language-outline"
-                  title={t("profile.language.title", {
-                    defaultValue: pickLang(currentLang, "Язык приложения", "App language", "Мова застосунку"),
-                  })}
-                  subtitle={t("profile.language.text", {
-                    defaultValue: pickLang(
-                      currentLang,
-                      "Один выбранный язык для всех экранов Noytrix.",
-                      "Use the same language across all Noytrix screens.",
-                      "Одна вибрана мова для всіх екранів Noytrix."
-                    ),
-                  })}
+                  title={t("profile.language.title")}
+                  subtitle={t("profile.language.text")}
                   right={
                     <View style={{ flexDirection: "row", gap: 6 }}>
                       {[
                         { code: "en", label: "EN" },
                         { code: "ru", label: "RU" },
-                        { code: "uk", label: "UK" },
+                        { code: "uk", label: "UA" },
                       ].map((item) => {
                         const active = currentLang === item.code;
                         return (
