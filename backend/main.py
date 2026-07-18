@@ -1,8 +1,8 @@
-from scamshield.intelligence.threat_memory import init_threat_memory, remember_many_from_verdict, remember_relations_from_verdict, get_entity_memory, build_memory_summary
-# main.py (RU/EN) — Noytrix backend (FULL FILE, production-oriented)
+﻿from scamshield.intelligence.threat_memory import init_threat_memory, remember_many_from_verdict, remember_relations_from_verdict, get_entity_memory, build_memory_summary
+# main.py (RU/EN) вЂ” Noytrix backend (FULL FILE, production-oriented)
 
 # =========================================================
-# ✅ ScamShield production redesign:
+# вњ… ScamShield production redesign:
 # - real source statuses: malicious / clean / no_data / timeout / invalid_key / error
 # - real multi-API URL verification (VT / Google Safe Browsing / urlscan if configured)
 # - red-flag priority: any confirmed malicious external source => Dangerous / Critical
@@ -17,7 +17,7 @@ from scamshield.intelligence.threat_memory import init_threat_memory, remember_m
 # - community/top scams endpoints for Home
 # - RU/EN scan localization
 #
-# ✅ Existing app features preserved:
+# вњ… Existing app features preserved:
 # - /events robust alias
 # - background loops + quota + news + prices + immunity + votes
 # - guest PRO support
@@ -38,7 +38,6 @@ import sqlite3
 import smtplib
 from email.mime.text import MIMEText
 import hashlib
-import hmac
 import pathlib as _p
 import feedparser
 import html
@@ -52,7 +51,7 @@ from datetime import datetime, timezone, timedelta
 from bs4 import BeautifulSoup
 from readability import Document
 from dotenv import load_dotenv
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.responses import Response
 from scan_card_renderer import render_scan_card
 from fastapi import FastAPI, Query, Body, HTTPException, Request
@@ -88,17 +87,15 @@ from scamshield.url_intel.infrastructure import analyze_infrastructure
 from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
 from scamshield.url_intel.fusion import build_url_intelligence
-from identity import resolve_from_request, resolve_user_id, identity_links_for
+from identity import resolve_from_request, resolve_user_id
 from subscriptions import (
     entitlement_status,
     grant_entitlement,
     provider_from_source,
     revoke_entitlement,
-    process_revenuecat_webhook,
     sync_google_play_purchase,
     user_flags,
 )
-from product_analytics import analytics_funnel, company_dashboard, record_product_event
 try:
     from scamshield.intelligence.postgres_intelligence import (
         upsert_entity as pg_upsert_entity,
@@ -127,6 +124,11 @@ from auth.router import router as auth_router
 from iap_router import router as iap_router
 import calendar_router as calendar_module
 from calendar_router import router as calendar_router
+from routes.company_dashboard import router as company_dashboard_router
+from routes.platform import router as platform_router
+from routes.feedback import router as feedback_router
+from routes.system import router as system_router
+from routes.profile import create_profile_router
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -177,9 +179,7 @@ FREE_SCAN_DAILY_FREE_LIMIT = DAILY_FREE_LIMIT  # legacy alias
 
 NOYTRIX_APP_KEY = (os.getenv("NOYTRIX_APP_KEY") or "").strip()
 APP_KEY_HEADER = "x-app-key"
-REVENUECAT_WEBHOOK_SECRET = (os.getenv("REVENUECAT_WEBHOOK_SECRET") or os.getenv("REVENUECAT_WEBHOOK_AUTH") or "").strip()
 LEGACY_GUEST_PRO_READ = str(os.getenv("LEGACY_GUEST_PRO_READ") or "0").strip().lower() in {"1", "true", "yes", "on"}
-COMPANY_DASHBOARD_PASSWORD = (os.getenv("COMPANY_DASHBOARD_PASSWORD") or "Minoas2020").strip()
 
 ONESIGNAL_APP_ID = (os.getenv("ONESIGNAL_APP_ID") or "").strip()
 ONESIGNAL_API_KEY = (os.getenv("ONESIGNAL_API_KEY") or "").strip()
@@ -208,450 +208,10 @@ app.add_middleware(
 app.include_router(calendar_router, prefix="/api")
 app.include_router(auth_router, prefix="/auth")
 app.include_router(iap_router, prefix="/iap")
-
-@app.post("/identity/identify")
-async def identity_identify(request: Request, payload: dict = Body(default={})):
-    payload = dict(payload or {})
-    links: list[tuple[str, Any]] = []
-
-    for kind, *names in (
-        ("guest", "guest_id", "guestId", "install_user_id", "installUserId", "device_id", "deviceId"),
-        ("revenuecat", "revenuecat_app_user_id", "revenueCatAppUserId", "app_user_id", "appUserId"),
-        ("email", "email"),
-        ("telegram", "telegram_id", "telegramId"),
-        ("google_play_token", "purchase_token", "purchaseToken", "googlePlayPurchaseToken"),
-        ("api_email", "api_email", "apiEmail", "owner_email", "ownerEmail"),
-        ("auth_user_id", "auth_user_id", "authUserId", "user_db_id", "userDbId"),
-    ):
-        for name in names:
-            value = payload.get(name)
-            if value:
-                links.append((kind, value))
-
-    auth_uid = _get_user_id(request, None)
-    if auth_uid:
-        if "@" in str(auth_uid):
-            links.append(("email", auth_uid))
-        else:
-            links.append(("auth_user_id", auth_uid))
-
-    user_id = resolve_from_request(request, links)
-    return {
-        "ok": True,
-        "user_id": user_id,
-        "userId": user_id,
-        "links": identity_links_for(user_id),
-    }
-
-
-def _valid_revenuecat_webhook_auth(request: Request) -> bool:
-    got = (request.headers.get("authorization") or request.headers.get("Authorization") or "").strip()
-    secrets = []
-    if REVENUECAT_WEBHOOK_SECRET:
-        secrets.append(REVENUECAT_WEBHOOK_SECRET)
-        if not REVENUECAT_WEBHOOK_SECRET.lower().startswith("bearer "):
-            secrets.append(f"Bearer {REVENUECAT_WEBHOOK_SECRET}")
-    if NOYTRIX_APP_KEY:
-        key = NOYTRIX_APP_KEY.strip().strip('"').strip("'")
-        secrets.extend([key, f"Bearer {key}"])
-    return any(hmac.compare_digest(got, str(secret or "").strip()) for secret in secrets if str(secret or "").strip())
-
-
-@app.post("/webhooks/revenuecat")
-async def revenuecat_webhook(request: Request, payload: dict = Body(default={})):
-    if not _valid_revenuecat_webhook_auth(request):
-        raise HTTPException(status_code=401, detail="invalid_revenuecat_webhook_authorization")
-    try:
-        result = process_revenuecat_webhook(dict(payload or {}))
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        print("[revenuecat_webhook] error:", e)
-        raise HTTPException(status_code=500, detail="revenuecat_webhook_failed")
-
-
-@app.post("/analytics/events")
-async def analytics_events(request: Request, payload: dict = Body(default={})):
-    data = dict(payload or {})
-    if not data.get("user_id"):
-        uid = _get_user_id(request, None)
-        if uid:
-            data["user_id"] = uid
-    result = record_product_event(data)
-    return result
-
-
-@app.get("/analytics/funnel")
-async def analytics_funnel_endpoint(request: Request, days: int = 30):
-    require_app_key(request, "en")
-    return analytics_funnel(days=days)
-
-
-def _valid_company_dashboard_password(request: Request) -> bool:
-    got = (
-        request.headers.get("x-dashboard-password")
-        or request.headers.get("X-Dashboard-Password")
-        or ""
-    ).strip()
-    auth = (request.headers.get("authorization") or request.headers.get("Authorization") or "").strip()
-    if auth.lower().startswith("bearer "):
-        got = auth[7:].strip()
-    expected = COMPANY_DASHBOARD_PASSWORD
-    return bool(expected and got and hmac.compare_digest(got, expected))
-
-
-@app.get("/admin/company-dashboard/data")
-async def company_dashboard_data(request: Request, days: int = 30):
-    if not _valid_company_dashboard_password(request):
-        raise HTTPException(status_code=401, detail="invalid_dashboard_password")
-    return company_dashboard(days=days)
-
-
-COMPANY_DASHBOARD_HTML = r"""
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Noytrix - ежедневная статистика</title>
-  <style>
-    :root {
-      --bg: #06080f;
-      --panel: rgba(11, 18, 39, 0.84);
-      --panel2: rgba(17, 27, 56, 0.78);
-      --line: rgba(255, 255, 255, 0.10);
-      --gold: #ffb020;
-      --gold2: #ff8a00;
-      --text: #f5f7ff;
-      --muted: #a8b4cf;
-      --good: #4cd964;
-      --bad: #ff6565;
-      --blue: #66b3ff;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: var(--text);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(circle at 20% 5%, rgba(255,176,32,0.20), transparent 26rem),
-        radial-gradient(circle at 80% 0%, rgba(30,80,220,0.22), transparent 32rem),
-        linear-gradient(135deg, #06080f 0%, #081021 48%, #0b1c4f 100%);
-      min-height: 100vh;
-    }
-    body:before {
-      content: "";
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.032) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.032) 1px, transparent 1px);
-      background-size: 18px 18px;
-      mask-image: linear-gradient(to bottom, #000 0%, transparent 95%);
-    }
-    .wrap { position: relative; max-width: 1520px; margin: 0 auto; padding: 26px; }
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 18px;
-      padding: 18px 0 24px;
-    }
-    .brand { display: flex; align-items: center; gap: 14px; }
-    .logo {
-      width: 42px; height: 42px; border-radius: 10px;
-      display: grid; place-items: center;
-      background: #07102b; color: var(--gold);
-      border: 1px solid rgba(255,176,32,0.24);
-      box-shadow: 0 18px 60px rgba(255,176,32,0.14);
-      font-weight: 900;
-    }
-    h1 { margin: 0; font-size: 28px; letter-spacing: 0; }
-    .sub { color: var(--muted); margin-top: 4px; font-size: 14px; }
-    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-    select, input, button {
-      border: 1px solid var(--line);
-      background: rgba(255,255,255,0.06);
-      color: var(--text);
-      border-radius: 12px;
-      padding: 12px 14px;
-      font-weight: 750;
-      outline: none;
-    }
-    option { background: #10172d; color: var(--text); }
-    button {
-      cursor: pointer;
-      background: linear-gradient(135deg, var(--gold), var(--gold2));
-      color: #09101f;
-      border: 0;
-      box-shadow: 0 18px 50px rgba(255,176,32,0.23);
-    }
-    .login {
-      max-width: 520px;
-      margin: 12vh auto;
-      padding: 28px;
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(20,28,54,0.96), rgba(8,13,28,0.96));
-      border-radius: 18px;
-      box-shadow: 0 30px 90px rgba(0,0,0,0.42);
-    }
-    .login input { width: 100%; margin: 18px 0 12px; background: #e8eefb; color: #050814; font-size: 16px; }
-    .login button { width: 100%; font-size: 16px; }
-    .hidden { display: none !important; }
-    .status {
-      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
-      color: var(--muted); font-size: 13px;
-    }
-    .pill {
-      display: inline-flex; align-items: center; gap: 8px;
-      border: 1px solid rgba(255,176,32,0.25);
-      background: rgba(255,176,32,0.09);
-      color: #ffd37a;
-      border-radius: 999px;
-      padding: 8px 12px;
-      font-weight: 800;
-    }
-    .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
-    .section {
-      margin-top: 20px;
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      background: rgba(7, 12, 28, 0.58);
-      backdrop-filter: blur(18px);
-    }
-    .section h2 { margin: 0 0 14px; font-size: 18px; }
-    .cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
-    .card {
-      min-height: 108px;
-      padding: 16px;
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      background: linear-gradient(180deg, var(--panel), var(--panel2));
-    }
-    .label { color: var(--muted); font-size: 12px; text-transform: uppercase; font-weight: 850; }
-    .value { margin-top: 10px; font-size: 28px; font-weight: 950; letter-spacing: 0; }
-    .note { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.35; }
-    .empty { color: rgba(168,180,207,0.72); font-size: 18px; }
-    table { width: 100%; border-collapse: collapse; overflow: hidden; }
-    th, td { text-align: left; padding: 11px 10px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 13px; }
-    th { color: var(--muted); text-transform: uppercase; font-size: 11px; }
-    .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
-    .tablebox { border: 1px solid var(--line); border-radius: 14px; overflow: auto; background: rgba(6,8,15,0.45); }
-    .barrow { display: grid; grid-template-columns: 110px 1fr 60px; gap: 10px; align-items: center; margin: 8px 0; color: var(--muted); }
-    .bar { height: 8px; background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; }
-    .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--gold), var(--blue)); border-radius: inherit; }
-    .error { color: var(--bad); margin-top: 10px; font-weight: 750; }
-    @media (max-width: 1100px) { .cards { grid-template-columns: repeat(2, 1fr); } .tables { grid-template-columns: 1fr; } }
-    @media (max-width: 720px) { .wrap { padding: 16px; } header { align-items: flex-start; flex-direction: column; } .cards { grid-template-columns: 1fr; } }
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <section id="login" class="login">
-      <div class="brand">
-        <div class="logo">N</div>
-        <div>
-          <h1>Статистика Noytrix</h1>
-          <div class="sub">Закрытая страница с реальными данными по приложению и оплатам.</div>
-        </div>
-      </div>
-      <input id="password" type="password" placeholder="Пароль" autocomplete="current-password" />
-      <button onclick="login()">Открыть статистику</button>
-      <div id="loginError" class="error"></div>
-    </section>
-
-    <section id="dashboard" class="hidden">
-      <header>
-        <div class="brand">
-          <div class="logo">N</div>
-          <div>
-            <h1>Статистика Noytrix</h1>
-            <div class="sub">Привлечение, первые действия, возвраты, оплаты и качество. Только реальные данные с сервера.</div>
-          </div>
-        </div>
-        <div class="controls">
-          <span class="pill" id="freshness">Загрузка</span>
-          <select id="days" onchange="loadData()">
-            <option value="1">Сегодня</option>
-            <option value="7">7 дней</option>
-            <option value="30" selected>30 дней</option>
-            <option value="90">90 дней</option>
-            <option value="0">За всё время</option>
-          </select>
-          <button onclick="loadData()">Обновить</button>
-          <button onclick="logout()">Выйти</button>
-        </div>
-      </header>
-
-      <div class="status" id="status"></div>
-      <div id="sections"></div>
-    </section>
-  </main>
-
-  <script>
-    const keyName = "noytrixCompanyDashboardPassword";
-    let refreshTimer = null;
-
-    function fmtMetric(metric) {
-      if (!metric || metric.value === null || metric.value === undefined || metric.value === "") return '<span class="empty">Пока нет данных</span>';
-      const unit = metric.unit ? ` ${metric.unit}` : "";
-      if (typeof metric.value === "number") return `${metric.value.toLocaleString("en-US")}${unit}`;
-      return `${metric.value}${unit}`;
-    }
-
-    function card(label, metric) {
-      const note = metric && metric.note ? `<div class="note">${metric.note}</div>` : "";
-      return `<div class="card"><div class="label">${label}</div><div class="value">${fmtMetric(metric)}</div>${note}</div>`;
-    }
-
-    function section(title, cards) {
-      return `<section class="section"><h2>${title}</h2><div class="cards">${cards.join("")}</div></section>`;
-    }
-
-    function table(title, rows, cols) {
-      const head = cols.map(c => `<th>${c.label}</th>`).join("");
-      const body = (rows || []).slice(0, 20).map(row => `<tr>${cols.map(c => `<td>${row[c.key] ?? ""}</td>`).join("")}</tr>`).join("");
-      return `<div class="tablebox"><table><thead><tr><th colspan="${cols.length}">${title}</th></tr><tr>${head}</tr></thead><tbody>${body || `<tr><td colspan="${cols.length}">Пока нет данных</td></tr>`}</tbody></table></div>`;
-    }
-
-    function dailyBars(rows) {
-      const max = Math.max(1, ...(rows || []).map(x => x.scans || 0));
-      return `<section class="section"><h2>Проверки по дням</h2>${(rows || []).map(x => {
-        const pct = Math.round(((x.scans || 0) / max) * 100);
-        return `<div class="barrow"><span>${x.day}</span><div class="bar"><span style="width:${pct}%"></span></div><strong>${x.scans || 0}</strong></div>`;
-      }).join("") || '<div class="note">Пока нет ежедневных данных.</div>'}</section>`;
-    }
-
-    async function fetchDashboard() {
-      const password = sessionStorage.getItem(keyName) || "";
-      const days = document.getElementById("days").value || "30";
-      const response = await fetch(`/admin/company-dashboard/data?days=${encodeURIComponent(days)}`, {
-        headers: { "X-Dashboard-Password": password }
-      });
-      if (!response.ok) throw new Error(response.status === 401 ? "Неверный пароль." : `Не удалось загрузить статистику: ${response.status}`);
-      return response.json();
-    }
-
-    async function loadData() {
-      try {
-        const data = await fetchDashboard();
-        render(data);
-      } catch (error) {
-        document.getElementById("status").innerHTML = `<span class="error">${String(error.message || error)}</span>`;
-        if (String(error.message || "").includes("Невер")) logout(false);
-      }
-    }
-
-    function render(data) {
-      document.getElementById("freshness").textContent = data.dataFreshness?.lastEventAt ? `Последнее событие: ${data.dataFreshness.lastEventAt}` : "Событий пока нет";
-      document.getElementById("status").innerHTML = `
-        <span>Обновлено: ${data.generatedAt}</span>
-        <span>Период: ${data.windowDays === 0 ? "за всё время" : `${data.windowDays} дней`}</span>
-        <span>Новые события в базе: ${data.dataFreshness?.eventRows || 0}</span>
-        <span>Старые события анализов: ${data.dataFreshness?.historicProfileEvents || 0}</span>
-        <span>База подписок: ${data.dataFreshness?.subscriptionsDb ? "подключена" : "не найдена"}</span>
-        <span>Старая база анализов: ${data.dataFreshness?.profileDb ? "подключена" : "не найдена"}</span>
-        <span>Если написано “Пока нет данных” - значит сервер ещё не получил такое событие от приложения или рекламы.</span>
-      `;
-      const a = data.acquisition || {}, ac = data.activation || {}, r = data.retention || {}, rev = data.revenue || {}, q = data.quality || {};
-      document.getElementById("sections").innerHTML = [
-        section("Привлечение пользователей", [
-          card("Установки приложения", a.installs),
-          card("Цена одной установки", a.costPerInstall),
-          card("Регистрации", a.registrations),
-          card("Цена одной регистрации", a.costPerRegistration),
-        ]),
-        section("Первые действия в приложении", [
-          card("Пользователи, которые сделали первый анализ", ac.firstAnalysisUsers),
-          card("Сколько установивших дошли до анализа", ac.installToAnalysisConversion),
-          card("Среднее время до первого анализа", ac.averageMinutesToFirstAnalysis),
-          card("Успешные анализы без ошибки", ac.usefulResultsWithoutError),
-          card("Доля успешных анализов", ac.usefulResultRate),
-        ]),
-        section("Возвраты пользователей", [
-          card("Вернулись на следующий день", r.returnedNextDay),
-          card("Вернулись через 7 дней", r.returnedDay7),
-          card("Анализов на одного активного пользователя", r.analysesPerActiveUser),
-          card("Активные пользователи сегодня", r.dailyActiveUsers),
-          card("Активные пользователи за месяц", r.monthlyActiveUsers),
-        ]),
-        section("Деньги и подписки", [
-          card("Открыли экран оплаты", rev.paywallViewedUsers),
-          card("Нажали купить", rev.purchaseStartedUsers),
-          card("Покупка успешно завершена", rev.purchaseCompletedUsers),
-          card("Реальные платные PRO сейчас", rev.activePaidSubscriptions),
-          card("PRO-доступ включен всего", rev.totalActiveProAccess),
-          card("Старый перенесенный PRO", rev.legacyActiveProAccess),
-          card("Ручной PRO-доступ", rev.manualActiveProAccess),
-          card("Тестовые PRO-аккаунты", rev.testActiveProAccess),
-          card("Примерная ежемесячная выручка", rev.monthlyRecurringRevenue),
-          card("Отмены подписок", rev.cancellations),
-          card("Возвраты денег", rev.refunds),
-          card("Активные записи подписок в базе", rev.activeSubscriptionRows),
-        ]),
-        section("Качество работы", [
-          card("Процент ошибок анализа", q.analysisErrorRate),
-          card("Среднее время ответа сервера", q.averageResponseTimeMs),
-          card("Падения приложения", q.appCrashes),
-          card("Ошибки оплаты", q.paymentErrors),
-          card("Доступность проверок", q.apiAvailability),
-        ]),
-        `<section class="section"><h2>Откуда приходят пользователи и страны</h2><div class="tables">
-          ${table("Источники", a.sources || [], [
-            {key:"source", label:"Источник"}, {key:"campaign", label:"Кампания"}, {key:"installs", label:"Установки"},
-            {key:"registrations", label:"Регистрации"}, {key:"scans", label:"Анализы"}, {key:"paywalls", label:"Экран оплаты"},
-            {key:"purchases", label:"Покупки"}, {key:"cpi", label:"Цена установки"}, {key:"cpr", label:"Цена регистрации"}
-          ])}
-          ${table("Страны", a.countries || [], [
-            {key:"country", label:"Страна"}, {key:"users", label:"Пользователи"}, {key:"events", label:"События"},
-            {key:"installs", label:"Установки"}, {key:"scans", label:"Анализы"}
-          ])}
-        </div></section>`,
-        dailyBars(data.daily || []),
-      ].join("");
-    }
-
-    async function login() {
-      const password = document.getElementById("password").value.trim();
-      sessionStorage.setItem(keyName, password);
-      document.getElementById("loginError").textContent = "";
-      try {
-        await loadData();
-        document.getElementById("login").classList.add("hidden");
-        document.getElementById("dashboard").classList.remove("hidden");
-        if (refreshTimer) clearInterval(refreshTimer);
-        refreshTimer = setInterval(loadData, 30000);
-      } catch (error) {
-        document.getElementById("loginError").textContent = String(error.message || error);
-      }
-    }
-
-    function logout(clear = true) {
-      if (clear) sessionStorage.removeItem(keyName);
-      document.getElementById("dashboard").classList.add("hidden");
-      document.getElementById("login").classList.remove("hidden");
-      if (refreshTimer) clearInterval(refreshTimer);
-    }
-
-    document.getElementById("password").addEventListener("keydown", (event) => {
-      if (event.key === "Enter") login();
-    });
-    if (sessionStorage.getItem(keyName)) {
-      document.getElementById("password").value = sessionStorage.getItem(keyName);
-      login();
-    }
-  </script>
-</body>
-</html>
-"""
-
-
-@app.get("/admin/company-dashboard", response_class=HTMLResponse)
-async def company_dashboard_page():
-    return HTMLResponse(COMPANY_DASHBOARD_HTML)
+app.include_router(company_dashboard_router)
+app.include_router(platform_router)
+app.include_router(feedback_router)
+app.include_router(system_router)
 
 # =========================================================
 # I18N
@@ -722,68 +282,68 @@ I18N = {
         "object_text": "Text",
     },
     "ru": {
-        "safe": "Безопасно",
-        "suspicious": "Подозрительно",
-        "danger": "Опасно",
-        "critical": "Критично / Скам",
-        "unknown": "Неизвестно",
-        "news_default_explain": "Новость по крипторынку. Оцени влияние по фактам: ликвидность, регуляторные риски, интеграции, реакция цены/объёма.",
-        "hint_listing": "Листинг/допуск на биржу обычно повышает интерес и ликвидность монеты.",
-        "hint_partnership": "Партнёрство или интеграция — хороший долгосрочный сигнал.",
-        "hint_hack": "Негатив: взлом/уязвимость. Возможна просадка цены и падение доверия.",
-        "hint_reg": "Регуляторный риск. В краткосроке часто давит цену.",
-        "hint_funding": "Инвестиции/раунд. Усиливает развитие проекта, часто позитив.",
-        "hint_upgrade": "Техническое обновление. Смотри на качество и успешность релиза.",
-        "quota_exceeded": "Дневной лимит FREE исчерпан. PRO даёт безлимит.",
-        "forbidden": "Доступ запрещён.",
-        "missing_input": "Пустой input.",
-        "scan_failed": "Ошибка сканирования.",
-        "source_malicious": "Опасно",
-        "source_clean": "Чисто",
-        "source_no_data": "Нет данных",
-        "source_timeout": "Таймаут",
-        "source_invalid_key": "Неверный ключ / не настроено",
-        "source_quota": "Квота исчерпана",
-        "source_error": "Ошибка",
-        "object_url": "Ссылка",
-        "object_domain": "Домен",
-        "object_wallet": "Кошелёк",
-        "object_contract": "Контракт",
-        "object_ticker": "Тикер",
-        "object_text": "Текст",
+        "safe": "Р‘РµР·РѕРїР°СЃРЅРѕ",
+        "suspicious": "РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅРѕ",
+        "danger": "РћРїР°СЃРЅРѕ",
+        "critical": "РљСЂРёС‚РёС‡РЅРѕ / РЎРєР°Рј",
+        "unknown": "РќРµРёР·РІРµСЃС‚РЅРѕ",
+        "news_default_explain": "РќРѕРІРѕСЃС‚СЊ РїРѕ РєСЂРёРїС‚РѕСЂС‹РЅРєСѓ. РћС†РµРЅРё РІР»РёСЏРЅРёРµ РїРѕ С„Р°РєС‚Р°Рј: Р»РёРєРІРёРґРЅРѕСЃС‚СЊ, СЂРµРіСѓР»СЏС‚РѕСЂРЅС‹Рµ СЂРёСЃРєРё, РёРЅС‚РµРіСЂР°С†РёРё, СЂРµР°РєС†РёСЏ С†РµРЅС‹/РѕР±СЉС‘РјР°.",
+        "hint_listing": "Р›РёСЃС‚РёРЅРі/РґРѕРїСѓСЃРє РЅР° Р±РёСЂР¶Сѓ РѕР±С‹С‡РЅРѕ РїРѕРІС‹С€Р°РµС‚ РёРЅС‚РµСЂРµСЃ Рё Р»РёРєРІРёРґРЅРѕСЃС‚СЊ РјРѕРЅРµС‚С‹.",
+        "hint_partnership": "РџР°СЂС‚РЅС‘СЂСЃС‚РІРѕ РёР»Рё РёРЅС‚РµРіСЂР°С†РёСЏ вЂ” С…РѕСЂРѕС€РёР№ РґРѕР»РіРѕСЃСЂРѕС‡РЅС‹Р№ СЃРёРіРЅР°Р».",
+        "hint_hack": "РќРµРіР°С‚РёРІ: РІР·Р»РѕРј/СѓСЏР·РІРёРјРѕСЃС‚СЊ. Р’РѕР·РјРѕР¶РЅР° РїСЂРѕСЃР°РґРєР° С†РµРЅС‹ Рё РїР°РґРµРЅРёРµ РґРѕРІРµСЂРёСЏ.",
+        "hint_reg": "Р РµРіСѓР»СЏС‚РѕСЂРЅС‹Р№ СЂРёСЃРє. Р’ РєСЂР°С‚РєРѕСЃСЂРѕРєРµ С‡Р°СЃС‚Рѕ РґР°РІРёС‚ С†РµРЅСѓ.",
+        "hint_funding": "РРЅРІРµСЃС‚РёС†РёРё/СЂР°СѓРЅРґ. РЈСЃРёР»РёРІР°РµС‚ СЂР°Р·РІРёС‚РёРµ РїСЂРѕРµРєС‚Р°, С‡Р°СЃС‚Рѕ РїРѕР·РёС‚РёРІ.",
+        "hint_upgrade": "РўРµС…РЅРёС‡РµСЃРєРѕРµ РѕР±РЅРѕРІР»РµРЅРёРµ. РЎРјРѕС‚СЂРё РЅР° РєР°С‡РµСЃС‚РІРѕ Рё СѓСЃРїРµС€РЅРѕСЃС‚СЊ СЂРµР»РёР·Р°.",
+        "quota_exceeded": "Р”РЅРµРІРЅРѕР№ Р»РёРјРёС‚ FREE РёСЃС‡РµСЂРїР°РЅ. PRO РґР°С‘С‚ Р±РµР·Р»РёРјРёС‚.",
+        "forbidden": "Р”РѕСЃС‚СѓРї Р·Р°РїСЂРµС‰С‘РЅ.",
+        "missing_input": "РџСѓСЃС‚РѕР№ input.",
+        "scan_failed": "РћС€РёР±РєР° СЃРєР°РЅРёСЂРѕРІР°РЅРёСЏ.",
+        "source_malicious": "РћРїР°СЃРЅРѕ",
+        "source_clean": "Р§РёСЃС‚Рѕ",
+        "source_no_data": "РќРµС‚ РґР°РЅРЅС‹С…",
+        "source_timeout": "РўР°Р№РјР°СѓС‚",
+        "source_invalid_key": "РќРµРІРµСЂРЅС‹Р№ РєР»СЋС‡ / РЅРµ РЅР°СЃС‚СЂРѕРµРЅРѕ",
+        "source_quota": "РљРІРѕС‚Р° РёСЃС‡РµСЂРїР°РЅР°",
+        "source_error": "РћС€РёР±РєР°",
+        "object_url": "РЎСЃС‹Р»РєР°",
+        "object_domain": "Р”РѕРјРµРЅ",
+        "object_wallet": "РљРѕС€РµР»С‘Рє",
+        "object_contract": "РљРѕРЅС‚СЂР°РєС‚",
+        "object_ticker": "РўРёРєРµСЂ",
+        "object_text": "РўРµРєСЃС‚",
     },
 }
 
 I18N["uk"] = {
-    "safe": "Безпечно",
-    "suspicious": "Підозріло",
-    "danger": "Небезпечно",
-    "critical": "Критично / Скам",
-    "unknown": "Невідомо",
-    "news_default_explain": "Новина про крипторинок. Оцінюй вплив за фактами: ліквідність, регуляторні ризики, інтеграції, реакція ціни/обсягу.",
-    "hint_listing": "Лістинг або допуск на біржу зазвичай підвищує увагу та ліквідність.",
-    "hint_partnership": "Партнерство або інтеграція зазвичай є позитивним довгостроковим сигналом.",
-    "hint_hack": "Негатив: злам, експлойт або витік. Часто спричиняє падіння ціни та довіри.",
-    "hint_reg": "Регуляторний ризик. У короткостроковій перспективі часто тисне на ціну.",
-    "hint_funding": "Інвестиції або раунд фінансування підтримують розвиток і часто дають позитивний сентимент.",
-    "hint_upgrade": "Технічне оновлення. Дивіться на якість виконання та прийняття користувачами.",
-    "quota_exceeded": "Денний ліміт FREE вичерпано. PRO дає безліміт.",
-    "forbidden": "Доступ заборонено.",
-    "missing_input": "Порожній input.",
-    "scan_failed": "Помилка сканування.",
-    "source_malicious": "Небезпечно",
-    "source_clean": "Чисто",
-    "source_no_data": "Немає даних",
-    "source_timeout": "Таймаут",
-    "source_invalid_key": "Ключ неправильний або не налаштований",
-    "source_quota": "Квоту вичерпано",
-    "source_error": "Помилка",
-    "object_url": "Посилання",
-    "object_domain": "Домен",
-    "object_wallet": "Гаманець",
-    "object_contract": "Контракт",
-    "object_ticker": "Тикер",
-    "object_text": "Текст",
+    "safe": "Р‘РµР·РїРµС‡РЅРѕ",
+    "suspicious": "РџС–РґРѕР·СЂС–Р»Рѕ",
+    "danger": "РќРµР±РµР·РїРµС‡РЅРѕ",
+    "critical": "РљСЂРёС‚РёС‡РЅРѕ / РЎРєР°Рј",
+    "unknown": "РќРµРІС–РґРѕРјРѕ",
+    "news_default_explain": "РќРѕРІРёРЅР° РїСЂРѕ РєСЂРёРїС‚РѕСЂРёРЅРѕРє. РћС†С–РЅСЋР№ РІРїР»РёРІ Р·Р° С„Р°РєС‚Р°РјРё: Р»С–РєРІС–РґРЅС–СЃС‚СЊ, СЂРµРіСѓР»СЏС‚РѕСЂРЅС– СЂРёР·РёРєРё, С–РЅС‚РµРіСЂР°С†С–С—, СЂРµР°РєС†С–СЏ С†С–РЅРё/РѕР±СЃСЏРіСѓ.",
+    "hint_listing": "Р›С–СЃС‚РёРЅРі Р°Р±Рѕ РґРѕРїСѓСЃРє РЅР° Р±С–СЂР¶Сѓ Р·Р°Р·РІРёС‡Р°Р№ РїС–РґРІРёС‰СѓС” СѓРІР°РіСѓ С‚Р° Р»С–РєРІС–РґРЅС–СЃС‚СЊ.",
+    "hint_partnership": "РџР°СЂС‚РЅРµСЂСЃС‚РІРѕ Р°Р±Рѕ С–РЅС‚РµРіСЂР°С†С–СЏ Р·Р°Р·РІРёС‡Р°Р№ С” РїРѕР·РёС‚РёРІРЅРёРј РґРѕРІРіРѕСЃС‚СЂРѕРєРѕРІРёРј СЃРёРіРЅР°Р»РѕРј.",
+    "hint_hack": "РќРµРіР°С‚РёРІ: Р·Р»Р°Рј, РµРєСЃРїР»РѕР№С‚ Р°Р±Рѕ РІРёС‚С–Рє. Р§Р°СЃС‚Рѕ СЃРїСЂРёС‡РёРЅСЏС” РїР°РґС–РЅРЅСЏ С†С–РЅРё С‚Р° РґРѕРІС–СЂРё.",
+    "hint_reg": "Р РµРіСѓР»СЏС‚РѕСЂРЅРёР№ СЂРёР·РёРє. РЈ РєРѕСЂРѕС‚РєРѕСЃС‚СЂРѕРєРѕРІС–Р№ РїРµСЂСЃРїРµРєС‚РёРІС– С‡Р°СЃС‚Рѕ С‚РёСЃРЅРµ РЅР° С†С–РЅСѓ.",
+    "hint_funding": "Р†РЅРІРµСЃС‚РёС†С–С— Р°Р±Рѕ СЂР°СѓРЅРґ С„С–РЅР°РЅСЃСѓРІР°РЅРЅСЏ РїС–РґС‚СЂРёРјСѓСЋС‚СЊ СЂРѕР·РІРёС‚РѕРє С– С‡Р°СЃС‚Рѕ РґР°СЋС‚СЊ РїРѕР·РёС‚РёРІРЅРёР№ СЃРµРЅС‚РёРјРµРЅС‚.",
+    "hint_upgrade": "РўРµС…РЅС–С‡РЅРµ РѕРЅРѕРІР»РµРЅРЅСЏ. Р”РёРІС–С‚СЊСЃСЏ РЅР° СЏРєС–СЃС‚СЊ РІРёРєРѕРЅР°РЅРЅСЏ С‚Р° РїСЂРёР№РЅСЏС‚С‚СЏ РєРѕСЂРёСЃС‚СѓРІР°С‡Р°РјРё.",
+    "quota_exceeded": "Р”РµРЅРЅРёР№ Р»С–РјС–С‚ FREE РІРёС‡РµСЂРїР°РЅРѕ. PRO РґР°С” Р±РµР·Р»С–РјС–С‚.",
+    "forbidden": "Р”РѕСЃС‚СѓРї Р·Р°Р±РѕСЂРѕРЅРµРЅРѕ.",
+    "missing_input": "РџРѕСЂРѕР¶РЅС–Р№ input.",
+    "scan_failed": "РџРѕРјРёР»РєР° СЃРєР°РЅСѓРІР°РЅРЅСЏ.",
+    "source_malicious": "РќРµР±РµР·РїРµС‡РЅРѕ",
+    "source_clean": "Р§РёСЃС‚Рѕ",
+    "source_no_data": "РќРµРјР°С” РґР°РЅРёС…",
+    "source_timeout": "РўР°Р№РјР°СѓС‚",
+    "source_invalid_key": "РљР»СЋС‡ РЅРµРїСЂР°РІРёР»СЊРЅРёР№ Р°Р±Рѕ РЅРµ РЅР°Р»Р°С€С‚РѕРІР°РЅРёР№",
+    "source_quota": "РљРІРѕС‚Сѓ РІРёС‡РµСЂРїР°РЅРѕ",
+    "source_error": "РџРѕРјРёР»РєР°",
+    "object_url": "РџРѕСЃРёР»Р°РЅРЅСЏ",
+    "object_domain": "Р”РѕРјРµРЅ",
+    "object_wallet": "Р“Р°РјР°РЅРµС†СЊ",
+    "object_contract": "РљРѕРЅС‚СЂР°РєС‚",
+    "object_ticker": "РўРёРєРµСЂ",
+    "object_text": "РўРµРєСЃС‚",
 }
 
 def tr(lang: str, key: str) -> str:
@@ -2881,7 +2441,7 @@ def _profile_build_stats(uid: Optional[str]) -> dict:
     rank = _profile_rank(trust_score)
     level = _profile_level(points)
 
-    top_symbol = "—"
+    top_symbol = "вЂ”"
     symbol_counts: dict[str, int] = {}
     for e in scans + explain_events + immunity_events:
         s = str(e["meta"].get("symbol") or "").strip().upper()
@@ -2972,21 +2532,21 @@ def _profile_build_achievements(uid: Optional[str]) -> list[dict]:
         )
 
     if trust["scamScans"] >= 1:
-        add("first_scan", "First Scan", "Первая проверка", "Completed the first ScamShield scan.", "Выполнена первая проверка ScamShield.")
+        add("first_scan", "First Scan", "РџРµСЂРІР°СЏ РїСЂРѕРІРµСЂРєР°", "Completed the first ScamShield scan.", "Р’С‹РїРѕР»РЅРµРЅР° РїРµСЂРІР°СЏ РїСЂРѕРІРµСЂРєР° ScamShield.")
     if trust["scamScans"] >= 10:
-        add("scanner_10", "Scanner", "Сканер", "Completed 10 ScamShield scans.", "Выполнено 10 проверок ScamShield.")
+        add("scanner_10", "Scanner", "РЎРєР°РЅРµСЂ", "Completed 10 ScamShield scans.", "Р’С‹РїРѕР»РЅРµРЅРѕ 10 РїСЂРѕРІРµСЂРѕРє ScamShield.")
     if trust["dangerResults"] >= 3:
-        add("hunter_3", "Scam Hunter", "Охотник на скам", "Detected 3 dangerous results.", "Обнаружено 3 опасных результата.")
+        add("hunter_3", "Scam Hunter", "РћС…РѕС‚РЅРёРє РЅР° СЃРєР°Рј", "Detected 3 dangerous results.", "РћР±РЅР°СЂСѓР¶РµРЅРѕ 3 РѕРїР°СЃРЅС‹С… СЂРµР·СѓР»СЊС‚Р°С‚Р°.")
     if trust["explainSessions"] >= 5:
-        add("analyst_5", "Analyst", "Аналитик", "Used News Explain 5 times.", "Функция Explain использована 5 раз.")
+        add("analyst_5", "Analyst", "РђРЅР°Р»РёС‚РёРє", "Used News Explain 5 times.", "Р¤СѓРЅРєС†РёСЏ Explain РёСЃРїРѕР»СЊР·РѕРІР°РЅР° 5 СЂР°Р·.")
     if trust["immunitySessions"] >= 5:
-        add("risk_engine_5", "Risk Engine", "Risk Engine", "Completed 5 setup analyses.", "Выполнено 5 анализов сетапов.")
+        add("risk_engine_5", "Risk Engine", "Risk Engine", "Completed 5 setup analyses.", "Р’С‹РїРѕР»РЅРµРЅРѕ 5 Р°РЅР°Р»РёР·РѕРІ СЃРµС‚Р°РїРѕРІ.")
     if trading["approvedSetups"] >= 3:
-        add("approved_3", "Setup Reader", "Читатель сетапов", "Received 3 approved setups.", "Получено 3 одобренных сетапа.")
+        add("approved_3", "Setup Reader", "Р§РёС‚Р°С‚РµР»СЊ СЃРµС‚Р°РїРѕРІ", "Received 3 approved setups.", "РџРѕР»СѓС‡РµРЅРѕ 3 РѕРґРѕР±СЂРµРЅРЅС‹С… СЃРµС‚Р°РїР°.")
     if activity["communityVotes"] >= 3:
-        add("community_3", "Community Voice", "Голос комьюнити", "Submitted 3 community votes.", "Отправлено 3 голоса комьюнити.")
+        add("community_3", "Community Voice", "Р“РѕР»РѕСЃ РєРѕРјСЊСЋРЅРёС‚Рё", "Submitted 3 community votes.", "РћС‚РїСЂР°РІР»РµРЅРѕ 3 РіРѕР»РѕСЃР° РєРѕРјСЊСЋРЅРёС‚Рё.")
     if identity["plan"] == "pro":
-        add("pro_user", "PRO User", "PRO-пользователь", "PRO access is active.", "PRO-доступ активен.")
+        add("pro_user", "PRO User", "PRO-РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ", "PRO access is active.", "PRO-РґРѕСЃС‚СѓРї Р°РєС‚РёРІРµРЅ.")
 
     return ach
 
@@ -3005,6 +2565,9 @@ def _profile_achievement_texts(achievements: list[dict], lang: str) -> list[dict
 # =========================================================
 # OBJECT DETECTION / NORMALIZATION
 # =========================================================
+# Register profile routes after profile helper functions are defined.
+app.include_router(create_profile_router(_profile_build_stats, _profile_build_achievements, _profile_achievement_texts))
+
 RE_URL = re.compile(r"^https?://", re.I)
 RE_DOMAIN = re.compile(r"^(?:[a-z0-9-]+\.)+[a-z]{2,63}(?:/.*)?$", re.I)
 
@@ -3472,7 +3035,7 @@ def _analyze_typed_signature_payload(payload: dict) -> dict:
         "normalized_level": normalized_level,
         "runtime_severity": runtime_severity,
         "verdict_en": "Typed signature risk" if level in {"danger", "critical"} else "Typed signature detected",
-        "verdict_ru": "Риск typed-подписи" if level in {"danger", "critical"} else "Typed-подпись обнаружена",
+        "verdict_ru": "Р РёСЃРє typed-РїРѕРґРїРёСЃРё" if level in {"danger", "critical"} else "Typed-РїРѕРґРїРёСЃСЊ РѕР±РЅР°СЂСѓР¶РµРЅР°",
         "verdict_localized": "Typed signature risk",
         "confirmed_red_flag": level in {"danger", "critical"},
         "typed_signature": {
@@ -3581,26 +3144,26 @@ def _attach_ux_risk_blocks(out: dict, lang: str) -> dict:
         worst = rb["worst"]
 
         if has("brand_spoofing", "brand_impersonation", "brand_plus_scam_keywords") and ("metamask" in host):
-            what = "Это похоже на фейковую страницу MetaMask. Она может увести тебя на поддельную поддержку, подключение кошелька или вредную подпись." if is_ru else "This looks like a fake MetaMask page. It may push you into fake support, wallet connection, or a malicious signature."
-            worst = "Худший сценарий: ты подключишь кошелёк или подпишешь действие, после чего злоумышленник сможет украсть активы." if is_ru else "Worst case: you connect your wallet or sign an action, allowing an attacker to steal assets."
+            what = "Р­С‚Рѕ РїРѕС…РѕР¶Рµ РЅР° С„РµР№РєРѕРІСѓСЋ СЃС‚СЂР°РЅРёС†Сѓ MetaMask. РћРЅР° РјРѕР¶РµС‚ СѓРІРµСЃС‚Рё С‚РµР±СЏ РЅР° РїРѕРґРґРµР»СЊРЅСѓСЋ РїРѕРґРґРµСЂР¶РєСѓ, РїРѕРґРєР»СЋС‡РµРЅРёРµ РєРѕС€РµР»СЊРєР° РёР»Рё РІСЂРµРґРЅСѓСЋ РїРѕРґРїРёСЃСЊ." if is_ru else "This looks like a fake MetaMask page. It may push you into fake support, wallet connection, or a malicious signature."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: С‚С‹ РїРѕРґРєР»СЋС‡РёС€СЊ РєРѕС€РµР»С‘Рє РёР»Рё РїРѕРґРїРёС€РµС€СЊ РґРµР№СЃС‚РІРёРµ, РїРѕСЃР»Рµ С‡РµРіРѕ Р·Р»РѕСѓРјС‹С€Р»РµРЅРЅРёРє СЃРјРѕР¶РµС‚ СѓРєСЂР°СЃС‚СЊ Р°РєС‚РёРІС‹." if is_ru else "Worst case: you connect your wallet or sign an action, allowing an attacker to steal assets."
         elif has("brand_spoofing", "brand_impersonation", "brand_plus_scam_keywords"):
-            what = "Домен похож на подделку известного бренда. Его цель может быть — заставить тебя довериться фейковой странице." if is_ru else "The domain looks like a trusted-brand impersonation. Its goal may be to make you trust a fake page."
-            worst = "Худший сценарий: ввод данных, подключение кошелька или подпись на такой странице приведёт к потере доступа или средств." if is_ru else "Worst case: entering data, connecting a wallet, or signing there can lead to lost access or funds."
+            what = "Р”РѕРјРµРЅ РїРѕС…РѕР¶ РЅР° РїРѕРґРґРµР»РєСѓ РёР·РІРµСЃС‚РЅРѕРіРѕ Р±СЂРµРЅРґР°. Р•РіРѕ С†РµР»СЊ РјРѕР¶РµС‚ Р±С‹С‚СЊ вЂ” Р·Р°СЃС‚Р°РІРёС‚СЊ С‚РµР±СЏ РґРѕРІРµСЂРёС‚СЊСЃСЏ С„РµР№РєРѕРІРѕР№ СЃС‚СЂР°РЅРёС†Рµ." if is_ru else "The domain looks like a trusted-brand impersonation. Its goal may be to make you trust a fake page."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РІРІРѕРґ РґР°РЅРЅС‹С…, РїРѕРґРєР»СЋС‡РµРЅРёРµ РєРѕС€РµР»СЊРєР° РёР»Рё РїРѕРґРїРёСЃСЊ РЅР° С‚Р°РєРѕР№ СЃС‚СЂР°РЅРёС†Рµ РїСЂРёРІРµРґС‘С‚ Рє РїРѕС‚РµСЂРµ РґРѕСЃС‚СѓРїР° РёР»Рё СЃСЂРµРґСЃС‚РІ." if is_ru else "Worst case: entering data, connecting a wallet, or signing there can lead to lost access or funds."
         elif has("gsb_match", "vt_detection"):
-            what = "Внешние security-источники уже отметили этот объект как угрозу. Это не просто подозрение, а подтверждённый красный флаг." if is_ru else "External security sources already flagged this as a threat. This is not just suspicion; it is a confirmed red flag."
-            worst = "Худший сценарий: сайт может использовать фишинг, вредный редирект или сценарий кражи доступа." if is_ru else "Worst case: the site may use phishing, malicious redirects, or an access-theft flow."
+            what = "Р’РЅРµС€РЅРёРµ security-РёСЃС‚РѕС‡РЅРёРєРё СѓР¶Рµ РѕС‚РјРµС‚РёР»Рё СЌС‚РѕС‚ РѕР±СЉРµРєС‚ РєР°Рє СѓРіСЂРѕР·Сѓ. Р­С‚Рѕ РЅРµ РїСЂРѕСЃС‚Рѕ РїРѕРґРѕР·СЂРµРЅРёРµ, Р° РїРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Р№ РєСЂР°СЃРЅС‹Р№ С„Р»Р°Рі." if is_ru else "External security sources already flagged this as a threat. This is not just suspicion; it is a confirmed red flag."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: СЃР°Р№С‚ РјРѕР¶РµС‚ РёСЃРїРѕР»СЊР·РѕРІР°С‚СЊ С„РёС€РёРЅРі, РІСЂРµРґРЅС‹Р№ СЂРµРґРёСЂРµРєС‚ РёР»Рё СЃС†РµРЅР°СЂРёР№ РєСЂР°Р¶Рё РґРѕСЃС‚СѓРїР°." if is_ru else "Worst case: the site may use phishing, malicious redirects, or an access-theft flow."
         elif has("seed_phrase_request", "private_key_request", "wallet_import_prompt"):
-            what = "Страница может пытаться получить seed phrase, private key или импорт кошелька. Нормальные сервисы этого не требуют." if is_ru else "The page may try to get a seed phrase, private key, or wallet import. Legitimate services do not need that."
-            worst = "Худший сценарий: после ввода seed/private key кошелёк полностью компрометирован." if is_ru else "Worst case: after entering a seed/private key, the wallet is fully compromised."
+            what = "РЎС‚СЂР°РЅРёС†Р° РјРѕР¶РµС‚ РїС‹С‚Р°С‚СЊСЃСЏ РїРѕР»СѓС‡РёС‚СЊ seed phrase, private key РёР»Рё РёРјРїРѕСЂС‚ РєРѕС€РµР»СЊРєР°. РќРѕСЂРјР°Р»СЊРЅС‹Рµ СЃРµСЂРІРёСЃС‹ СЌС‚РѕРіРѕ РЅРµ С‚СЂРµР±СѓСЋС‚." if is_ru else "The page may try to get a seed phrase, private key, or wallet import. Legitimate services do not need that."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РїРѕСЃР»Рµ РІРІРѕРґР° seed/private key РєРѕС€РµР»С‘Рє РїРѕР»РЅРѕСЃС‚СЊСЋ РєРѕРјРїСЂРѕРјРµС‚РёСЂРѕРІР°РЅ." if is_ru else "Worst case: after entering a seed/private key, the wallet is fully compromised."
         elif has("wallet_connect_prompt", "connect_wallet_prompt", "claim_prompt", "airdrop_language", "verify_wallet_prompt"):
-            what = "Страница подталкивает к подключению кошелька, claim/airdrop или verify wallet. Риск начинается не при открытии сайта, а при подписи." if is_ru else "The page pushes wallet connection, claim/airdrop, or wallet verification. The risk starts when you sign, not just when you open it."
-            worst = "Худший сценарий: следующая подпись может дать разрешение на списание токенов или запустить drainer-сценарий." if is_ru else "Worst case: the next signature may grant token spending permission or trigger a drainer flow."
+            what = "РЎС‚СЂР°РЅРёС†Р° РїРѕРґС‚Р°Р»РєРёРІР°РµС‚ Рє РїРѕРґРєР»СЋС‡РµРЅРёСЋ РєРѕС€РµР»СЊРєР°, claim/airdrop РёР»Рё verify wallet. Р РёСЃРє РЅР°С‡РёРЅР°РµС‚СЃСЏ РЅРµ РїСЂРё РѕС‚РєСЂС‹С‚РёРё СЃР°Р№С‚Р°, Р° РїСЂРё РїРѕРґРїРёСЃРё." if is_ru else "The page pushes wallet connection, claim/airdrop, or wallet verification. The risk starts when you sign, not just when you open it."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: СЃР»РµРґСѓСЋС‰Р°СЏ РїРѕРґРїРёСЃСЊ РјРѕР¶РµС‚ РґР°С‚СЊ СЂР°Р·СЂРµС€РµРЅРёРµ РЅР° СЃРїРёСЃР°РЅРёРµ С‚РѕРєРµРЅРѕРІ РёР»Рё Р·Р°РїСѓСЃС‚РёС‚СЊ drainer-СЃС†РµРЅР°СЂРёР№." if is_ru else "Worst case: the next signature may grant token spending permission or trigger a drainer flow."
         elif level == "safe":
-            what = "По этой ссылке не найдено явных scam-сигналов в доступных источниках." if is_ru else "No obvious scam signals were found for this link in available sources."
-            worst = "Риск остаётся только если позже сайт попросит seed phrase, private key, wallet approval или подозрительную подпись." if is_ru else "Remaining risk appears only if the site later asks for a seed phrase, private key, wallet approval, or suspicious signature."
+            what = "РџРѕ СЌС‚РѕР№ СЃСЃС‹Р»РєРµ РЅРµ РЅР°Р№РґРµРЅРѕ СЏРІРЅС‹С… scam-СЃРёРіРЅР°Р»РѕРІ РІ РґРѕСЃС‚СѓРїРЅС‹С… РёСЃС‚РѕС‡РЅРёРєР°С…." if is_ru else "No obvious scam signals were found for this link in available sources."
+            worst = "Р РёСЃРє РѕСЃС‚Р°С‘С‚СЃСЏ С‚РѕР»СЊРєРѕ РµСЃР»Рё РїРѕР·Р¶Рµ СЃР°Р№С‚ РїРѕРїСЂРѕСЃРёС‚ seed phrase, private key, wallet approval РёР»Рё РїРѕРґРѕР·СЂРёС‚РµР»СЊРЅСѓСЋ РїРѕРґРїРёСЃСЊ." if is_ru else "Remaining risk appears only if the site later asks for a seed phrase, private key, wallet approval, or suspicious signature."
         else:
-            what = "Есть риск-сигналы по ссылке, но их нужно оценивать вместе с источниками и evidence ниже." if is_ru else "There are risk signals for this link; review them together with the sources and evidence below."
-            worst = "Худший сценарий зависит от следующего действия: ввод данных, подключение кошелька или подпись." if is_ru else "Worst case depends on the next action: entering data, connecting a wallet, or signing."
+            what = "Р•СЃС‚СЊ СЂРёСЃРє-СЃРёРіРЅР°Р»С‹ РїРѕ СЃСЃС‹Р»РєРµ, РЅРѕ РёС… РЅСѓР¶РЅРѕ РѕС†РµРЅРёРІР°С‚СЊ РІРјРµСЃС‚Рµ СЃ РёСЃС‚РѕС‡РЅРёРєР°РјРё Рё evidence РЅРёР¶Рµ." if is_ru else "There are risk signals for this link; review them together with the sources and evidence below."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№ Р·Р°РІРёСЃРёС‚ РѕС‚ СЃР»РµРґСѓСЋС‰РµРіРѕ РґРµР№СЃС‚РІРёСЏ: РІРІРѕРґ РґР°РЅРЅС‹С…, РїРѕРґРєР»СЋС‡РµРЅРёРµ РєРѕС€РµР»СЊРєР° РёР»Рё РїРѕРґРїРёСЃСЊ." if is_ru else "Worst case depends on the next action: entering data, connecting a wallet, or signing."
 
     elif kind == "transaction":
         tx = (out.get("details") or {}).get("transaction") or {}
@@ -3611,89 +3174,89 @@ def _attach_ux_risk_blocks(out: dict, lang: str) -> dict:
         spender_label = str(perm.get("spender_label") or rep.get("label") or "").strip()
         spender_trust = str(perm.get("spender_trust") or rep.get("trust") or "").lower().strip()
         token_names = ", ".join([str(x) for x in (perm.get("tokens") or tx.get("tokens") or []) if x])
-        token_part_ru = token_names if token_names else "токены"
+        token_part_ru = token_names if token_names else "С‚РѕРєРµРЅС‹"
         token_part_en = token_names if token_names else "tokens"
         spender_part = spender_label or spender
 
         if tx.get("type") == "erc20_approve" and tx.get("unlimited"):
             if spender_trust == "trusted":
-                what = (f"Ты даёшь безлимитный доступ к {token_part_ru} доверенному spender: {spender_part}. Это нормально для DEX/Router, но всё равно даёт полный доступ к этим токенам."
+                what = (f"РўС‹ РґР°С‘С€СЊ Р±РµР·Р»РёРјРёС‚РЅС‹Р№ РґРѕСЃС‚СѓРї Рє {token_part_ru} РґРѕРІРµСЂРµРЅРЅРѕРјСѓ spender: {spender_part}. Р­С‚Рѕ РЅРѕСЂРјР°Р»СЊРЅРѕ РґР»СЏ DEX/Router, РЅРѕ РІСЃС‘ СЂР°РІРЅРѕ РґР°С‘С‚ РїРѕР»РЅС‹Р№ РґРѕСЃС‚СѓРї Рє СЌС‚РёРј С‚РѕРєРµРЅР°Рј."
                         if is_ru else
                         f"You are giving unlimited {token_part_en} access to a trusted spender: {spender_part}. This can be normal for a DEX/router, but it still gives full access to those tokens.")
-                worst = ("Худший сценарий: если ты ошибся сайтом или подпись пришла не от ожидаемого сервиса, разрешённые токены могут быть списаны без новой подписи."
+                worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РµСЃР»Рё С‚С‹ РѕС€РёР±СЃСЏ СЃР°Р№С‚РѕРј РёР»Рё РїРѕРґРїРёСЃСЊ РїСЂРёС€Р»Р° РЅРµ РѕС‚ РѕР¶РёРґР°РµРјРѕРіРѕ СЃРµСЂРІРёСЃР°, СЂР°Р·СЂРµС€С‘РЅРЅС‹Рµ С‚РѕРєРµРЅС‹ РјРѕРіСѓС‚ Р±С‹С‚СЊ СЃРїРёСЃР°РЅС‹ Р±РµР· РЅРѕРІРѕР№ РїРѕРґРїРёСЃРё."
                          if is_ru else
                          "Worst case: if you are on the wrong site or the signature is not from the expected service, approved tokens can be spent without another signature.")
             elif spender_trust == "unknown":
-                what = (f"Ты даёшь безлимитный доступ к {token_part_ru} неизвестному spender: {spender_part}. Это высокий риск."
+                what = (f"РўС‹ РґР°С‘С€СЊ Р±РµР·Р»РёРјРёС‚РЅС‹Р№ РґРѕСЃС‚СѓРї Рє {token_part_ru} РЅРµРёР·РІРµСЃС‚РЅРѕРјСѓ spender: {spender_part}. Р­С‚Рѕ РІС‹СЃРѕРєРёР№ СЂРёСЃРє."
                         if is_ru else
                         f"You are giving unlimited {token_part_en} access to an unknown spender: {spender_part}. This is high risk.")
-                worst = ("Худший сценарий: неизвестный spender сможет позже списать все разрешённые токены без новой подписи."
+                worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РЅРµРёР·РІРµСЃС‚РЅС‹Р№ spender СЃРјРѕР¶РµС‚ РїРѕР·Р¶Рµ СЃРїРёСЃР°С‚СЊ РІСЃРµ СЂР°Р·СЂРµС€С‘РЅРЅС‹Рµ С‚РѕРєРµРЅС‹ Р±РµР· РЅРѕРІРѕР№ РїРѕРґРїРёСЃРё."
                          if is_ru else
                          "Worst case: the unknown spender can later drain all approved tokens without another signature.")
             else:
-                what = (f"Эта подпись вызывает {method} и даёт spender {spender_part} разрешение списывать {token_part_ru} без лимита."
+                what = (f"Р­С‚Р° РїРѕРґРїРёСЃСЊ РІС‹Р·С‹РІР°РµС‚ {method} Рё РґР°С‘С‚ spender {spender_part} СЂР°Р·СЂРµС€РµРЅРёРµ СЃРїРёСЃС‹РІР°С‚СЊ {token_part_ru} Р±РµР· Р»РёРјРёС‚Р°."
                         if is_ru else
                         f"This signature calls {method} and gives spender {spender_part} unlimited {token_part_en} spending permission.")
-                worst = ("Худший сценарий: если spender вредный, он сможет позже списать все разрешённые токены без новой подписи."
+                worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РµСЃР»Рё spender РІСЂРµРґРЅС‹Р№, РѕРЅ СЃРјРѕР¶РµС‚ РїРѕР·Р¶Рµ СЃРїРёСЃР°С‚СЊ РІСЃРµ СЂР°Р·СЂРµС€С‘РЅРЅС‹Рµ С‚РѕРєРµРЅС‹ Р±РµР· РЅРѕРІРѕР№ РїРѕРґРїРёСЃРё."
                          if is_ru else
                          "Worst case: if the spender is malicious, it can later drain all approved tokens without another signature.")
         elif tx.get("type") == "erc20_approve":
             amount = str(tx.get("amount_raw") or "unknown")
-            what = (f"Эта подпись вызывает {method} и разрешает spender {spender} списать сумму: {amount}."
+            what = (f"Р­С‚Р° РїРѕРґРїРёСЃСЊ РІС‹Р·С‹РІР°РµС‚ {method} Рё СЂР°Р·СЂРµС€Р°РµС‚ spender {spender} СЃРїРёСЃР°С‚СЊ СЃСѓРјРјСѓ: {amount}."
                     if is_ru else
                     f"This signature calls {method} and allows spender {spender} to spend amount: {amount}.")
-            worst = ("Худший сценарий: разрешённая сумма может быть списана spender-адресом."
+            worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: СЂР°Р·СЂРµС€С‘РЅРЅР°СЏ СЃСѓРјРјР° РјРѕР¶РµС‚ Р±С‹С‚СЊ СЃРїРёСЃР°РЅР° spender-Р°РґСЂРµСЃРѕРј."
                      if is_ru else
                      "Worst case: the approved amount can be spent by the spender address.")
         elif tx.get("type") == "erc20_transfer_from":
-            what = ("Это transferFrom: транзакция пытается переместить токены от одного адреса к другому."
+            what = ("Р­С‚Рѕ transferFrom: С‚СЂР°РЅР·Р°РєС†РёСЏ РїС‹С‚Р°РµС‚СЃСЏ РїРµСЂРµРјРµСЃС‚РёС‚СЊ С‚РѕРєРµРЅС‹ РѕС‚ РѕРґРЅРѕРіРѕ Р°РґСЂРµСЃР° Рє РґСЂСѓРіРѕРјСѓ."
                     if is_ru else
                     "This is transferFrom: the transaction attempts to move tokens from one address to another.")
-            worst = ("Худший сценарий: если действие неожиданное, токены могут быть переведены без понимания пользователем."
+            worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РµСЃР»Рё РґРµР№СЃС‚РІРёРµ РЅРµРѕР¶РёРґР°РЅРЅРѕРµ, С‚РѕРєРµРЅС‹ РјРѕРіСѓС‚ Р±С‹С‚СЊ РїРµСЂРµРІРµРґРµРЅС‹ Р±РµР· РїРѕРЅРёРјР°РЅРёСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»РµРј."
                      if is_ru else
                      "Worst case: if unexpected, tokens may be moved without the user understanding the action.")
         elif tx.get("type") == "erc20_transfer":
-            what = ("Это обычный transfer токенов на другой адрес."
+            what = ("Р­С‚Рѕ РѕР±С‹С‡РЅС‹Р№ transfer С‚РѕРєРµРЅРѕРІ РЅР° РґСЂСѓРіРѕР№ Р°РґСЂРµСЃ."
                     if is_ru else
                     "This is a regular token transfer to another address.")
-            worst = ("Худший сценарий: средства уйдут на указанный адрес, если ты подтверждаешь не тот получатель."
+            worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: СЃСЂРµРґСЃС‚РІР° СѓР№РґСѓС‚ РЅР° СѓРєР°Р·Р°РЅРЅС‹Р№ Р°РґСЂРµСЃ, РµСЃР»Рё С‚С‹ РїРѕРґС‚РІРµСЂР¶РґР°РµС€СЊ РЅРµ С‚РѕС‚ РїРѕР»СѓС‡Р°С‚РµР»СЊ."
                      if is_ru else
                      "Worst case: funds go to the specified address if you confirm the wrong recipient.")
         else:
-            what = ("Обнаружены данные EVM-транзакции, но метод пока не распознан."
+            what = ("РћР±РЅР°СЂСѓР¶РµРЅС‹ РґР°РЅРЅС‹Рµ EVM-С‚СЂР°РЅР·Р°РєС†РёРё, РЅРѕ РјРµС‚РѕРґ РїРѕРєР° РЅРµ СЂР°СЃРїРѕР·РЅР°РЅ."
                     if is_ru else
                     "EVM transaction data was detected, but the method is not recognized yet.")
-            worst = ("Худший сценарий зависит от метода транзакции и адреса получателя."
+            worst = ("РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№ Р·Р°РІРёСЃРёС‚ РѕС‚ РјРµС‚РѕРґР° С‚СЂР°РЅР·Р°РєС†РёРё Рё Р°РґСЂРµСЃР° РїРѕР»СѓС‡Р°С‚РµР»СЏ."
                      if is_ru else
                      "Worst case depends on the transaction method and recipient address.")
 
     elif kind in {"wallet", "contract"}:
         if has("honeypot_detected"):
-            what = "Контракт показывает honeypot-риск: купить может быть легче, чем продать или вывести позицию." if is_ru else "The contract shows honeypot risk: buying may be easier than selling or exiting the position."
-            worst = "Худший сценарий: токены невозможно продать, а вложенные средства застрянут." if is_ru else "Worst case: the tokens cannot be sold and funds get trapped."
+            what = "РљРѕРЅС‚СЂР°РєС‚ РїРѕРєР°Р·С‹РІР°РµС‚ honeypot-СЂРёСЃРє: РєСѓРїРёС‚СЊ РјРѕР¶РµС‚ Р±С‹С‚СЊ Р»РµРіС‡Рµ, С‡РµРј РїСЂРѕРґР°С‚СЊ РёР»Рё РІС‹РІРµСЃС‚Рё РїРѕР·РёС†РёСЋ." if is_ru else "The contract shows honeypot risk: buying may be easier than selling or exiting the position."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: С‚РѕРєРµРЅС‹ РЅРµРІРѕР·РјРѕР¶РЅРѕ РїСЂРѕРґР°С‚СЊ, Р° РІР»РѕР¶РµРЅРЅС‹Рµ СЃСЂРµРґСЃС‚РІР° Р·Р°СЃС‚СЂСЏРЅСѓС‚." if is_ru else "Worst case: the tokens cannot be sold and funds get trapped."
         elif has("token_approval", "wallet_drainer_hint"):
-            what = "Контракт/адрес связан с рискованным approval или drainer-паттерном." if is_ru else "The contract/address is linked to risky approval or drainer-like patterns."
-            worst = "Худший сценарий: approval даст доступ к токенам, и они могут быть списаны." if is_ru else "Worst case: an approval gives token access and funds can be drained."
+            what = "РљРѕРЅС‚СЂР°РєС‚/Р°РґСЂРµСЃ СЃРІСЏР·Р°РЅ СЃ СЂРёСЃРєРѕРІР°РЅРЅС‹Рј approval РёР»Рё drainer-РїР°С‚С‚РµСЂРЅРѕРј." if is_ru else "The contract/address is linked to risky approval or drainer-like patterns."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: approval РґР°СЃС‚ РґРѕСЃС‚СѓРї Рє С‚РѕРєРµРЅР°Рј, Рё РѕРЅРё РјРѕРіСѓС‚ Р±С‹С‚СЊ СЃРїРёСЃР°РЅС‹." if is_ru else "Worst case: an approval gives token access and funds can be drained."
         elif has("unverified_address", "unverified_or_wallet"):
-            what = "Explorer не подтвердил контракт достаточно надёжно. Это не доказательство скама, но снижает доверие." if is_ru else "Explorers did not confirm the contract strongly enough. This is not proof of scam, but lowers trust."
-            worst = "Худший сценарий: скрытая логика контракта проявится только после покупки, перевода или approval." if is_ru else "Worst case: hidden contract logic appears only after buying, transferring, or approving."
+            what = "Explorer РЅРµ РїРѕРґС‚РІРµСЂРґРёР» РєРѕРЅС‚СЂР°РєС‚ РґРѕСЃС‚Р°С‚РѕС‡РЅРѕ РЅР°РґС‘Р¶РЅРѕ. Р­С‚Рѕ РЅРµ РґРѕРєР°Р·Р°С‚РµР»СЊСЃС‚РІРѕ СЃРєР°РјР°, РЅРѕ СЃРЅРёР¶Р°РµС‚ РґРѕРІРµСЂРёРµ." if is_ru else "Explorers did not confirm the contract strongly enough. This is not proof of scam, but lowers trust."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: СЃРєСЂС‹С‚Р°СЏ Р»РѕРіРёРєР° РєРѕРЅС‚СЂР°РєС‚Р° РїСЂРѕСЏРІРёС‚СЃСЏ С‚РѕР»СЊРєРѕ РїРѕСЃР»Рµ РїРѕРєСѓРїРєРё, РїРµСЂРµРІРѕРґР° РёР»Рё approval." if is_ru else "Worst case: hidden contract logic appears only after buying, transferring, or approving."
         elif level == "safe":
-            what = "По этому контракту/адресу не найдено явных honeypot, malicious или scam-флагов в доступных источниках." if is_ru else "No obvious honeypot, malicious, or scam flags were found for this contract/address in available sources."
-            worst = "Это не означает, что любая будущая подпись безопасна. Approval/permit нужно проверять отдельно по данным транзакции." if is_ru else "This does not mean every future signature is safe. Approval/permit must be checked separately from transaction data."
+            what = "РџРѕ СЌС‚РѕРјСѓ РєРѕРЅС‚СЂР°РєС‚Сѓ/Р°РґСЂРµСЃСѓ РЅРµ РЅР°Р№РґРµРЅРѕ СЏРІРЅС‹С… honeypot, malicious РёР»Рё scam-С„Р»Р°РіРѕРІ РІ РґРѕСЃС‚СѓРїРЅС‹С… РёСЃС‚РѕС‡РЅРёРєР°С…." if is_ru else "No obvious honeypot, malicious, or scam flags were found for this contract/address in available sources."
+            worst = "Р­С‚Рѕ РЅРµ РѕР·РЅР°С‡Р°РµС‚, С‡С‚Рѕ Р»СЋР±Р°СЏ Р±СѓРґСѓС‰Р°СЏ РїРѕРґРїРёСЃСЊ Р±РµР·РѕРїР°СЃРЅР°. Approval/permit РЅСѓР¶РЅРѕ РїСЂРѕРІРµСЂСЏС‚СЊ РѕС‚РґРµР»СЊРЅРѕ РїРѕ РґР°РЅРЅС‹Рј С‚СЂР°РЅР·Р°РєС†РёРё." if is_ru else "This does not mean every future signature is safe. Approval/permit must be checked separately from transaction data."
         else:
-            what = "У контракта/адреса есть ончейн-риск-сигналы. Смотри evidence и источники ниже." if is_ru else "The contract/address has on-chain risk signals. Review evidence and sources below."
-            worst = "Худший сценарий: потеря токенов через approval, honeypot-логику или вредную подпись." if is_ru else "Worst case: token loss through approval, honeypot logic, or a malicious signature."
+            what = "РЈ РєРѕРЅС‚СЂР°РєС‚Р°/Р°РґСЂРµСЃР° РµСЃС‚СЊ РѕРЅС‡РµР№РЅ-СЂРёСЃРє-СЃРёРіРЅР°Р»С‹. РЎРјРѕС‚СЂРё evidence Рё РёСЃС‚РѕС‡РЅРёРєРё РЅРёР¶Рµ." if is_ru else "The contract/address has on-chain risk signals. Review evidence and sources below."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РїРѕС‚РµСЂСЏ С‚РѕРєРµРЅРѕРІ С‡РµСЂРµР· approval, honeypot-Р»РѕРіРёРєСѓ РёР»Рё РІСЂРµРґРЅСѓСЋ РїРѕРґРїРёСЃСЊ." if is_ru else "Worst case: token loss through approval, honeypot logic, or a malicious signature."
 
     else:
         if has("seed_phrase_request", "private_key_request", "wallet_drainer_hint"):
-            what = "Текст содержит признаки прямой попытки украсть доступ к кошельку." if is_ru else "The text contains signs of a direct attempt to steal wallet access."
-            worst = "Худший сценарий: пользователь вводит seed/private key и полностью теряет кошелёк." if is_ru else "Worst case: the user enters a seed/private key and fully loses the wallet."
+            what = "РўРµРєСЃС‚ СЃРѕРґРµСЂР¶РёС‚ РїСЂРёР·РЅР°РєРё РїСЂСЏРјРѕР№ РїРѕРїС‹С‚РєРё СѓРєСЂР°СЃС‚СЊ РґРѕСЃС‚СѓРї Рє РєРѕС€РµР»СЊРєСѓ." if is_ru else "The text contains signs of a direct attempt to steal wallet access."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІРІРѕРґРёС‚ seed/private key Рё РїРѕР»РЅРѕСЃС‚СЊСЋ С‚РµСЂСЏРµС‚ РєРѕС€РµР»С‘Рє." if is_ru else "Worst case: the user enters a seed/private key and fully loses the wallet."
         elif level == "safe":
-            what = "В этом объекте не найдено явных критических scam-сигналов." if is_ru else "No obvious critical scam signals were found in this object."
-            worst = "Главный риск появится только если дальше будет подпись, approval или запрос секретных данных." if is_ru else "The main risk appears only if a signature, approval, or secret-data request follows."
+            what = "Р’ СЌС‚РѕРј РѕР±СЉРµРєС‚Рµ РЅРµ РЅР°Р№РґРµРЅРѕ СЏРІРЅС‹С… РєСЂРёС‚РёС‡РµСЃРєРёС… scam-СЃРёРіРЅР°Р»РѕРІ." if is_ru else "No obvious critical scam signals were found in this object."
+            worst = "Р“Р»Р°РІРЅС‹Р№ СЂРёСЃРє РїРѕСЏРІРёС‚СЃСЏ С‚РѕР»СЊРєРѕ РµСЃР»Рё РґР°Р»СЊС€Рµ Р±СѓРґРµС‚ РїРѕРґРїРёСЃСЊ, approval РёР»Рё Р·Р°РїСЂРѕСЃ СЃРµРєСЂРµС‚РЅС‹С… РґР°РЅРЅС‹С…." if is_ru else "The main risk appears only if a signature, approval, or secret-data request follows."
         else:
-            what = "Обнаружены риск-сигналы в тексте или объекте проверки." if is_ru else "Risk signals were detected in the text or scanned object."
-            worst = "Худший сценарий: пользователь выполняет действие, которое раскрывает доступ или активы." if is_ru else "Worst case: the user performs an action that exposes access or assets."
+            what = "РћР±РЅР°СЂСѓР¶РµРЅС‹ СЂРёСЃРє-СЃРёРіРЅР°Р»С‹ РІ С‚РµРєСЃС‚Рµ РёР»Рё РѕР±СЉРµРєС‚Рµ РїСЂРѕРІРµСЂРєРё." if is_ru else "Risk signals were detected in the text or scanned object."
+            worst = "РҐСѓРґС€РёР№ СЃС†РµРЅР°СЂРёР№: РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ РІС‹РїРѕР»РЅСЏРµС‚ РґРµР№СЃС‚РІРёРµ, РєРѕС‚РѕСЂРѕРµ СЂР°СЃРєСЂС‹РІР°РµС‚ РґРѕСЃС‚СѓРї РёР»Рё Р°РєС‚РёРІС‹." if is_ru else "Worst case: the user performs an action that exposes access or assets."
 
     out["what_can_happen"] = what_override or what
     out["worst_case"] = worst
@@ -3707,8 +3270,8 @@ def _attach_ux_risk_blocks(out: dict, lang: str) -> dict:
         "spend_limit": None,
         "revoke_difficulty": "unknown",
         "summary": "" if level == "safe" else (
-            "Точные разрешения видны только из транзакции/подписи." if is_ru else
-            "Точні дозволи видно лише з транзакції/підпису." if is_uk else
+            "РўРѕС‡РЅС‹Рµ СЂР°Р·СЂРµС€РµРЅРёСЏ РІРёРґРЅС‹ С‚РѕР»СЊРєРѕ РёР· С‚СЂР°РЅР·Р°РєС†РёРё/РїРѕРґРїРёСЃРё." if is_ru else
+            "РўРѕС‡РЅС– РґРѕР·РІРѕР»Рё РІРёРґРЅРѕ Р»РёС€Рµ Р· С‚СЂР°РЅР·Р°РєС†С–С—/РїС–РґРїРёСЃСѓ." if is_uk else
             "Exact permissions are visible only from transaction/signature data."
         ),
     }
@@ -3775,8 +3338,8 @@ SCAM_PATTERNS = [
     (re.compile(r"\bsend.{0,30}(receive|get back).{0,20}(btc|eth|usdt|bnb|sol)\b", re.I), "send_receive_scam", 45),
     (re.compile(r"\b(elon|musk|vitalik|binance|coinbase).{0,30}giveaway\b", re.I), "celebrity_giveaway_scam", 50),
     (re.compile(r"\bbonus after (transfer|deposit|send)\b", re.I), "bonus_after_transfer", 40),
-    (re.compile(r"\b(мнемоник|сид.?фраз|приватн.{0,5}ключ|секретн.{0,5}фраз)\b", re.I), "ru_seed_request", 40),
-    (re.compile(r"\b(отправ|пришли).{0,20}(btc|eth|usdt).{0,30}(получ|назад|обратно)\b", re.I), "ru_btc_giveaway", 45),
+    (re.compile(r"\b(РјРЅРµРјРѕРЅРёРє|СЃРёРґ.?С„СЂР°Р·|РїСЂРёРІР°С‚РЅ.{0,5}РєР»СЋС‡|СЃРµРєСЂРµС‚РЅ.{0,5}С„СЂР°Р·)\b", re.I), "ru_seed_request", 40),
+    (re.compile(r"\b(РѕС‚РїСЂР°РІ|РїСЂРёС€Р»Рё).{0,20}(btc|eth|usdt).{0,30}(РїРѕР»СѓС‡|РЅР°Р·Р°Рґ|РѕР±СЂР°С‚РЅРѕ)\b", re.I), "ru_btc_giveaway", 45),
 ]
 
 BRAND_SPOOF_HINTS = [
@@ -4706,7 +4269,7 @@ def _apply_false_positive_safety_gate_to_url_score(score_info: dict, evidence_tr
         out["level"] = "suspicious"
         out["normalized_level"] = "medium"
         out["verdict_en"] = "Suspicious"
-        out["verdict_ru"] = "Подозрительно"
+        out["verdict_ru"] = "РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅРѕ"
         out["confirmed_red_flag"] = False
         out["internal_red_flag"] = False
         out["malicious_sources"] = []
@@ -5353,7 +4916,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
                 "normalized_level": level,
                 "verdict": level,
                 "verdict_en": "Safe" if level == "safe" else "Suspicious" if level == "suspicious" else "Danger" if level == "danger" else "Critical / Scam" if level == "critical" else level.title(),
-                "verdict_ru": "Безопасно" if level == "safe" else "Подозрительно" if level == "suspicious" else "Опасно" if level == "danger" else "Критично / Скам" if level == "critical" else level,
+                "verdict_ru": "Р‘РµР·РѕРїР°СЃРЅРѕ" if level == "safe" else "РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅРѕ" if level == "suspicious" else "РћРїР°СЃРЅРѕ" if level == "danger" else "РљСЂРёС‚РёС‡РЅРѕ / РЎРєР°Рј" if level == "critical" else level,
                 "verdict_localized": level,
                 "confirmed_red_flag": level in {"danger", "critical", "high", "malicious"},
                 "malicious_sources": verdict.get("malicious_sources") or [],
@@ -6333,7 +5896,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         score_info["score"] = 0
         score_info["level"] = "safe"
         score_info["verdict_en"] = "Safe"
-        score_info["verdict_ru"] = "Безопасно"
+        score_info["verdict_ru"] = "Р‘РµР·РѕРїР°СЃРЅРѕ"
 
     evidence_all = []
     evidence_all.extend([{"source": "heuristic", **x} for x in heuristics])
@@ -6459,13 +6022,13 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             "ok": True, "input": target, "normalized_input": target,
             "kind": "wallet", "kind_localized": _localized_object_kind("wallet", lang),
             "score": 0, "level": "safe",
-            "verdict_en": "This is a known safe address.", "verdict_ru": "Это известный безопасный адрес.",
+            "verdict_en": "This is a known safe address.", "verdict_ru": "Р­С‚Рѕ РёР·РІРµСЃС‚РЅС‹Р№ Р±РµР·РѕРїР°СЃРЅС‹Р№ Р°РґСЂРµСЃ.",
             "verdict_localized": "This is a known safe address.",
             "confirmed_red_flag": False, "malicious_sources": 0,
             "sources": [_mk_source("allowlist", "clean", verdict="clean", details={"label": label})],
             "heuristics": [], "evidence": [], "community": _community_snapshot(target, "wallet"),
             "details": {"label": label}, "lang": lang, "cached": False,
-            "what_can_happen": f"This address is recognized as {label.replace('_',' ')} — a known safe address.",
+            "what_can_happen": f"This address is recognized as {label.replace('_',' ')} вЂ” a known safe address.",
             "worst_case": "No risk detected.",
         }
 
@@ -6508,7 +6071,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
                 "normalized_level": level,
                 "verdict": level,
                 "verdict_en": "Safe" if level == "safe" else "Suspicious" if level == "suspicious" else "Danger" if level == "danger" else "Critical / Scam" if level == "critical" else level.title(),
-                "verdict_ru": "Безопасно" if level == "safe" else "Подозрительно" if level == "suspicious" else "Опасно" if level == "danger" else "Критично / Скам" if level == "critical" else level,
+                "verdict_ru": "Р‘РµР·РѕРїР°СЃРЅРѕ" if level == "safe" else "РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅРѕ" if level == "suspicious" else "РћРїР°СЃРЅРѕ" if level == "danger" else "РљСЂРёС‚РёС‡РЅРѕ / РЎРєР°Рј" if level == "critical" else level,
                 "verdict_localized": level,
                 "confirmed_red_flag": level in {"danger", "critical", "high", "malicious"},
                 "malicious_sources": verdict.get("malicious_sources") or [],
@@ -6641,7 +6204,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             }
         )
 
-    
+
     contract_identity = None
     if is_evm and kind == "contract":
         try:
@@ -6663,7 +6226,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
                     "evidence": [{
                         "code": "contract_identity",
                         "severity": 0 if trust == "trusted" else (90 if trust == "malicious" else 15),
-                        "text": "Noytrix identity: %s · %s." % (contract_identity.get("label") or "Unknown contract", trust or "unknown")
+                        "text": "Noytrix identity: %s В· %s." % (contract_identity.get("label") or "Unknown contract", trust or "unknown")
                     }],
                 })
                 if trust == "malicious":
@@ -6702,7 +6265,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
                 score_info["level"] = "suspicious"
                 score_info["score"] = max(int(score_info.get("score") or 0), 30)
                 score_info["verdict_en"] = "Suspicious"
-                score_info["verdict_ru"] = "Подозрительно"
+                score_info["verdict_ru"] = "РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅРѕ"
 
     evidence_all = []
     evidence_all.extend([{"source": "heuristic", **x} for x in heuristics])
@@ -6755,20 +6318,20 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             "revoke_difficulty": "medium" if kind == "contract" else "unknown",
             "summary": (
                 (
-                    "Точные разрешения этого контракта видны только при конкретной транзакции или подписи." if lang == "ru"
-                    else "Точні дозволи цього контракту видно лише під час конкретної транзакції або підпису." if is_uk
+                    "РўРѕС‡РЅС‹Рµ СЂР°Р·СЂРµС€РµРЅРёСЏ СЌС‚РѕРіРѕ РєРѕРЅС‚СЂР°РєС‚Р° РІРёРґРЅС‹ С‚РѕР»СЊРєРѕ РїСЂРё РєРѕРЅРєСЂРµС‚РЅРѕР№ С‚СЂР°РЅР·Р°РєС†РёРё РёР»Рё РїРѕРґРїРёСЃРё." if lang == "ru"
+                    else "РўРѕС‡РЅС– РґРѕР·РІРѕР»Рё С†СЊРѕРіРѕ РєРѕРЅС‚СЂР°РєС‚Сѓ РІРёРґРЅРѕ Р»РёС€Рµ РїС–Рґ С‡Р°СЃ РєРѕРЅРєСЂРµС‚РЅРѕС— С‚СЂР°РЅР·Р°РєС†С–С— Р°Р±Рѕ РїС–РґРїРёСЃСѓ." if is_uk
                     else "Exact permissions for this contract are visible only from a specific transaction or signature."
                 )
                 if kind == "contract"
                 else (
-                    "По одному адресу разрешение на списание токенов не обнаружено." if lang == "ru"
-                    else "За однією адресою дозвіл на списання токенів не виявлено." if is_uk
+                    "РџРѕ РѕРґРЅРѕРјСѓ Р°РґСЂРµСЃСѓ СЂР°Р·СЂРµС€РµРЅРёРµ РЅР° СЃРїРёСЃР°РЅРёРµ С‚РѕРєРµРЅРѕРІ РЅРµ РѕР±РЅР°СЂСѓР¶РµРЅРѕ." if lang == "ru"
+                    else "Р—Р° РѕРґРЅС–С”СЋ Р°РґСЂРµСЃРѕСЋ РґРѕР·РІС–Р» РЅР° СЃРїРёСЃР°РЅРЅСЏ С‚РѕРєРµРЅС–РІ РЅРµ РІРёСЏРІР»РµРЅРѕ." if is_uk
                     else "No token spending permission detected from address scan alone."
                 )
             ),
             "note": (
-                "Точный approval можно определить только из данных транзакции/подписи." if lang == "ru"
-                else "Точний approval можна визначити лише з даних транзакції/підпису." if is_uk
+                "РўРѕС‡РЅС‹Р№ approval РјРѕР¶РЅРѕ РѕРїСЂРµРґРµР»РёС‚СЊ С‚РѕР»СЊРєРѕ РёР· РґР°РЅРЅС‹С… С‚СЂР°РЅР·Р°РєС†РёРё/РїРѕРґРїРёСЃРё." if lang == "ru"
+                else "РўРѕС‡РЅРёР№ approval РјРѕР¶РЅР° РІРёР·РЅР°С‡РёС‚Рё Р»РёС€Рµ Р· РґР°РЅРёС… С‚СЂР°РЅР·Р°РєС†С–С—/РїС–РґРїРёСЃСѓ." if is_uk
                 else "Contract scan only. Exact wallet permission requires transaction/signature data."
             )
         },
@@ -7088,11 +6651,11 @@ async def scan_core(target: str, lang: str, user_id: Optional[str], is_pro_user:
 
         if tx_decoded.get("unlimited"):
             if trust == "trusted":
-                what_override = "Ты даёшь безлимитный доступ доверенному контракту (DEX/Router). Это нормально для свопов, но даёт полный контроль над токенами."
+                what_override = "РўС‹ РґР°С‘С€СЊ Р±РµР·Р»РёРјРёС‚РЅС‹Р№ РґРѕСЃС‚СѓРї РґРѕРІРµСЂРµРЅРЅРѕРјСѓ РєРѕРЅС‚СЂР°РєС‚Сѓ (DEX/Router). Р­С‚Рѕ РЅРѕСЂРјР°Р»СЊРЅРѕ РґР»СЏ СЃРІРѕРїРѕРІ, РЅРѕ РґР°С‘С‚ РїРѕР»РЅС‹Р№ РєРѕРЅС‚СЂРѕР»СЊ РЅР°Рґ С‚РѕРєРµРЅР°РјРё."
             elif trust == "unknown":
-                what_override = "Ты даёшь безлимитный доступ НЕИЗВЕСТНОМУ контракту. Это высокий риск потери средств."
+                what_override = "РўС‹ РґР°С‘С€СЊ Р±РµР·Р»РёРјРёС‚РЅС‹Р№ РґРѕСЃС‚СѓРї РќР•РР—Р’Р•РЎРўРќРћРњРЈ РєРѕРЅС‚СЂР°РєС‚Сѓ. Р­С‚Рѕ РІС‹СЃРѕРєРёР№ СЂРёСЃРє РїРѕС‚РµСЂРё СЃСЂРµРґСЃС‚РІ."
             else:
-                what_override = "Ты даёшь безлимитный доступ контракту. Проверь его перед подтверждением."
+                what_override = "РўС‹ РґР°С‘С€СЊ Р±РµР·Р»РёРјРёС‚РЅС‹Р№ РґРѕСЃС‚СѓРї РєРѕРЅС‚СЂР°РєС‚Сѓ. РџСЂРѕРІРµСЂСЊ РµРіРѕ РїРµСЂРµРґ РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµРј."
         else:
             what_override = None
 
@@ -7109,7 +6672,7 @@ async def scan_core(target: str, lang: str, user_id: Optional[str], is_pro_user:
             "input": target,
             "normalized_input": target,
             "kind": "transaction",
-            "kind_localized": "Транзакция" if lang == "ru" else "Transaction",
+            "kind_localized": "РўСЂР°РЅР·Р°РєС†РёСЏ" if lang == "ru" else "Transaction",
             **approve_fields,
             "malicious_sources": [],
             "scoring": {
@@ -8701,7 +8264,7 @@ def immunity_get(
     elif v == "mixed":
         data["community_verdict_text"] = tr(L, "suspicious")
     else:
-        data["community_verdict_text"] = "—"
+        data["community_verdict_text"] = "вЂ”"
 
     data["lang"] = L
     return data
@@ -8768,19 +8331,19 @@ def _imm_pick_lang(request: Request) -> str:
 
 IMMUNITY_I18N = {
     "en": {
-        "verdict": {"critical": "❌ REJECTED", "high": "⚠️ HIGH RISK", "medium": "🟡 RISKY", "low": "✅ OK"},
+        "verdict": {"critical": "вќЊ REJECTED", "high": "вљ пёЏ HIGH RISK", "medium": "рџџЎ RISKY", "low": "вњ… OK"},
         "reasons": {
-            "FOMO_AFTER_PUMP": "Price is up {change24h}% in 24h — common FOMO trap.",
+            "FOMO_AFTER_PUMP": "Price is up {change24h}% in 24h вЂ” common FOMO trap.",
             "TARGET_TOO_HIGH": "Target {target}% looks aggressive for horizon ({horizon}).",
             "DRAWDOWN_MISMATCH": "Volatility (~{vol}%) exceeds your max drawdown ({dd}).",
-            "WIDE_SPREAD": "Spread is wide (~{spread_bps} bps) — execution risk.",
-            "OVERTRADING_SIGNAL": "Many analyses today ({count}) — risk of impulsive actions.",
-            "NARRATIVE_PRESSURE": "Your reason is hype/pressure — manipulation risk increases.",
+            "WIDE_SPREAD": "Spread is wide (~{spread_bps} bps) вЂ” execution risk.",
+            "OVERTRADING_SIGNAL": "Many analyses today ({count}) вЂ” risk of impulsive actions.",
+            "NARRATIVE_PRESSURE": "Your reason is hype/pressure вЂ” manipulation risk increases.",
             "ADD_WHILE_HOT": "Adding while already holding on short horizon can amplify mistakes.",
-            "BIG_TICKET": "Large ticket size — consider splitting entries.",
+            "BIG_TICKET": "Large ticket size вЂ” consider splitting entries.",
         },
         "plan": {
-            "fix_1": "Split entries (2–3 parts) instead of one full buy.",
+            "fix_1": "Split entries (2вЂ“3 parts) instead of one full buy.",
             "fix_2": "Define invalidation before entry (max loss or time-stop).",
             "now_high": "Do not enter immediately. Wait for confirmation or a pullback.",
             "safer_high": "If you want exposure: start with a very small starter position.",
@@ -8791,26 +8354,26 @@ IMMUNITY_I18N = {
         },
     },
     "ru": {
-        "verdict": {"critical": "❌ ОТКЛОНЕНО", "high": "⚠️ ВЫСОКИЙ РИСК", "medium": "🟡 РИСКОВАННО", "low": "✅ НОРМ"},
+        "verdict": {"critical": "вќЊ РћРўРљР›РћРќР•РќРћ", "high": "вљ пёЏ Р’Р«РЎРћРљРР™ Р РРЎРљ", "medium": "рџџЎ Р РРЎРљРћР’РђРќРќРћ", "low": "вњ… РќРћР Рњ"},
         "reasons": {
-            "FOMO_AFTER_PUMP": "Цена выросла на {change24h}% за 24ч — типичная ловушка FOMO.",
-            "TARGET_TOO_HIGH": "Цель {target}% слишком агрессивна для горизонта ({horizon}).",
-            "DRAWDOWN_MISMATCH": "Волатильность (~{vol}%) выше твоего max drawdown ({dd}).",
-            "WIDE_SPREAD": "Слишком широкий спред (~{spread_bps} б.п.) — риск исполнения.",
-            "OVERTRADING_SIGNAL": "Слишком много анализов сегодня ({count}) — риск импульсивных действий.",
-            "NARRATIVE_PRESSURE": "Причина — хайп/давление, риск манипуляции выше.",
-            "ADD_WHILE_HOT": "Докупка на коротком горизонте может усилить ошибки.",
-            "BIG_TICKET": "Крупный объём — лучше входить частями.",
+            "FOMO_AFTER_PUMP": "Р¦РµРЅР° РІС‹СЂРѕСЃР»Р° РЅР° {change24h}% Р·Р° 24С‡ вЂ” С‚РёРїРёС‡РЅР°СЏ Р»РѕРІСѓС€РєР° FOMO.",
+            "TARGET_TOO_HIGH": "Р¦РµР»СЊ {target}% СЃР»РёС€РєРѕРј Р°РіСЂРµСЃСЃРёРІРЅР° РґР»СЏ РіРѕСЂРёР·РѕРЅС‚Р° ({horizon}).",
+            "DRAWDOWN_MISMATCH": "Р’РѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ (~{vol}%) РІС‹С€Рµ С‚РІРѕРµРіРѕ max drawdown ({dd}).",
+            "WIDE_SPREAD": "РЎР»РёС€РєРѕРј С€РёСЂРѕРєРёР№ СЃРїСЂРµРґ (~{spread_bps} Р±.Рї.) вЂ” СЂРёСЃРє РёСЃРїРѕР»РЅРµРЅРёСЏ.",
+            "OVERTRADING_SIGNAL": "РЎР»РёС€РєРѕРј РјРЅРѕРіРѕ Р°РЅР°Р»РёР·РѕРІ СЃРµРіРѕРґРЅСЏ ({count}) вЂ” СЂРёСЃРє РёРјРїСѓР»СЊСЃРёРІРЅС‹С… РґРµР№СЃС‚РІРёР№.",
+            "NARRATIVE_PRESSURE": "РџСЂРёС‡РёРЅР° вЂ” С…Р°Р№Рї/РґР°РІР»РµРЅРёРµ, СЂРёСЃРє РјР°РЅРёРїСѓР»СЏС†РёРё РІС‹С€Рµ.",
+            "ADD_WHILE_HOT": "Р”РѕРєСѓРїРєР° РЅР° РєРѕСЂРѕС‚РєРѕРј РіРѕСЂРёР·РѕРЅС‚Рµ РјРѕР¶РµС‚ СѓСЃРёР»РёС‚СЊ РѕС€РёР±РєРё.",
+            "BIG_TICKET": "РљСЂСѓРїРЅС‹Р№ РѕР±СЉС‘Рј вЂ” Р»СѓС‡С€Рµ РІС…РѕРґРёС‚СЊ С‡Р°СЃС‚СЏРјРё.",
         },
         "plan": {
-            "fix_1": "Входи частями (2–3) вместо одной полной покупки.",
-            "fix_2": "Определи invalidation до входа (макс. убыток или time-stop).",
-            "now_high": "Не входи сразу. Жди подтверждение или откат.",
-            "safer_high": "Если хочешь экспозицию — начни с очень маленькой позиции.",
-            "now_med": "Если входишь — делай это частями и держи риск жёстко.",
-            "safer_med": "Лучше вход после консолидации (не в пике).",
-            "now_low": "План выглядит нормально, если не нарушать риск-лимиты.",
-            "safer_low": "Не меняй план посреди сделки.",
+            "fix_1": "Р’С…РѕРґРё С‡Р°СЃС‚СЏРјРё (2вЂ“3) РІРјРµСЃС‚Рѕ РѕРґРЅРѕР№ РїРѕР»РЅРѕР№ РїРѕРєСѓРїРєРё.",
+            "fix_2": "РћРїСЂРµРґРµР»Рё invalidation РґРѕ РІС…РѕРґР° (РјР°РєСЃ. СѓР±С‹С‚РѕРє РёР»Рё time-stop).",
+            "now_high": "РќРµ РІС…РѕРґРё СЃСЂР°Р·Сѓ. Р–РґРё РїРѕРґС‚РІРµСЂР¶РґРµРЅРёРµ РёР»Рё РѕС‚РєР°С‚.",
+            "safer_high": "Р•СЃР»Рё С…РѕС‡РµС€СЊ СЌРєСЃРїРѕР·РёС†РёСЋ вЂ” РЅР°С‡РЅРё СЃ РѕС‡РµРЅСЊ РјР°Р»РµРЅСЊРєРѕР№ РїРѕР·РёС†РёРё.",
+            "now_med": "Р•СЃР»Рё РІС…РѕРґРёС€СЊ вЂ” РґРµР»Р°Р№ СЌС‚Рѕ С‡Р°СЃС‚СЏРјРё Рё РґРµСЂР¶Рё СЂРёСЃРє Р¶С‘СЃС‚РєРѕ.",
+            "safer_med": "Р›СѓС‡С€Рµ РІС…РѕРґ РїРѕСЃР»Рµ РєРѕРЅСЃРѕР»РёРґР°С†РёРё (РЅРµ РІ РїРёРєРµ).",
+            "now_low": "РџР»Р°РЅ РІС‹РіР»СЏРґРёС‚ РЅРѕСЂРјР°Р»СЊРЅРѕ, РµСЃР»Рё РЅРµ РЅР°СЂСѓС€Р°С‚СЊ СЂРёСЃРє-Р»РёРјРёС‚С‹.",
+            "safer_low": "РќРµ РјРµРЅСЏР№ РїР»Р°РЅ РїРѕСЃСЂРµРґРё СЃРґРµР»РєРё.",
         },
     },
 }
@@ -9295,7 +8858,7 @@ def _reddit_alert_type(title: str, summary: str, target: str) -> str:
 
 def _reddit_push_body(target: str, ctx: dict, alert_type: str) -> str:
     short_target = target if len(target) <= 78 else target[:75] + "..."
-    return f"{alert_type}: {short_target} • {ctx.get('score')}/100 • Reddit"
+    return f"{alert_type}: {short_target} вЂў {ctx.get('score')}/100 вЂў Reddit"
 
 
 def _reddit_push_messages(target: str, ctx: dict, alert_type: str) -> dict:
@@ -9307,12 +8870,12 @@ def _reddit_push_messages(target: str, ctx: dict, alert_type: str) -> dict:
             "body": f"New crypto scam signal: {short_target}. Risk {score}/100. Check before opening or connecting a wallet.",
         },
         "ru": {
-            "title": "Noytrix: риск скама",
-            "body": f"Новый crypto-scam сигнал: {short_target}. Риск {score}/100. Проверь перед открытием или подключением кошелька.",
+            "title": "Noytrix: СЂРёСЃРє СЃРєР°РјР°",
+            "body": f"РќРѕРІС‹Р№ crypto-scam СЃРёРіРЅР°Р»: {short_target}. Р РёСЃРє {score}/100. РџСЂРѕРІРµСЂСЊ РїРµСЂРµРґ РѕС‚РєСЂС‹С‚РёРµРј РёР»Рё РїРѕРґРєР»СЋС‡РµРЅРёРµРј РєРѕС€РµР»СЊРєР°.",
         },
         "uk": {
-            "title": "Noytrix: ризик скаму",
-            "body": f"Новий crypto-scam сигнал: {short_target}. Ризик {score}/100. Перевір перед відкриттям або підключенням гаманця.",
+            "title": "Noytrix: СЂРёР·РёРє СЃРєР°РјСѓ",
+            "body": f"РќРѕРІРёР№ crypto-scam СЃРёРіРЅР°Р»: {short_target}. Р РёР·РёРє {score}/100. РџРµСЂРµРІС–СЂ РїРµСЂРµРґ РІС–РґРєСЂРёС‚С‚СЏРј Р°Р±Рѕ РїС–РґРєР»СЋС‡РµРЅРЅСЏРј РіР°РјР°РЅС†СЏ.",
         },
     }
 
@@ -9480,7 +9043,7 @@ async def _check_reddit_scam_alerts_once(dry_run: bool = True):
 
                 alert_type = _reddit_alert_type(title, summary, target)
                 messages_push = _reddit_push_messages(target, ctx, alert_type)
-                title_push = "🚨 Noytrix Scam Alert"
+                title_push = "рџљЁ Noytrix Scam Alert"
                 body_push = _reddit_push_body(target, ctx, alert_type)
 
                 kind_for_db = "url" if str(target).lower().startswith(("http://", "https://")) else (_detect_input_kind(target).get("kind") or "unknown")
@@ -9636,20 +9199,20 @@ def _symbol_to_coin(symbol: str) -> str:
 
 def _market_move_messages(coin: str, pct_30m: float) -> dict:
     direction_en = "up" if pct_30m > 0 else "down"
-    direction_ru = "рост" if pct_30m > 0 else "падение"
-    direction_uk = "зростання" if pct_30m > 0 else "падіння"
+    direction_ru = "СЂРѕСЃС‚" if pct_30m > 0 else "РїР°РґРµРЅРёРµ"
+    direction_uk = "Р·СЂРѕСЃС‚Р°РЅРЅСЏ" if pct_30m > 0 else "РїР°РґС–РЅРЅСЏ"
     return {
         "en": {
             "title": f"Market signal: {coin}",
             "body": f"{coin} moved {direction_en} {pct_30m:+.2f}% in 30 minutes. Check context before making a decision.",
         },
         "ru": {
-            "title": f"Рыночный сигнал: {coin}",
-            "body": f"{coin}: заметное {direction_ru} {pct_30m:+.2f}% за 30 минут. Проверь контекст перед решением.",
+            "title": f"Р С‹РЅРѕС‡РЅС‹Р№ СЃРёРіРЅР°Р»: {coin}",
+            "body": f"{coin}: Р·Р°РјРµС‚РЅРѕРµ {direction_ru} {pct_30m:+.2f}% Р·Р° 30 РјРёРЅСѓС‚. РџСЂРѕРІРµСЂСЊ РєРѕРЅС‚РµРєСЃС‚ РїРµСЂРµРґ СЂРµС€РµРЅРёРµРј.",
         },
         "uk": {
-            "title": f"Ринковий сигнал: {coin}",
-            "body": f"{coin}: помітне {direction_uk} {pct_30m:+.2f}% за 30 хвилин. Перевір контекст перед рішенням.",
+            "title": f"Р РёРЅРєРѕРІРёР№ СЃРёРіРЅР°Р»: {coin}",
+            "body": f"{coin}: РїРѕРјС–С‚РЅРµ {direction_uk} {pct_30m:+.2f}% Р·Р° 30 С…РІРёР»РёРЅ. РџРµСЂРµРІС–СЂ РєРѕРЅС‚РµРєСЃС‚ РїРµСЂРµРґ СЂС–С€РµРЅРЅСЏРј.",
         },
     }
 
@@ -9661,12 +9224,12 @@ def _whale_messages(coin: str, notional: float) -> dict:
             "body": f"A large {coin} trade appeared on Binance: {amount}. It can affect short-term volatility.",
         },
         "ru": {
-            "title": f"Крупная сделка: {coin}",
-            "body": f"На Binance появилась крупная сделка по {coin}: {amount}. Это может повлиять на краткосрочную волатильность.",
+            "title": f"РљСЂСѓРїРЅР°СЏ СЃРґРµР»РєР°: {coin}",
+            "body": f"РќР° Binance РїРѕСЏРІРёР»Р°СЃСЊ РєСЂСѓРїРЅР°СЏ СЃРґРµР»РєР° РїРѕ {coin}: {amount}. Р­С‚Рѕ РјРѕР¶РµС‚ РїРѕРІР»РёСЏС‚СЊ РЅР° РєСЂР°С‚РєРѕСЃСЂРѕС‡РЅСѓСЋ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ.",
         },
         "uk": {
-            "title": f"Велика угода: {coin}",
-            "body": f"На Binance з'явилася велика угода по {coin}: {amount}. Це може вплинути на короткострокову волатильність.",
+            "title": f"Р’РµР»РёРєР° СѓРіРѕРґР°: {coin}",
+            "body": f"РќР° Binance Р·'СЏРІРёР»Р°СЃСЏ РІРµР»РёРєР° СѓРіРѕРґР° РїРѕ {coin}: {amount}. Р¦Рµ РјРѕР¶Рµ РІРїР»РёРЅСѓС‚Рё РЅР° РєРѕСЂРѕС‚РєРѕСЃС‚СЂРѕРєРѕРІСѓ РІРѕР»Р°С‚РёР»СЊРЅС–СЃС‚СЊ.",
         },
     }
 
@@ -9677,12 +9240,12 @@ def _radar_messages(coin: str) -> dict:
             "body": f"{coin} volatility is compressed. A strong move is possible, so check risk before acting.",
         },
         "ru": {
-            "title": f"Радар волатильности: {coin}",
-            "body": f"У {coin} сжатие волатильности. Возможен сильный импульс, проверь риск перед действием.",
+            "title": f"Р Р°РґР°СЂ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚Рё: {coin}",
+            "body": f"РЈ {coin} СЃР¶Р°С‚РёРµ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚Рё. Р’РѕР·РјРѕР¶РµРЅ СЃРёР»СЊРЅС‹Р№ РёРјРїСѓР»СЊСЃ, РїСЂРѕРІРµСЂСЊ СЂРёСЃРє РїРµСЂРµРґ РґРµР№СЃС‚РІРёРµРј.",
         },
         "uk": {
-            "title": f"Радар волатильності: {coin}",
-            "body": f"У {coin} стискання волатильності. Можливий сильний імпульс, перевір ризик перед дією.",
+            "title": f"Р Р°РґР°СЂ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚С–: {coin}",
+            "body": f"РЈ {coin} СЃС‚РёСЃРєР°РЅРЅСЏ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚С–. РњРѕР¶Р»РёРІРёР№ СЃРёР»СЊРЅРёР№ С–РјРїСѓР»СЊСЃ, РїРµСЂРµРІС–СЂ СЂРёР·РёРє РїРµСЂРµРґ РґС–С”СЋ.",
         },
     }
 
@@ -9699,19 +9262,19 @@ def _community_security_messages(kind: str, obj: str, scam_votes: int) -> dict:
             ),
         },
         "ru": {
-            "title": "Noytrix: сигнал безопасности",
+            "title": "Noytrix: СЃРёРіРЅР°Р» Р±РµР·РѕРїР°СЃРЅРѕСЃС‚Рё",
             "body": (
-                f"Сообщество усилило риск по {short_obj}: {scam_votes} отметок scam. Проверь перед открытием или подписью."
+                f"РЎРѕРѕР±С‰РµСЃС‚РІРѕ СѓСЃРёР»РёР»Рѕ СЂРёСЃРє РїРѕ {short_obj}: {scam_votes} РѕС‚РјРµС‚РѕРє scam. РџСЂРѕРІРµСЂСЊ РїРµСЂРµРґ РѕС‚РєСЂС‹С‚РёРµРј РёР»Рё РїРѕРґРїРёСЃСЊСЋ."
                 if is_site else
-                f"Риск по {short_obj} вырос: {scam_votes} отметок scam. Проверь объект перед взаимодействием."
+                f"Р РёСЃРє РїРѕ {short_obj} РІС‹СЂРѕСЃ: {scam_votes} РѕС‚РјРµС‚РѕРє scam. РџСЂРѕРІРµСЂСЊ РѕР±СЉРµРєС‚ РїРµСЂРµРґ РІР·Р°РёРјРѕРґРµР№СЃС‚РІРёРµРј."
             ),
         },
         "uk": {
-            "title": "Noytrix: сигнал безпеки",
+            "title": "Noytrix: СЃРёРіРЅР°Р» Р±РµР·РїРµРєРё",
             "body": (
-                f"Спільнота підвищила ризик по {short_obj}: {scam_votes} позначок scam. Перевір перед відкриттям або підписом."
+                f"РЎРїС–Р»СЊРЅРѕС‚Р° РїС–РґРІРёС‰РёР»Р° СЂРёР·РёРє РїРѕ {short_obj}: {scam_votes} РїРѕР·РЅР°С‡РѕРє scam. РџРµСЂРµРІС–СЂ РїРµСЂРµРґ РІС–РґРєСЂРёС‚С‚СЏРј Р°Р±Рѕ РїС–РґРїРёСЃРѕРј."
                 if is_site else
-                f"Ризик по {short_obj} зріс: {scam_votes} позначок scam. Перевір об'єкт перед взаємодією."
+                f"Р РёР·РёРє РїРѕ {short_obj} Р·СЂС–СЃ: {scam_votes} РїРѕР·РЅР°С‡РѕРє scam. РџРµСЂРµРІС–СЂ РѕР±'С”РєС‚ РїРµСЂРµРґ РІР·Р°С”РјРѕРґС–С”СЋ."
             ),
         },
     }
@@ -9743,9 +9306,9 @@ async def _check_market_alerts_once():
             continue
 
         coin = _symbol_to_coin(symbol)
-        direction = "рост" if pct_30m > 0 else "падение"
-        title = f"📊 Market Signal • {coin}"
-        body = f"{coin}: аномальное {direction} {pct_30m:+.2f}% за 30 минут."
+        direction = "СЂРѕСЃС‚" if pct_30m > 0 else "РїР°РґРµРЅРёРµ"
+        title = f"рџ“Љ Market Signal вЂў {coin}"
+        body = f"{coin}: Р°РЅРѕРјР°Р»СЊРЅРѕРµ {direction} {pct_30m:+.2f}% Р·Р° 30 РјРёРЅСѓС‚."
 
         if not _market_push_daily_can_send(symbol):
             print(f"[market] skip daily limit {symbol}")
@@ -9802,8 +9365,8 @@ async def _check_whale_alerts_once():
             continue
 
         coin = _symbol_to_coin(symbol)
-        title = f"🐋 Whale Alert • {coin}"
-        body = f"Крупная сделка по {coin} на Binance: {_fmt_usd_compact(best_notional)}."
+        title = f"рџђ‹ Whale Alert вЂў {coin}"
+        body = f"РљСЂСѓРїРЅР°СЏ СЃРґРµР»РєР° РїРѕ {coin} РЅР° Binance: {_fmt_usd_compact(best_notional)}."
 
         if not _market_push_daily_can_send(symbol):
             print(f"[whale] skip daily limit {symbol}")
@@ -9851,8 +9414,8 @@ async def _check_radar_alerts_once():
             continue
 
         coin = _symbol_to_coin(symbol)
-        title = f"📡 Radar • {coin}"
-        body = f"{coin}: сжатие волатильности за 60 минут. Возможен сильный импульс."
+        title = f"рџ“Ў Radar вЂў {coin}"
+        body = f"{coin}: СЃР¶Р°С‚РёРµ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚Рё Р·Р° 60 РјРёРЅСѓС‚. Р’РѕР·РјРѕР¶РµРЅ СЃРёР»СЊРЅС‹Р№ РёРјРїСѓР»СЊСЃ."
 
         if not _market_push_daily_can_send(symbol):
             print(f"[radar] skip daily limit {symbol}")
@@ -9911,13 +9474,13 @@ async def _check_security_alerts_once():
 
             short_obj = obj if len(obj) <= 80 else (obj[:77] + "...")
             if kind == "url":
-                body = f"Подозрительный сайт отмечен сообществом • {scam_votes} scam votes."
+                body = f"РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅС‹Р№ СЃР°Р№С‚ РѕС‚РјРµС‡РµРЅ СЃРѕРѕР±С‰РµСЃС‚РІРѕРј вЂў {scam_votes} scam votes."
             elif kind in {"contract", "wallet", "token"}:
-                body = f"Риск по контракту/токену повышен • {scam_votes} scam votes."
+                body = f"Р РёСЃРє РїРѕ РєРѕРЅС‚СЂР°РєС‚Сѓ/С‚РѕРєРµРЅСѓ РїРѕРІС‹С€РµРЅ вЂў {scam_votes} scam votes."
             else:
-                body = f"Объект помечен как опасный • {scam_votes} scam votes."
+                body = f"РћР±СЉРµРєС‚ РїРѕРјРµС‡РµРЅ РєР°Рє РѕРїР°СЃРЅС‹Р№ вЂў {scam_votes} scam votes."
 
-            title = "🛡 Security Alert"
+            title = "рџ›Ў Security Alert"
             await broadcast_localized_push(
                 _community_security_messages(kind, obj, scam_votes),
                 {"type": "community_security_alert", "source": "noytrix_community", "target": obj, "kind": kind, "screen": "shield"},
@@ -9962,16 +9525,16 @@ def _calendar_expectation_text(impact: str, lang: str) -> str:
     imp = str(impact or "mid").lower()
     if lang == "ru":
         if imp == "high":
-            return "может дать сильную волатильность, резкие свечи и ложные движения"
+            return "РјРѕР¶РµС‚ РґР°С‚СЊ СЃРёР»СЊРЅСѓСЋ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ, СЂРµР·РєРёРµ СЃРІРµС‡Рё Рё Р»РѕР¶РЅС‹Рµ РґРІРёР¶РµРЅРёСЏ"
         if imp == "low":
-            return "обычно влияет мягко, но лучше учитывать контекст"
-        return "может повлиять на рынок и краткосрочную волатильность"
+            return "РѕР±С‹С‡РЅРѕ РІР»РёСЏРµС‚ РјСЏРіРєРѕ, РЅРѕ Р»СѓС‡С€Рµ СѓС‡РёС‚С‹РІР°С‚СЊ РєРѕРЅС‚РµРєСЃС‚"
+        return "РјРѕР¶РµС‚ РїРѕРІР»РёСЏС‚СЊ РЅР° СЂС‹РЅРѕРє Рё РєСЂР°С‚РєРѕСЃСЂРѕС‡РЅСѓСЋ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ"
     if lang == "uk":
         if imp == "high":
-            return "може дати сильну волатильність, різкі рухи та хибні пробої"
+            return "РјРѕР¶Рµ РґР°С‚Рё СЃРёР»СЊРЅСѓ РІРѕР»Р°С‚РёР»СЊРЅС–СЃС‚СЊ, СЂС–Р·РєС– СЂСѓС…Рё С‚Р° С…РёР±РЅС– РїСЂРѕР±РѕС—"
         if imp == "low":
-            return "зазвичай впливає м'яко, але контекст краще врахувати"
-        return "може вплинути на ринок і короткострокову волатильність"
+            return "Р·Р°Р·РІРёС‡Р°Р№ РІРїР»РёРІР°С” Рј'СЏРєРѕ, Р°Р»Рµ РєРѕРЅС‚РµРєСЃС‚ РєСЂР°С‰Рµ РІСЂР°С…СѓРІР°С‚Рё"
+        return "РјРѕР¶Рµ РІРїР»РёРЅСѓС‚Рё РЅР° СЂРёРЅРѕРє С– РєРѕСЂРѕС‚РєРѕСЃС‚СЂРѕРєРѕРІСѓ РІРѕР»Р°С‚РёР»СЊРЅС–СЃС‚СЊ"
     if imp == "high":
         return "may bring strong volatility, sharp moves and false breakouts"
     if imp == "low":
@@ -9989,12 +9552,12 @@ def _calendar_reminder_messages(row: sqlite3.Row) -> dict:
             "body": f"{name}. What to expect: {_calendar_expectation_text(impact, 'en')}. Not financial advice.",
         },
         "ru": {
-            "title": "Событие через 15 минут",
-            "body": f"{name}. Чего ждать: {_calendar_expectation_text(impact, 'ru')}. Это не финансовый совет.",
+            "title": "РЎРѕР±С‹С‚РёРµ С‡РµСЂРµР· 15 РјРёРЅСѓС‚",
+            "body": f"{name}. Р§РµРіРѕ Р¶РґР°С‚СЊ: {_calendar_expectation_text(impact, 'ru')}. Р­С‚Рѕ РЅРµ С„РёРЅР°РЅСЃРѕРІС‹Р№ СЃРѕРІРµС‚.",
         },
         "uk": {
-            "title": "Подія через 15 хвилин",
-            "body": f"{name}. Чого очікувати: {_calendar_expectation_text(impact, 'uk')}. Це не фінансова порада.",
+            "title": "РџРѕРґС–СЏ С‡РµСЂРµР· 15 С…РІРёР»РёРЅ",
+            "body": f"{name}. Р§РѕРіРѕ РѕС‡С–РєСѓРІР°С‚Рё: {_calendar_expectation_text(impact, 'uk')}. Р¦Рµ РЅРµ С„С–РЅР°РЅСЃРѕРІР° РїРѕСЂР°РґР°.",
         },
     }
 
@@ -10064,28 +9627,28 @@ async def calendar_reminders_loop():
 PUSH_TIPS = [
     {
         "en": ("What not to sign", "Do not sign Permit or SetApprovalForAll on unknown sites. It can give access to tokens or NFTs."),
-        "ru": ("Что не подписывать", "Не подписывай Permit или SetApprovalForAll на неизвестных сайтах. Это может дать доступ к токенам или NFT."),
-        "uk": ("Що не підписувати", "Не підписуй Permit або SetApprovalForAll на невідомих сайтах. Це може дати доступ до токенів або NFT."),
+        "ru": ("Р§С‚Рѕ РЅРµ РїРѕРґРїРёСЃС‹РІР°С‚СЊ", "РќРµ РїРѕРґРїРёСЃС‹РІР°Р№ Permit РёР»Рё SetApprovalForAll РЅР° РЅРµРёР·РІРµСЃС‚РЅС‹С… СЃР°Р№С‚Р°С…. Р­С‚Рѕ РјРѕР¶РµС‚ РґР°С‚СЊ РґРѕСЃС‚СѓРї Рє С‚РѕРєРµРЅР°Рј РёР»Рё NFT."),
+        "uk": ("Р©Рѕ РЅРµ РїС–РґРїРёСЃСѓРІР°С‚Рё", "РќРµ РїС–РґРїРёСЃСѓР№ Permit Р°Р±Рѕ SetApprovalForAll РЅР° РЅРµРІС–РґРѕРјРёС… СЃР°Р№С‚Р°С…. Р¦Рµ РјРѕР¶Рµ РґР°С‚Рё РґРѕСЃС‚СѓРї РґРѕ С‚РѕРєРµРЅС–РІ Р°Р±Рѕ NFT."),
     },
     {
         "en": ("Scam sign in 10 seconds", "If a crypto site asks for a seed phrase, it is almost always a scam. Never enter it anywhere."),
-        "ru": ("Признак скама за 10 секунд", "Если crypto-сайт просит seed phrase, это почти всегда скам. Никогда не вводи её никуда."),
-        "uk": ("Ознака скаму за 10 секунд", "Якщо crypto-сайт просить seed phrase, це майже завжди скам. Ніколи не вводь її ніде."),
+        "ru": ("РџСЂРёР·РЅР°Рє СЃРєР°РјР° Р·Р° 10 СЃРµРєСѓРЅРґ", "Р•СЃР»Рё crypto-СЃР°Р№С‚ РїСЂРѕСЃРёС‚ seed phrase, СЌС‚Рѕ РїРѕС‡С‚Рё РІСЃРµРіРґР° СЃРєР°Рј. РќРёРєРѕРіРґР° РЅРµ РІРІРѕРґРё РµС‘ РЅРёРєСѓРґР°."),
+        "uk": ("РћР·РЅР°РєР° СЃРєР°РјСѓ Р·Р° 10 СЃРµРєСѓРЅРґ", "РЇРєС‰Рѕ crypto-СЃР°Р№С‚ РїСЂРѕСЃРёС‚СЊ seed phrase, С†Рµ РјР°Р№Р¶Рµ Р·Р°РІР¶РґРё СЃРєР°Рј. РќС–РєРѕР»Рё РЅРµ РІРІРѕРґСЊ С—С— РЅС–РґРµ."),
     },
     {
         "en": ("Airdrop warning", "Fake airdrops often use approve instead of claim. Check what the signature really allows."),
-        "ru": ("Airdrop-предупреждение", "Фейковые airdrop часто используют approve вместо claim. Проверь, что реально разрешает подпись."),
-        "uk": ("Airdrop-попередження", "Фейкові airdrop часто використовують approve замість claim. Перевір, що реально дозволяє підпис."),
+        "ru": ("Airdrop-РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ", "Р¤РµР№РєРѕРІС‹Рµ airdrop С‡Р°СЃС‚Рѕ РёСЃРїРѕР»СЊР·СѓСЋС‚ approve РІРјРµСЃС‚Рѕ claim. РџСЂРѕРІРµСЂСЊ, С‡С‚Рѕ СЂРµР°Р»СЊРЅРѕ СЂР°Р·СЂРµС€Р°РµС‚ РїРѕРґРїРёСЃСЊ."),
+        "uk": ("Airdrop-РїРѕРїРµСЂРµРґР¶РµРЅРЅСЏ", "Р¤РµР№РєРѕРІС– airdrop С‡Р°СЃС‚Рѕ РІРёРєРѕСЂРёСЃС‚РѕРІСѓСЋС‚СЊ approve Р·Р°РјС–СЃС‚СЊ claim. РџРµСЂРµРІС–СЂ, С‰Рѕ СЂРµР°Р»СЊРЅРѕ РґРѕР·РІРѕР»СЏС” РїС–РґРїРёСЃ."),
     },
     {
         "en": ("Token safety", "A honeypot can allow buying but block selling. Check sell risk before buying a new token."),
-        "ru": ("Безопасность токена", "Honeypot может разрешать покупку, но блокировать продажу. Проверь sell-risk перед покупкой токена."),
-        "uk": ("Безпека токена", "Honeypot може дозволяти купівлю, але блокувати продаж. Перевір sell-risk перед купівлею токена."),
+        "ru": ("Р‘РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ С‚РѕРєРµРЅР°", "Honeypot РјРѕР¶РµС‚ СЂР°Р·СЂРµС€Р°С‚СЊ РїРѕРєСѓРїРєСѓ, РЅРѕ Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ РїСЂРѕРґР°Р¶Сѓ. РџСЂРѕРІРµСЂСЊ sell-risk РїРµСЂРµРґ РїРѕРєСѓРїРєРѕР№ С‚РѕРєРµРЅР°."),
+        "uk": ("Р‘РµР·РїРµРєР° С‚РѕРєРµРЅР°", "Honeypot РјРѕР¶Рµ РґРѕР·РІРѕР»СЏС‚Рё РєСѓРїС–РІР»СЋ, Р°Р»Рµ Р±Р»РѕРєСѓРІР°С‚Рё РїСЂРѕРґР°Р¶. РџРµСЂРµРІС–СЂ sell-risk РїРµСЂРµРґ РєСѓРїС–РІР»РµСЋ С‚РѕРєРµРЅР°."),
     },
     {
         "en": ("Google Ads risk", "Crypto phishing sites often buy ads for brand names. A top result is not always the official site."),
-        "ru": ("Риск Google Ads", "Crypto-фишинг часто покупает рекламу по названиям брендов. Верхний результат не всегда официальный сайт."),
-        "uk": ("Ризик Google Ads", "Crypto-фішинг часто купує рекламу за назвами брендів. Верхній результат не завжди офіційний сайт."),
+        "ru": ("Р РёСЃРє Google Ads", "Crypto-С„РёС€РёРЅРі С‡Р°СЃС‚Рѕ РїРѕРєСѓРїР°РµС‚ СЂРµРєР»Р°РјСѓ РїРѕ РЅР°Р·РІР°РЅРёСЏРј Р±СЂРµРЅРґРѕРІ. Р’РµСЂС…РЅРёР№ СЂРµР·СѓР»СЊС‚Р°С‚ РЅРµ РІСЃРµРіРґР° РѕС„РёС†РёР°Р»СЊРЅС‹Р№ СЃР°Р№С‚."),
+        "uk": ("Р РёР·РёРє Google Ads", "Crypto-С„С–С€РёРЅРі С‡Р°СЃС‚Рѕ РєСѓРїСѓС” СЂРµРєР»Р°РјСѓ Р·Р° РЅР°Р·РІР°РјРё Р±СЂРµРЅРґС–РІ. Р’РµСЂС…РЅС–Р№ СЂРµР·СѓР»СЊС‚Р°С‚ РЅРµ Р·Р°РІР¶РґРё РѕС„С–С†С–Р№РЅРёР№ СЃР°Р№С‚."),
     },
 ]
 
@@ -10165,111 +9728,6 @@ async def startup_event():
 
 
 # =========================================================
-# HEALTH / ROOT
-# =========================================================
-@app.get("/")
-def root():
-    return {
-        "ok": True,
-        "service": "Noytrix API",
-        "version": "production",
-    }
-
-
-@app.get("/health")
-def health():
-    return {
-        "status": "ok",
-        "time": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-# =========================================================
-# EVENTS / NEWS (ALIAS SUPPORT)
-# =========================================================
-@app.get("/events")
-@app.get("/api/events")
-async def events_alias(
-    d1: str | None = Query(None, alias="from"),
-    d2: str | None = Query(None, alias="to"),
-    types: str | None = Query(None),
-    impact: str | None = Query(None),
-):
-    for route in calendar_router.routes:
-        if getattr(route, "path", "") == "/calendar/events":
-            return await route.endpoint(d1=d1, d2=d2, types=types, impact=impact)
-    return {"items": [], "lang": "en"}
-
-
-
-@app.get("/news")
-@app.get("/api/news")
-def news_alias(request: Request, lang: str | None = None):
-    L = get_lang(request, lang)
-
-    try:
-        items = load_news()  # твоя функция загрузки новостей
-    except Exception as e:
-        print("[news] error:", e)
-        items = []
-
-    return {
-        "items": items,
-        "lang": L,
-    }
-
-
-# =========================================================
-# PROFILE API (BASIC)
-# =========================================================
-@app.get("/profile/overview")
-def profile_overview(userId: str | None = None, lang: str | None = "ru"):
-    uid = userId or "guest"
-    st = _profile_build_stats(uid)
-    achievements = _profile_achievement_texts(_profile_build_achievements(uid), (lang or "ru").lower())
-    return {
-        "ok": True,
-        "user": uid,
-        **st,
-        "proAccess": {
-            "isPro": str(st.get("identity", {}).get("plan") or "").lower() == "pro"
-        },
-        "achievements": achievements,
-    }
-
-
-@app.get("/profile/stats")
-def profile_stats(userId: str | None = None):
-    uid = userId or "guest"
-    st = _profile_build_stats(uid)
-    trust = st.get("trust", {})
-    trading = st.get("tradingPerformance", {})
-    return {
-        "ok": True,
-        "user": uid,
-        "scans": trust.get("scamScans", 0),
-        "trades": trading.get("setupsAnalyzed", 0),
-        "winrate": trading.get("acceptanceRate", 0),
-        "pnl": 0,
-        **st,
-    }
-
-
-@app.get("/profile/activity")
-def profile_activity(userId: str | None = None, lang: str | None = "ru"):
-    uid = userId or "guest"
-    st = _profile_build_stats(uid)
-    achievements = _profile_achievement_texts(_profile_build_achievements(uid), (lang or "ru").lower())
-    return {
-        "ok": True,
-        "user": uid,
-        "history": st.get("recent", []),
-        "activity": st.get("activity", {}),
-        "achievements": achievements,
-    }
-
-
-# =========================================================
 # FINAL FIXES / SAFETY WRAPPER
 # =========================================================
 @app.middleware("http")
@@ -10290,18 +9748,18 @@ async def catch_exceptions_middleware(request: Request, call_next):
 
 
 # =========================================================
-# IMPORTANT FIX (ТВОЯ КРИТИЧЕСКАЯ ОШИБКА)
+# IMPORTANT FIX (РўР’РћРЇ РљР РРўРР§Р•РЎРљРђРЇ РћРЁРР‘РљРђ)
 # =========================================================
-# В предыдущем коде у тебя было:
+# Р’ РїСЂРµРґС‹РґСѓС‰РµРј РєРѕРґРµ Сѓ С‚РµР±СЏ Р±С‹Р»Рѕ:
 # return outasync def _scan_ticker(...)
-# это ломало весь backend
+# СЌС‚Рѕ Р»РѕРјР°Р»Рѕ РІРµСЃСЊ backend
 
-# ЗДЕСЬ МЫ УЖЕ ИСПРАВИЛИ:
-# функция _scan_ticker начинается с новой строки
-# поэтому сервер теперь будет нормально запускаться
+# Р—Р”Р•РЎР¬ РњР« РЈР–Р• РРЎРџР РђР’РР›Р:
+# С„СѓРЅРєС†РёСЏ _scan_ticker РЅР°С‡РёРЅР°РµС‚СЃСЏ СЃ РЅРѕРІРѕР№ СЃС‚СЂРѕРєРё
+# РїРѕСЌС‚РѕРјСѓ СЃРµСЂРІРµСЂ С‚РµРїРµСЂСЊ Р±СѓРґРµС‚ РЅРѕСЂРјР°Р»СЊРЅРѕ Р·Р°РїСѓСЃРєР°С‚СЊСЃСЏ
 
 
-print("🚀 Noytrix backend fully loaded")        
+print("рџљЂ Noytrix backend fully loaded")
 
 async def _check_tronscan(address: str):
     try:
@@ -10405,132 +9863,3 @@ async def _check_solana(address: str):
         )
     except Exception as e:
         return _mk_source("solscan", "error", details={"error": str(e), "address": address})
-
-# =========================
-# Mobile Trading lead request
-# =========================
-
-@app.post("/api/contact")
-async def api_contact(payload: dict = Body(...)):
-    import json, datetime, pathlib, smtplib, os
-    from email.message import EmailMessage
-
-    to_email = "noytrixapp@gmail.com"
-
-    name = str(payload.get("name") or "").strip()
-    email = str(payload.get("email") or "").strip()
-    note = str(payload.get("note") or "").strip()
-    product = str(payload.get("product") or "Noytrix Trading Center").strip()
-    source = str(payload.get("source") or "mobile_app").strip()
-
-    if not name or not email:
-        raise HTTPException(status_code=400, detail="Missing name or contact")
-
-    row = {
-        "ts": datetime.datetime.utcnow().isoformat() + "Z",
-        "to": to_email,
-        "name": name,
-        "email": email,
-        "note": note,
-        "product": product,
-        "source": source,
-    }
-
-    path = pathlib.Path("/root/backend/data/leads.jsonl")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    smtp_user = os.getenv("NOYTRIX_SMTP_USER") or os.getenv("SMTP_USER", "")
-    smtp_pass = os.getenv("NOYTRIX_SMTP_PASS") or os.getenv("SMTP_PASS", "")
-
-    if smtp_user and smtp_pass:
-        msg = EmailMessage()
-        msg["Subject"] = "New Noytrix Trading Center request"
-        msg["From"] = smtp_user
-        msg["To"] = to_email
-        msg["Reply-To"] = email
-        msg.set_content(f"""New Noytrix request
-
-Product: {product}
-Source: {source}
-
-Name: {name}
-Contact: {email}
-
-Message:
-{note}
-""")
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
-            smtp.login(smtp_user, smtp_pass)
-            smtp.send_message(msg)
-
-    return {"ok": True, "saved": True, "emailSent": bool(smtp_user and smtp_pass)}
-
-
-@app.post("/api/app-feedback")
-async def api_app_feedback(payload: dict = Body(...)):
-    import datetime
-    import json
-    import pathlib
-
-    flow = str(payload.get("flow") or "").strip().lower()
-    if flow not in {"positive", "negative"}:
-        flow = "unknown"
-
-    def clean_text(value: Any, limit: int = 1200) -> str:
-        return str(value or "").strip()[:limit]
-
-    row = {
-        "ts": datetime.datetime.utcnow().isoformat() + "Z",
-        "app": clean_text(payload.get("app"), 80) or "noytrix_mobile",
-        "platform": clean_text(payload.get("platform"), 40),
-        "flow": flow,
-        "language": clean_text(payload.get("language"), 8),
-        "installUserId": clean_text(payload.get("installUserId"), 120),
-        "userId": clean_text(payload.get("userId"), 160),
-        "mostUseful": clean_text(payload.get("mostUseful"), 240),
-        "problem": clean_text(payload.get("problem"), 240),
-        "requestedFeature": clean_text(payload.get("requestedFeature"), 1200),
-        "dailyChange": clean_text(payload.get("dailyChange"), 1200),
-        "nps": payload.get("nps") if isinstance(payload.get("nps"), int) else None,
-        "raw": {
-            k: v
-            for k, v in payload.items()
-            if k
-            in {
-                "createdAt",
-                "app",
-                "platform",
-                "flow",
-                "language",
-                "mostUseful",
-                "problem",
-                "requestedFeature",
-                "dailyChange",
-                "nps",
-            }
-        },
-    }
-
-    path = pathlib.Path("/root/backend/data/app_feedback.jsonl")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    profile_key = row.get("userId") or row.get("installUserId")
-    if profile_key:
-        _profile_track_event(
-            profile_key,
-            "app_feedback",
-            object_ref=flow,
-            meta={
-                "flow": flow,
-                "language": row.get("language"),
-                "nps": row.get("nps"),
-                "mostUseful": row.get("mostUseful"),
-                "problem": row.get("problem"),
-            },
-        )
-
-    return {"ok": True, "saved": True}
