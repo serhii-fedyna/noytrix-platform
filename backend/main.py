@@ -93,7 +93,6 @@ from subscriptions import (
     grant_entitlement,
     provider_from_source,
     revoke_entitlement,
-    sync_google_play_purchase,
     user_flags,
 )
 try:
@@ -129,6 +128,9 @@ from routes.platform import router as platform_router
 from routes.feedback import router as feedback_router
 from routes.system import router as system_router
 from routes.profile import create_profile_router
+from routes.iap_guest import create_iap_guest_router
+from routes.admin_spender import create_admin_spender_router
+from routes.push import create_push_router
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -400,6 +402,9 @@ def _has_valid_app_key(request: Request) -> bool:
 def require_app_key(request: Request, lang: str = "en") -> None:
     if not _has_valid_app_key(request):
         raise HTTPException(status_code=403, detail=tr(lang, "forbidden"))
+
+
+app.include_router(create_push_router(get_lang, require_app_key))
 
 # =========================================================
 # PATHS / DB
@@ -1618,148 +1623,7 @@ def _active_from_google_purchase(product_type: str, data: dict) -> Tuple[bool, s
         return False, "pending", None
     return False, "canceled", None
 
-@app.post("/iap/google/guest/verify")
-async def iap_google_guest_verify(request: Request, payload: dict = Body(...)):
-    user_id = (
-        str(payload.get("userId") or "").strip()
-        or str(request.headers.get("x-user-id") or "").strip()
-        or str(request.headers.get("x_user_id") or "").strip()
-        or str(request.headers.get("user-id") or "").strip()
-    )
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Missing userId")
 
-    product_type = str(payload.get("productType") or "").strip().lower()
-    product_id = str(payload.get("productId") or "").strip()
-    package_name = str(payload.get("packageName") or "com.noytrix.app").strip()
-    purchase_token = str(payload.get("purchaseToken") or "").strip()
-    identity_user_id = resolve_from_request(
-        request,
-        [
-            ("guest", user_id),
-            ("revenuecat", user_id),
-            ("google_play_token", purchase_token),
-        ],
-    )
-
-    data = _google_play_verify_purchase(product_type, package_name, product_id, purchase_token)
-    active, status, expiry_dt = _active_from_google_purchase(product_type, data)
-    subscription_id = sync_google_play_purchase(
-        user_id=identity_user_id,
-        product_type=product_type,
-        product_id=product_id,
-        purchase_token=purchase_token,
-        data=data,
-        active=active,
-        status=status,
-        expires_at=expiry_dt.isoformat() if expiry_dt else None,
-        environment=str(payload.get("environment") or "production"),
-    )
-    _upsert_guest_iap_purchase(
-        user_id=user_id,
-        product_type=product_type,
-        product_id=product_id,
-        package_name=package_name,
-        purchase_token=purchase_token,
-        data=data,
-        active=active,
-        status=status,
-        expiry_dt=expiry_dt,
-    )
-
-    if active:
-        set_guest_pro(
-            user_id,
-            active=True,
-            source=f"google_play_verified:{product_id}",
-            expires_at=expiry_dt.isoformat() if expiry_dt else None,
-        )
-    else:
-        _sync_guest_google_entitlement(user_id)
-
-    server_status = _iap_status_payload(user_id)
-    return {
-        "ok": True,
-        "userId": user_id,
-        "identityUserId": identity_user_id,
-        "active": bool(server_status.get("active")),
-        "googleActive": active,
-        "status": status,
-        "subscriptionId": subscription_id,
-        "productType": product_type,
-        "productId": product_id,
-        "orderId": data.get("orderId"),
-        "expiryUtc": expiry_dt.isoformat() if expiry_dt else None,
-        "acknowledgementState": data.get("acknowledgementState"),
-        "purchaseState": data.get("purchaseState"),
-        "paymentState": data.get("paymentState"),
-    }
-
-@app.post("/iap/guest/activate")
-async def iap_guest_activate(request: Request, payload: dict = Body(...), lang: str | None = None):
-    user_id = (
-        str(payload.get("userId") or "").strip()
-        or str(request.headers.get("x-user-id") or "").strip()
-        or str(request.headers.get("x_user_id") or "").strip()
-        or str(request.headers.get("user-id") or "").strip()
-    )
-    if not user_id:
-        raise HTTPException(status_code=400, detail="Missing userId")
-
-    has_pro = _payload_bool(payload, ["hasPro", "isPro", "active", "pro", "premium", "entitlementActive"])
-    if has_pro is None:
-        has_pro = True
-    source = str(payload.get("source") or "guest_iap").strip()
-
-    if not has_pro:
-        # RevenueCat can briefly return no active entitlement during app start,
-        # restore, network errors, or anonymous->stable appUserID transitions.
-        # A client-side false must not revoke a paid server-side PRO record.
-        out = _iap_status_payload(user_id)
-        out.update({
-            "ignored": True,
-            "reason": "client_false_does_not_revoke_pro",
-        })
-        return out
-
-    # Public clients must not be able to grant PRO by sending a local flag.
-    # Google Play access is granted only by /iap/google/guest/verify after
-    # Android Publisher verifies the purchase token on the server.
-    out = _iap_status_payload(user_id)
-    out.update({
-        "ignored": True,
-        "reason": "client_activation_disabled_use_google_verify",
-        "requestedSource": source,
-    })
-    return out
-
-@app.get("/iap/guest/status")
-async def iap_guest_status(request: Request, userId: str | None = None):
-    uid = (
-        str(userId or "").strip()
-        or str(request.headers.get("x-user-id") or "").strip()
-        or str(request.headers.get("x_user_id") or "").strip()
-        or str(request.headers.get("user-id") or "").strip()
-    )
-    return _iap_status_payload(uid)
-
-@app.get("/subscriptions/status")
-async def subscriptions_status(request: Request, userId: str | None = None, entitlement: str = "pro"):
-    uid = (
-        str(userId or "").strip()
-        or str(request.headers.get("x-noytrix-user-id") or "").strip()
-        or str(request.headers.get("x-install-user-id") or "").strip()
-        or str(request.headers.get("x-user-id") or "").strip()
-    )
-    auth_uid = _get_user_id(request, None)
-    candidates = [x for x in [uid, auth_uid] if x]
-    status = entitlement_status(candidates, entitlement)
-    return {
-        "ok": True,
-        **status,
-        "userId": uid or auth_uid or status.get("userId"),
-        "entitlementUserId": status.get("userId"),
-    }
 
 # =========================================================
 # QUOTA
@@ -1786,6 +1650,16 @@ def _get_user_id(request: Request, user_id_q: Optional[str]) -> Optional[str]:
 
     return None
 
+app.include_router(create_iap_guest_router(
+    _google_play_verify_purchase,
+    _active_from_google_purchase,
+    _upsert_guest_iap_purchase,
+    set_guest_pro,
+    _sync_guest_google_entitlement,
+    _iap_status_payload,
+    _payload_bool,
+    _get_user_id,
+))
 def init_quota_db():
     conn = sqlite3.connect(QUOTA_DB_PATH)
     try:
@@ -2577,6 +2451,7 @@ RE_SOL = re.compile(r"^[1-9A-HJ-NP-Za-km-z]{32,44}$")
 RE_TON = re.compile(r"^(EQ|UQ)[A-Za-z0-9_-]{46,}$")
 
 RE_EVM_ADDR = re.compile(r"^0x[a-fA-F0-9]{40}$")
+app.include_router(create_admin_spender_router(get_lang, require_app_key, _spender_rep_db_connect, RE_EVM_ADDR))
 
 KNOWN_SAFE_ADDRESSES = {
     "0x000000000000000000000000000000000000dead": "burn_address",
@@ -7629,117 +7504,6 @@ async def security_analyze_core(payload: dict) -> dict:
 
     return unified
 
-
-@app.post("/admin/spender-reputation/add")
-def admin_add_spender_reputation(request: Request, payload: dict = Body(...), lang: str | None = None):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    address = str(payload.get("address") or "").lower().strip()
-    if not RE_EVM_ADDR.match(address):
-        raise HTTPException(status_code=400, detail={"error": "invalid_evm_address"})
-
-    label = str(payload.get("label") or "Unknown spender").strip()
-    category = str(payload.get("category") or "wallet_drainer").strip()
-    trust = str(payload.get("trust") or "malicious").strip().lower()
-    risk = str(payload.get("risk") or "critical").strip().lower()
-    reasons = payload.get("reasons") or ["manual_admin_reputation"]
-    source = str(payload.get("source") or "admin").strip()
-
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-    conn = _spender_rep_db_connect()
-    try:
-        conn.execute("""
-            INSERT OR REPLACE INTO spender_reputation
-            (address,label,category,trust,risk,reasons,source,first_seen,last_seen)
-            VALUES (?,?,?,?,?,?,?,?,?)
-        """, (
-            address,
-            label,
-            category,
-            trust,
-            risk,
-            json.dumps(reasons, ensure_ascii=False),
-            source,
-            now_iso,
-            now_iso,
-        ))
-        conn.commit()
-    finally:
-        conn.close()
-
-    return {"ok": True, "address": address, "label": label, "trust": trust, "risk": risk}
-
-
-
-
-@app.get("/admin/spender-reputation/list")
-def admin_list_spender_reputation(request: Request, lang: str | None = None, limit: int = 50):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    conn = _spender_rep_db_connect()
-    try:
-        rows = conn.execute("""
-            SELECT address,label,category,trust,risk,reasons,source,first_seen,last_seen
-            FROM spender_reputation
-            ORDER BY last_seen DESC
-            LIMIT ?
-        """, (max(1, min(int(limit or 50), 200)),)).fetchall()
-
-        return {
-            "ok": True,
-            "items": [dict(r) for r in rows]
-        }
-    finally:
-        conn.close()
-
-@app.get("/admin/spender-runtime-events/list")
-def admin_list_spender_runtime_events(request: Request, lang: str | None = None, limit: int = 50):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    conn = _spender_rep_db_connect()
-    try:
-        rows = conn.execute("""
-            SELECT id,address,domain,method,level,unlimited,drainer_flags,created_at
-            FROM spender_runtime_events
-            ORDER BY id DESC
-            LIMIT ?
-        """, (max(1, min(int(limit or 50), 200)),)).fetchall()
-
-        return {
-            "ok": True,
-            "items": [dict(r) for r in rows]
-        }
-    finally:
-        conn.close()
-
-
-
-@app.get("/admin/drainer-campaigns/list")
-def admin_list_drainer_campaigns(request: Request, lang: str | None = None, limit: int = 50):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    conn = _spender_rep_db_connect()
-    try:
-        rows = conn.execute("""
-            SELECT campaign_id,spender,domains,events_count,critical_count,first_seen,last_seen,risk
-            FROM drainer_campaigns
-            ORDER BY critical_count DESC, events_count DESC, last_seen DESC
-            LIMIT ?
-        """, (max(1, min(int(limit or 50), 200)),)).fetchall()
-
-        return {
-            "ok": True,
-            "items": [dict(r) for r in rows]
-        }
-    finally:
-        conn.close()
-
-
 # =========================================================
 # Runtime extension analysis
 # =========================================================
@@ -8731,15 +8495,6 @@ async def send_onesignal_push(title: str, body: str, data: dict | None = None, f
         r.raise_for_status()
         return r.json()
 
-@app.post("/push/register")
-async def push_register(request: Request, payload: dict = Body(...), lang: str | None = None):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    token = str(payload.get("expo_token", "")).strip()
-    if token.startswith("ExponentPushToken") and len(token) > 30:
-        return {"ok": True, "legacy": True, "provider": "onesignal", "ignored": True}
-    return {"ok": False, "reason": "bad token"}
 
 async def broadcast_push(title: str, body: str, category: str = "general", bypass_daily_limit: bool = False):
     extra_data = globals().get("_ONESIGNAL_NEXT_DATA", None)
