@@ -128,6 +128,7 @@ from routes.push import create_push_router
 from routes.b2b import create_b2b_router
 from routes.telegram import create_telegram_router
 from routes.runtime import create_runtime_router
+from routes.community import create_community_router
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -985,19 +986,10 @@ init_scan_db()
 init_api_keys_db()
 init_spender_reputation_db()
 
-class ScanVoteIn(BaseModel):
-    input: str
-    kind: str | None = None
-    is_scam: bool = False
-    userId: str | None = None
-    reporter: str | None = None
-    vote: str | None = None
-    obj: str | None = None
-
 def _normalize_obj(raw: str) -> str:
     return (raw or "").strip()
 
-def _vote_user_id(request: Request, payload: ScanVoteIn) -> str:
+def _vote_user_id(request: Request, payload: Any) -> str:
     candidates = [
         payload.userId,
         request.headers.get("x-user-id"),
@@ -1012,7 +1004,7 @@ def _vote_user_id(request: Request, payload: ScanVoteIn) -> str:
     ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
     return f"ip:{ip}"
 
-def _vote_reporter_name(payload: ScanVoteIn, user_id: str) -> str:
+def _vote_reporter_name(payload: Any, user_id: str) -> str:
     name = (payload.reporter or "").strip()
     return name or user_id
 
@@ -7022,125 +7014,18 @@ async def scan(
         print("[scan] fatal error:", e)
         raise HTTPException(status_code=500, detail=tr(L, "scan_failed"))
 
-# =========================================================
-# VOTES
-# =========================================================
-@app.post("/scan/vote")
-def scan_vote(request: Request, payload: ScanVoteIn = Body(...), lang: str | None = None):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    raw_obj = payload.obj if payload.obj is not None else payload.input
-    obj = _normalize_obj(raw_obj)
-    if not obj:
-        return {"ok": False, "error": "empty_input"}
-
-    kind = _normalize_kind_for_vote(payload.kind, obj)
-    user_id = _vote_user_id(request, payload)
-    reporter_name = _vote_reporter_name(payload, user_id)
-
-    vote_str = (payload.vote or "").strip().lower()
-    if vote_str in {"scam", "safe"}:
-        is_scam = 1 if vote_str == "scam" else 0
-    else:
-        is_scam = 1 if payload.is_scam else 0
-
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-
-    conn = _scan_db_connect()
-    try:
-        cur = conn.cursor()
-        existing = cur.execute(
-            """
-            SELECT id
-            FROM scan_votes
-            WHERE obj=? AND kind=? AND user_id=?
-            LIMIT 1
-            """,
-            (obj, kind, user_id),
-        ).fetchone()
-
-        if existing:
-            cur.execute(
-                """
-                UPDATE scan_votes
-                SET is_scam=?, reporter_name=?, updated_at=?
-                WHERE id=?
-                """,
-                (is_scam, reporter_name, now_iso, existing[0]),
-            )
-        else:
-            cur.execute(
-                """
-                INSERT INTO scan_votes
-                  (obj, kind, is_scam, user_id, reporter_name, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (obj, kind, is_scam, user_id, reporter_name, now_iso, now_iso),
-            )
-        conn.commit()
-    finally:
-        conn.close()
-
-    try:
-        _profile_track_event(
-            user_id,
-            "community_vote",
-            object_ref=obj,
-            meta={
-                "kind": kind,
-                "vote": "scam" if bool(is_scam) else "safe",
-                "reporter": reporter_name,
-            },
-        )
-    except Exception as e:
-        print("[profile] vote track error:", e)
-
-    community = _community_snapshot(obj, kind)
-    return {
-        "ok": True,
-        "object": obj,
-        "kind": kind,
-        "user_id": user_id,
-        "is_scam": bool(is_scam),
-        "community": community,
-    }
-
-@app.get("/scan/stats")
-def scan_stats(request: Request, limit: int = 200, lang: str | None = None):
-    L = get_lang(request, lang)
-    require_app_key(request, L)
-
-    items = _community_top_items(limit=limit, only_scam_first=True)
-    out = []
-    for it in items:
-        checks = int(it["scam_votes"] or 0) + int(it["safe_votes"] or 0)
-        out.append(
-            {
-                "obj": it["obj"],
-                "kind": it["kind"],
-                "checks": checks,
-                "scam_votes": int(it["scam_votes"] or 0),
-                "safe_votes": int(it["safe_votes"] or 0),
-                "total_users": int(it["total_users"] or 0),
-                "community_verdict": it["community_verdict"],
-                "last_seen": it["last_seen"],
-                "last_reporter": it["last_reporter"],
-            }
-        )
-    return out
-
-@app.get("/community/top-scams")
-def community_top_scams(limit: int = 20):
-    return {"items": _community_top_items(limit=limit, only_scam_first=True)}
-
-@app.get("/community/stats")
-def community_stats(limit: int = 20):
-    return {"items": _community_top_items(limit=limit, only_scam_first=True)}
-
-@app.get("/community/top")
-def community_top(limit: int = 20):
-    return {"items": _community_top_items(limit=limit, only_scam_first=True)}
+app.include_router(create_community_router(
+    get_lang,
+    require_app_key,
+    _normalize_obj,
+    _normalize_kind_for_vote,
+    _vote_user_id,
+    _vote_reporter_name,
+    _scan_db_connect,
+    _profile_track_event,
+    _community_snapshot,
+    _community_top_items,
+))
 
 # =========================================================
 # IMMUNITY (community) + /immunity/top
