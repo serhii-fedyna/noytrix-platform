@@ -130,6 +130,7 @@ from routes.telegram import create_telegram_router
 from routes.runtime import create_runtime_router
 from routes.community import create_community_router
 from routes.immunity import create_immunity_router
+from push_service import NoytrixPushService, PUSH_LANGS
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -7043,258 +7044,10 @@ app.include_router(create_immunity_router(
 # =========================================================
 # PUSH SENDER (OneSignal)
 # =========================================================
-PUSH_DEDUPE_DB_PATH = DATA_DIR / "push_dedupe.sqlite3"
-PUSH_DEFAULT_DEDUPE_SEC = 12 * 60 * 60
-PUSH_DAILY_LIMIT = 2
-PUSH_LANGS = ("en", "ru", "uk")
-
-def _push_dedupe_connect():
-    conn = sqlite3.connect(PUSH_DEDUPE_DB_PATH, timeout=20)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_push_dedupe_db():
-    conn = _push_dedupe_connect()
-    try:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS sent_push_alerts (
-              dedupe_key TEXT PRIMARY KEY,
-              title TEXT,
-              body TEXT,
-              data_json TEXT,
-              first_sent_at TEXT NOT NULL,
-              last_sent_at TEXT NOT NULL,
-              send_count INTEGER NOT NULL DEFAULT 1
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS push_daily_counts (
-              day TEXT NOT NULL,
-              category TEXT NOT NULL,
-              send_count INTEGER NOT NULL DEFAULT 0,
-              updated_at TEXT NOT NULL,
-              PRIMARY KEY(day, category)
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS calendar_push_reminders (
-              event_id TEXT PRIMARY KEY,
-              title TEXT,
-              start_ts TEXT,
-              sent_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-init_push_dedupe_db()
-
-def _push_norm_target(value: Any) -> str:
-    raw = str(value or "").strip().lower()
-    if not raw:
-        return ""
-    try:
-        u = raw if raw.startswith(("http://", "https://")) else "http://" + raw
-        host = (urlparse(u).hostname or raw).lower()
-        return host[4:] if host.startswith("www.") else host
-    except Exception:
-        return raw.split("?")[0].strip("/")
-
-def _push_dedupe_key(title: str, body: str, data: dict | None = None) -> str:
-    data = data if isinstance(data, dict) else {}
-    alert_type = str(data.get("type") or data.get("alert_type") or "").strip().lower()
-    source = str(data.get("source") or "").strip().lower()
-    lang = str(data.get("lang") or "").strip().lower()
-    target = _push_norm_target(data.get("input") or data.get("target") or data.get("url"))
-    if target:
-        base = f"{source}:{alert_type}:{target}:{lang}"
-    else:
-        base = f"title_body:{str(title or '').strip().lower()}::{str(body or '').strip().lower()}::{lang}"
-    return hashlib.sha256(base.encode("utf-8", errors="ignore")).hexdigest()
-
-def _push_daily_key() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-def _push_daily_can_send(category: str = "general", limit: int = PUSH_DAILY_LIMIT) -> bool:
-    cat = str(category or "general").strip().lower()
-    if cat in {"calendar", "transactional"}:
-        return True
-    conn = _push_dedupe_connect()
-    try:
-        row = conn.execute(
-            "SELECT send_count FROM push_daily_counts WHERE day=? AND category=? LIMIT 1",
-            (_push_daily_key(), "global"),
-        ).fetchone()
-        return int(row["send_count"] if row else 0) < max(1, int(limit or PUSH_DAILY_LIMIT))
-    finally:
-        conn.close()
-
-def _push_daily_mark_sent(category: str = "general") -> None:
-    cat = str(category or "general").strip().lower()
-    if cat in {"calendar", "transactional"}:
-        return
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    conn = _push_dedupe_connect()
-    try:
-        conn.execute(
-            """
-            INSERT INTO push_daily_counts(day, category, send_count, updated_at)
-            VALUES(?,?,1,?)
-            ON CONFLICT(day, category) DO UPDATE SET
-              send_count=send_count+1,
-              updated_at=excluded.updated_at
-            """,
-            (_push_daily_key(), "global", now_iso),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-def _push_recently_sent(dedupe_key: str, cooldown_sec: int = PUSH_DEFAULT_DEDUPE_SEC) -> bool:
-    if not dedupe_key:
-        return False
-    cutoff = datetime.now(timezone.utc).timestamp() - max(60, int(cooldown_sec or PUSH_DEFAULT_DEDUPE_SEC))
-    conn = _push_dedupe_connect()
-    try:
-        row = conn.execute(
-            "SELECT last_sent_at FROM sent_push_alerts WHERE dedupe_key=? LIMIT 1",
-            (dedupe_key,),
-        ).fetchone()
-        if not row:
-            return False
-        dt = datetime.fromisoformat(str(row["last_sent_at"]).replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.timestamp() >= cutoff
-    except Exception:
-        return False
-    finally:
-        conn.close()
-
-def _push_mark_sent(dedupe_key: str, title: str, body: str, data: dict | None = None) -> None:
-    if not dedupe_key:
-        return
-    now_iso = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    conn = _push_dedupe_connect()
-    try:
-        conn.execute(
-            """
-            INSERT INTO sent_push_alerts(dedupe_key, title, body, data_json, first_sent_at, last_sent_at, send_count)
-            VALUES(?,?,?,?,?,?,1)
-            ON CONFLICT(dedupe_key) DO UPDATE SET
-              title=excluded.title,
-              body=excluded.body,
-              data_json=excluded.data_json,
-              last_sent_at=excluded.last_sent_at,
-              send_count=send_count+1
-            """,
-            (dedupe_key, str(title or "")[:240], str(body or "")[:1000], json.dumps(data or {}, ensure_ascii=False), now_iso, now_iso),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-def _onesignal_lang_filter(lang: str) -> list[dict]:
-    return [
-        {"field": "tag", "key": "lang", "relation": "=", "value": lang},
-    ]
-
-async def send_onesignal_push(title: str, body: str, data: dict | None = None, filters: list[dict] | None = None) -> dict:
-    if not ONESIGNAL_APP_ID or not ONESIGNAL_API_KEY:
-        raise RuntimeError("OneSignal is not configured")
-
-    payload = {
-        "app_id": ONESIGNAL_APP_ID,
-        "headings": {"en": title, "ru": title},
-        "contents": {"en": body, "ru": body},
-        "priority": 10,
-    }
-    if filters:
-        payload["filters"] = filters
-    else:
-        payload["included_segments"] = ["All"]
-
-    # optional deep-link data, set by caller through task-local style globals
-    extra_data = data if isinstance(data, dict) else globals().pop("_ONESIGNAL_NEXT_DATA", None)
-    if isinstance(extra_data, dict) and extra_data:
-        payload["data"] = extra_data
-
-    headers = {
-        "Authorization": f"Basic {ONESIGNAL_API_KEY}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-
-    async with httpx.AsyncClient(timeout=15.0) as cl:
-        r = await cl.post(
-            "https://onesignal.com/api/v1/notifications",
-            json=payload,
-            headers=headers,
-        )
-        print("[onesignal] status =", r.status_code)
-        print("[onesignal] body =", r.text)
-        r.raise_for_status()
-        return r.json()
-
-
-async def broadcast_push(title: str, body: str, category: str = "general", bypass_daily_limit: bool = False):
-    extra_data = globals().get("_ONESIGNAL_NEXT_DATA", None)
-    dedupe_key = _push_dedupe_key(title, body, extra_data if isinstance(extra_data, dict) else None)
-    if _push_recently_sent(dedupe_key):
-        globals().pop("_ONESIGNAL_NEXT_DATA", None)
-        print("[broadcast_push] duplicate skipped", {"dedupe_key": dedupe_key, "title": title, "data": extra_data})
-        return {"ok": True, "provider": "onesignal", "skipped": True, "reason": "duplicate_recent_push"}
-    if not bypass_daily_limit and not _push_daily_can_send(category):
-        globals().pop("_ONESIGNAL_NEXT_DATA", None)
-        print("[broadcast_push] daily limit skipped", {"category": category, "title": title})
-        return {"ok": True, "provider": "onesignal", "skipped": True, "reason": "daily_push_limit"}
-    try:
-        resp = await send_onesignal_push(title, body)
-        _push_mark_sent(dedupe_key, title, body, extra_data if isinstance(extra_data, dict) else None)
-        _push_daily_mark_sent(category)
-        return {"ok": True, "provider": "onesignal", "response": resp}
-    except Exception as e:
-        print("[broadcast_push] onesignal error:", e)
-        return {"ok": False, "provider": "onesignal", "error": str(e)}
-
-async def broadcast_localized_push(messages: dict, data: dict | None = None, category: str = "general", bypass_daily_limit: bool = False):
-    if not bypass_daily_limit and not _push_daily_can_send(category):
-        print("[broadcast_localized_push] daily limit skipped", {"category": category})
-        return {"ok": True, "provider": "onesignal", "skipped": True, "reason": "daily_push_limit"}
-
-    sent = []
-    errors = []
-    for lang in PUSH_LANGS:
-        msg = messages.get(lang) or messages.get("en") or {}
-        title = str(msg.get("title") or "Noytrix").strip()
-        body = str(msg.get("body") or "").strip()
-        if not body:
-            continue
-        lang_data = dict(data or {})
-        lang_data["lang"] = lang
-        dedupe_key = _push_dedupe_key(title, body, lang_data)
-        if _push_recently_sent(dedupe_key):
-            sent.append({"lang": lang, "skipped": "duplicate_recent_push"})
-            continue
-        try:
-            resp = await send_onesignal_push(title, body, data=lang_data, filters=_onesignal_lang_filter(lang))
-            _push_mark_sent(dedupe_key, title, body, lang_data)
-            sent.append({"lang": lang, "response": resp})
-        except Exception as e:
-            errors.append({"lang": lang, "error": str(e)})
-            print("[broadcast_localized_push] onesignal error:", lang, e)
-
-    if sent and not all(x.get("skipped") for x in sent):
-        _push_daily_mark_sent(category)
-    return {"ok": not errors, "provider": "onesignal", "sent": sent, "errors": errors}
-
+push_service = NoytrixPushService(DATA_DIR, ONESIGNAL_APP_ID, ONESIGNAL_API_KEY)
+_push_dedupe_connect = push_service.connect
+broadcast_localized_push = push_service.broadcast_localized_push
+send_onesignal_push = push_service.send_onesignal_push
 
 # =========================================================
 # REDDIT SCAM MONITOR (dry-run first)
@@ -7361,7 +7114,7 @@ def _reddit_alert_type(title: str, summary: str, target: str) -> str:
 
 def _reddit_push_body(target: str, ctx: dict, alert_type: str) -> str:
     short_target = target if len(target) <= 78 else target[:75] + "..."
-    return f"{alert_type}: {short_target} вЂў {ctx.get('score')}/100 вЂў Reddit"
+    return f"{alert_type}: {short_target} | {ctx.get('score')}/100 | Reddit"
 
 
 def _reddit_push_messages(target: str, ctx: dict, alert_type: str) -> dict:
@@ -7373,12 +7126,12 @@ def _reddit_push_messages(target: str, ctx: dict, alert_type: str) -> dict:
             "body": f"New crypto scam signal: {short_target}. Risk {score}/100. Check before opening or connecting a wallet.",
         },
         "ru": {
-            "title": "Noytrix: СЂРёСЃРє СЃРєР°РјР°",
-            "body": f"РќРѕРІС‹Р№ crypto-scam СЃРёРіРЅР°Р»: {short_target}. Р РёСЃРє {score}/100. РџСЂРѕРІРµСЂСЊ РїРµСЂРµРґ РѕС‚РєСЂС‹С‚РёРµРј РёР»Рё РїРѕРґРєР»СЋС‡РµРЅРёРµРј РєРѕС€РµР»СЊРєР°.",
+            "title": "Noytrix: риск скама",
+            "body": f"Новый сигнал крипто-скама: {short_target}. Риск {score}/100. Проверь перед открытием или подключением кошелька.",
         },
         "uk": {
-            "title": "Noytrix: СЂРёР·РёРє СЃРєР°РјСѓ",
-            "body": f"РќРѕРІРёР№ crypto-scam СЃРёРіРЅР°Р»: {short_target}. Р РёР·РёРє {score}/100. РџРµСЂРµРІС–СЂ РїРµСЂРµРґ РІС–РґРєСЂРёС‚С‚СЏРј Р°Р±Рѕ РїС–РґРєР»СЋС‡РµРЅРЅСЏРј РіР°РјР°РЅС†СЏ.",
+            "title": "Noytrix: ризик скаму",
+            "body": f"Новий сигнал крипто-скаму: {short_target}. Ризик {score}/100. Перевір перед відкриттям або підключенням гаманця.",
         },
     }
 
@@ -7546,8 +7299,6 @@ async def _check_reddit_scam_alerts_once(dry_run: bool = True):
 
                 alert_type = _reddit_alert_type(title, summary, target)
                 messages_push = _reddit_push_messages(target, ctx, alert_type)
-                title_push = "рџљЁ Noytrix Scam Alert"
-                body_push = _reddit_push_body(target, ctx, alert_type)
 
                 kind_for_db = "url" if str(target).lower().startswith(("http://", "https://")) else (_detect_input_kind(target).get("kind") or "unknown")
                 _save_reddit_scam_to_community(target, kind_for_db, post_link, title)
@@ -7589,7 +7340,11 @@ async def reddit_scam_monitor_loop():
 # =========================================================
 # PUSH SIGNALS: Security / Whale / Market / Radar
 # =========================================================
-WATCH_SYMBOLS = ["BTCUSDT"]
+WATCH_SYMBOLS = [
+    s.strip().upper()
+    for s in os.getenv("NOYTRIX_WATCH_SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
+    if s.strip()
+]
 
 PRICE_HISTORY: dict[str, list[tuple[float, float]]] = {}
 MARKET_LAST_ALERT: dict[str, float] = {}
@@ -7702,20 +7457,20 @@ def _symbol_to_coin(symbol: str) -> str:
 
 def _market_move_messages(coin: str, pct_30m: float) -> dict:
     direction_en = "up" if pct_30m > 0 else "down"
-    direction_ru = "СЂРѕСЃС‚" if pct_30m > 0 else "РїР°РґРµРЅРёРµ"
-    direction_uk = "Р·СЂРѕСЃС‚Р°РЅРЅСЏ" if pct_30m > 0 else "РїР°РґС–РЅРЅСЏ"
+    direction_ru = "рост" if pct_30m > 0 else "падение"
+    direction_uk = "зростання" if pct_30m > 0 else "падіння"
     return {
         "en": {
             "title": f"Market signal: {coin}",
             "body": f"{coin} moved {direction_en} {pct_30m:+.2f}% in 30 minutes. Check context before making a decision.",
         },
         "ru": {
-            "title": f"Р С‹РЅРѕС‡РЅС‹Р№ СЃРёРіРЅР°Р»: {coin}",
-            "body": f"{coin}: Р·Р°РјРµС‚РЅРѕРµ {direction_ru} {pct_30m:+.2f}% Р·Р° 30 РјРёРЅСѓС‚. РџСЂРѕРІРµСЂСЊ РєРѕРЅС‚РµРєСЃС‚ РїРµСЂРµРґ СЂРµС€РµРЅРёРµРј.",
+            "title": f"Рыночный сигнал: {coin}",
+            "body": f"{coin}: заметное {direction_ru} {pct_30m:+.2f}% за 30 минут. Проверь контекст перед решением.",
         },
         "uk": {
-            "title": f"Р РёРЅРєРѕРІРёР№ СЃРёРіРЅР°Р»: {coin}",
-            "body": f"{coin}: РїРѕРјС–С‚РЅРµ {direction_uk} {pct_30m:+.2f}% Р·Р° 30 С…РІРёР»РёРЅ. РџРµСЂРµРІС–СЂ РєРѕРЅС‚РµРєСЃС‚ РїРµСЂРµРґ СЂС–С€РµРЅРЅСЏРј.",
+            "title": f"Ринковий сигнал: {coin}",
+            "body": f"{coin}: помітне {direction_uk} {pct_30m:+.2f}% за 30 хвилин. Перевір контекст перед рішенням.",
         },
     }
 
@@ -7727,12 +7482,12 @@ def _whale_messages(coin: str, notional: float) -> dict:
             "body": f"A large {coin} trade appeared on Binance: {amount}. It can affect short-term volatility.",
         },
         "ru": {
-            "title": f"РљСЂСѓРїРЅР°СЏ СЃРґРµР»РєР°: {coin}",
-            "body": f"РќР° Binance РїРѕСЏРІРёР»Р°СЃСЊ РєСЂСѓРїРЅР°СЏ СЃРґРµР»РєР° РїРѕ {coin}: {amount}. Р­С‚Рѕ РјРѕР¶РµС‚ РїРѕРІР»РёСЏС‚СЊ РЅР° РєСЂР°С‚РєРѕСЃСЂРѕС‡РЅСѓСЋ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ.",
+            "title": f"Крупная сделка: {coin}",
+            "body": f"На Binance появилась крупная сделка по {coin}: {amount}. Это может повлиять на краткосрочную волатильность.",
         },
         "uk": {
-            "title": f"Р’РµР»РёРєР° СѓРіРѕРґР°: {coin}",
-            "body": f"РќР° Binance Р·'СЏРІРёР»Р°СЃСЏ РІРµР»РёРєР° СѓРіРѕРґР° РїРѕ {coin}: {amount}. Р¦Рµ РјРѕР¶Рµ РІРїР»РёРЅСѓС‚Рё РЅР° РєРѕСЂРѕС‚РєРѕСЃС‚СЂРѕРєРѕРІСѓ РІРѕР»Р°С‚РёР»СЊРЅС–СЃС‚СЊ.",
+            "title": f"Велика угода: {coin}",
+            "body": f"На Binance з'явилася велика угода по {coin}: {amount}. Це може вплинути на короткострокову волатильність.",
         },
     }
 
@@ -7743,12 +7498,12 @@ def _radar_messages(coin: str) -> dict:
             "body": f"{coin} volatility is compressed. A strong move is possible, so check risk before acting.",
         },
         "ru": {
-            "title": f"Р Р°РґР°СЂ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚Рё: {coin}",
-            "body": f"РЈ {coin} СЃР¶Р°С‚РёРµ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚Рё. Р’РѕР·РјРѕР¶РµРЅ СЃРёР»СЊРЅС‹Р№ РёРјРїСѓР»СЊСЃ, РїСЂРѕРІРµСЂСЊ СЂРёСЃРє РїРµСЂРµРґ РґРµР№СЃС‚РІРёРµРј.",
+            "title": f"Радар волатильности: {coin}",
+            "body": f"У {coin} сжатие волатильности. Возможен сильный импульс, проверь риск перед действием.",
         },
         "uk": {
-            "title": f"Р Р°РґР°СЂ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚С–: {coin}",
-            "body": f"РЈ {coin} СЃС‚РёСЃРєР°РЅРЅСЏ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚С–. РњРѕР¶Р»РёРІРёР№ СЃРёР»СЊРЅРёР№ С–РјРїСѓР»СЊСЃ, РїРµСЂРµРІС–СЂ СЂРёР·РёРє РїРµСЂРµРґ РґС–С”СЋ.",
+            "title": f"Радар волатильності: {coin}",
+            "body": f"У {coin} стискання волатильності. Можливий сильний імпульс, перевір ризик перед дією.",
         },
     }
 
@@ -7765,19 +7520,19 @@ def _community_security_messages(kind: str, obj: str, scam_votes: int) -> dict:
             ),
         },
         "ru": {
-            "title": "Noytrix: СЃРёРіРЅР°Р» Р±РµР·РѕРїР°СЃРЅРѕСЃС‚Рё",
+            "title": "Noytrix: сигнал безопасности",
             "body": (
-                f"РЎРѕРѕР±С‰РµСЃС‚РІРѕ СѓСЃРёР»РёР»Рѕ СЂРёСЃРє РїРѕ {short_obj}: {scam_votes} РѕС‚РјРµС‚РѕРє scam. РџСЂРѕРІРµСЂСЊ РїРµСЂРµРґ РѕС‚РєСЂС‹С‚РёРµРј РёР»Рё РїРѕРґРїРёСЃСЊСЋ."
+                f"Сообщество усилило риск по {short_obj}: {scam_votes} отметок скама. Проверь перед открытием или подписью."
                 if is_site else
-                f"Р РёСЃРє РїРѕ {short_obj} РІС‹СЂРѕСЃ: {scam_votes} РѕС‚РјРµС‚РѕРє scam. РџСЂРѕРІРµСЂСЊ РѕР±СЉРµРєС‚ РїРµСЂРµРґ РІР·Р°РёРјРѕРґРµР№СЃС‚РІРёРµРј."
+                f"Риск по {short_obj} вырос: {scam_votes} отметок скама. Проверь объект перед взаимодействием."
             ),
         },
         "uk": {
-            "title": "Noytrix: СЃРёРіРЅР°Р» Р±РµР·РїРµРєРё",
+            "title": "Noytrix: сигнал безпеки",
             "body": (
-                f"РЎРїС–Р»СЊРЅРѕС‚Р° РїС–РґРІРёС‰РёР»Р° СЂРёР·РёРє РїРѕ {short_obj}: {scam_votes} РїРѕР·РЅР°С‡РѕРє scam. РџРµСЂРµРІС–СЂ РїРµСЂРµРґ РІС–РґРєСЂРёС‚С‚СЏРј Р°Р±Рѕ РїС–РґРїРёСЃРѕРј."
+                f"Спільнота підвищила ризик по {short_obj}: {scam_votes} позначок скаму. Перевір перед відкриттям або підписом."
                 if is_site else
-                f"Р РёР·РёРє РїРѕ {short_obj} Р·СЂС–СЃ: {scam_votes} РїРѕР·РЅР°С‡РѕРє scam. РџРµСЂРµРІС–СЂ РѕР±'С”РєС‚ РїРµСЂРµРґ РІР·Р°С”РјРѕРґС–С”СЋ."
+                f"Ризик по {short_obj} зріс: {scam_votes} позначок скаму. Перевір об'єкт перед взаємодією."
             ),
         },
     }
@@ -7809,9 +7564,6 @@ async def _check_market_alerts_once():
             continue
 
         coin = _symbol_to_coin(symbol)
-        direction = "СЂРѕСЃС‚" if pct_30m > 0 else "РїР°РґРµРЅРёРµ"
-        title = f"рџ“Љ Market Signal вЂў {coin}"
-        body = f"{coin}: Р°РЅРѕРјР°Р»СЊРЅРѕРµ {direction} {pct_30m:+.2f}% Р·Р° 30 РјРёРЅСѓС‚."
 
         if not _market_push_daily_can_send(symbol):
             print(f"[market] skip daily limit {symbol}")
@@ -7868,8 +7620,6 @@ async def _check_whale_alerts_once():
             continue
 
         coin = _symbol_to_coin(symbol)
-        title = f"рџђ‹ Whale Alert вЂў {coin}"
-        body = f"РљСЂСѓРїРЅР°СЏ СЃРґРµР»РєР° РїРѕ {coin} РЅР° Binance: {_fmt_usd_compact(best_notional)}."
 
         if not _market_push_daily_can_send(symbol):
             print(f"[whale] skip daily limit {symbol}")
@@ -7917,8 +7667,6 @@ async def _check_radar_alerts_once():
             continue
 
         coin = _symbol_to_coin(symbol)
-        title = f"рџ“Ў Radar вЂў {coin}"
-        body = f"{coin}: СЃР¶Р°С‚РёРµ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚Рё Р·Р° 60 РјРёРЅСѓС‚. Р’РѕР·РјРѕР¶РµРЅ СЃРёР»СЊРЅС‹Р№ РёРјРїСѓР»СЊСЃ."
 
         if not _market_push_daily_can_send(symbol):
             print(f"[radar] skip daily limit {symbol}")
@@ -7975,15 +7723,6 @@ async def _check_security_alerts_once():
             if key in SECURITY_ALERT_FLAGS:
                 continue
 
-            short_obj = obj if len(obj) <= 80 else (obj[:77] + "...")
-            if kind == "url":
-                body = f"РџРѕРґРѕР·СЂРёС‚РµР»СЊРЅС‹Р№ СЃР°Р№С‚ РѕС‚РјРµС‡РµРЅ СЃРѕРѕР±С‰РµСЃС‚РІРѕРј вЂў {scam_votes} scam votes."
-            elif kind in {"contract", "wallet", "token"}:
-                body = f"Р РёСЃРє РїРѕ РєРѕРЅС‚СЂР°РєС‚Сѓ/С‚РѕРєРµРЅСѓ РїРѕРІС‹С€РµРЅ вЂў {scam_votes} scam votes."
-            else:
-                body = f"РћР±СЉРµРєС‚ РїРѕРјРµС‡РµРЅ РєР°Рє РѕРїР°СЃРЅС‹Р№ вЂў {scam_votes} scam votes."
-
-            title = "рџ›Ў Security Alert"
             await broadcast_localized_push(
                 _community_security_messages(kind, obj, scam_votes),
                 {"type": "community_security_alert", "source": "noytrix_community", "target": obj, "kind": kind, "screen": "shield"},
@@ -8028,16 +7767,16 @@ def _calendar_expectation_text(impact: str, lang: str) -> str:
     imp = str(impact or "mid").lower()
     if lang == "ru":
         if imp == "high":
-            return "РјРѕР¶РµС‚ РґР°С‚СЊ СЃРёР»СЊРЅСѓСЋ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ, СЂРµР·РєРёРµ СЃРІРµС‡Рё Рё Р»РѕР¶РЅС‹Рµ РґРІРёР¶РµРЅРёСЏ"
+            return "может дать сильную волатильность, резкие свечи и ложные движения"
         if imp == "low":
-            return "РѕР±С‹С‡РЅРѕ РІР»РёСЏРµС‚ РјСЏРіРєРѕ, РЅРѕ Р»СѓС‡С€Рµ СѓС‡РёС‚С‹РІР°С‚СЊ РєРѕРЅС‚РµРєСЃС‚"
-        return "РјРѕР¶РµС‚ РїРѕРІР»РёСЏС‚СЊ РЅР° СЂС‹РЅРѕРє Рё РєСЂР°С‚РєРѕСЃСЂРѕС‡РЅСѓСЋ РІРѕР»Р°С‚РёР»СЊРЅРѕСЃС‚СЊ"
+            return "обычно влияет мягко, но контекст лучше учитывать"
+        return "может повлиять на рынок и краткосрочную волатильность"
     if lang == "uk":
         if imp == "high":
-            return "РјРѕР¶Рµ РґР°С‚Рё СЃРёР»СЊРЅСѓ РІРѕР»Р°С‚РёР»СЊРЅС–СЃС‚СЊ, СЂС–Р·РєС– СЂСѓС…Рё С‚Р° С…РёР±РЅС– РїСЂРѕР±РѕС—"
+            return "може дати сильну волатильність, різкі рухи та хибні пробої"
         if imp == "low":
-            return "Р·Р°Р·РІРёС‡Р°Р№ РІРїР»РёРІР°С” Рј'СЏРєРѕ, Р°Р»Рµ РєРѕРЅС‚РµРєСЃС‚ РєСЂР°С‰Рµ РІСЂР°С…СѓРІР°С‚Рё"
-        return "РјРѕР¶Рµ РІРїР»РёРЅСѓС‚Рё РЅР° СЂРёРЅРѕРє С– РєРѕСЂРѕС‚РєРѕСЃС‚СЂРѕРєРѕРІСѓ РІРѕР»Р°С‚РёР»СЊРЅС–СЃС‚СЊ"
+            return "зазвичай впливає м'яко, але контекст краще враховувати"
+        return "може вплинути на ринок і короткострокову волатильність"
     if imp == "high":
         return "may bring strong volatility, sharp moves and false breakouts"
     if imp == "low":
@@ -8055,12 +7794,12 @@ def _calendar_reminder_messages(row: sqlite3.Row) -> dict:
             "body": f"{name}. What to expect: {_calendar_expectation_text(impact, 'en')}. Not financial advice.",
         },
         "ru": {
-            "title": "РЎРѕР±С‹С‚РёРµ С‡РµСЂРµР· 15 РјРёРЅСѓС‚",
-            "body": f"{name}. Р§РµРіРѕ Р¶РґР°С‚СЊ: {_calendar_expectation_text(impact, 'ru')}. Р­С‚Рѕ РЅРµ С„РёРЅР°РЅСЃРѕРІС‹Р№ СЃРѕРІРµС‚.",
+            "title": "Событие через 15 минут",
+            "body": f"{name}. Чего ждать: {_calendar_expectation_text(impact, 'ru')}. Это не финансовый совет.",
         },
         "uk": {
-            "title": "РџРѕРґС–СЏ С‡РµСЂРµР· 15 С…РІРёР»РёРЅ",
-            "body": f"{name}. Р§РѕРіРѕ РѕС‡С–РєСѓРІР°С‚Рё: {_calendar_expectation_text(impact, 'uk')}. Р¦Рµ РЅРµ С„С–РЅР°РЅСЃРѕРІР° РїРѕСЂР°РґР°.",
+            "title": "Подія через 15 хвилин",
+            "body": f"{name}. Чого очікувати: {_calendar_expectation_text(impact, 'uk')}. Це не фінансова порада.",
         },
     }
 
@@ -8130,28 +7869,48 @@ async def calendar_reminders_loop():
 PUSH_TIPS = [
     {
         "en": ("What not to sign", "Do not sign Permit or SetApprovalForAll on unknown sites. It can give access to tokens or NFTs."),
-        "ru": ("Р§С‚Рѕ РЅРµ РїРѕРґРїРёСЃС‹РІР°С‚СЊ", "РќРµ РїРѕРґРїРёСЃС‹РІР°Р№ Permit РёР»Рё SetApprovalForAll РЅР° РЅРµРёР·РІРµСЃС‚РЅС‹С… СЃР°Р№С‚Р°С…. Р­С‚Рѕ РјРѕР¶РµС‚ РґР°С‚СЊ РґРѕСЃС‚СѓРї Рє С‚РѕРєРµРЅР°Рј РёР»Рё NFT."),
-        "uk": ("Р©Рѕ РЅРµ РїС–РґРїРёСЃСѓРІР°С‚Рё", "РќРµ РїС–РґРїРёСЃСѓР№ Permit Р°Р±Рѕ SetApprovalForAll РЅР° РЅРµРІС–РґРѕРјРёС… СЃР°Р№С‚Р°С…. Р¦Рµ РјРѕР¶Рµ РґР°С‚Рё РґРѕСЃС‚СѓРї РґРѕ С‚РѕРєРµРЅС–РІ Р°Р±Рѕ NFT."),
+        "ru": ("Что не подписывать", "Не подписывай Permit или SetApprovalForAll на неизвестных сайтах. Это может дать доступ к токенам или NFT."),
+        "uk": ("Що не підписувати", "Не підписуй Permit або SetApprovalForAll на невідомих сайтах. Це може дати доступ до токенів або NFT."),
     },
     {
         "en": ("Scam sign in 10 seconds", "If a crypto site asks for a seed phrase, it is almost always a scam. Never enter it anywhere."),
-        "ru": ("РџСЂРёР·РЅР°Рє СЃРєР°РјР° Р·Р° 10 СЃРµРєСѓРЅРґ", "Р•СЃР»Рё crypto-СЃР°Р№С‚ РїСЂРѕСЃРёС‚ seed phrase, СЌС‚Рѕ РїРѕС‡С‚Рё РІСЃРµРіРґР° СЃРєР°Рј. РќРёРєРѕРіРґР° РЅРµ РІРІРѕРґРё РµС‘ РЅРёРєСѓРґР°."),
-        "uk": ("РћР·РЅР°РєР° СЃРєР°РјСѓ Р·Р° 10 СЃРµРєСѓРЅРґ", "РЇРєС‰Рѕ crypto-СЃР°Р№С‚ РїСЂРѕСЃРёС‚СЊ seed phrase, С†Рµ РјР°Р№Р¶Рµ Р·Р°РІР¶РґРё СЃРєР°Рј. РќС–РєРѕР»Рё РЅРµ РІРІРѕРґСЊ С—С— РЅС–РґРµ."),
+        "ru": ("Признак скама за 10 секунд", "Если крипто-сайт просит seed phrase, это почти всегда скам. Никогда не вводи её нигде."),
+        "uk": ("Ознака скаму за 10 секунд", "Якщо крипто-сайт просить seed phrase, це майже завжди скам. Ніколи не вводь її ніде."),
     },
     {
         "en": ("Airdrop warning", "Fake airdrops often use approve instead of claim. Check what the signature really allows."),
-        "ru": ("Airdrop-РїСЂРµРґСѓРїСЂРµР¶РґРµРЅРёРµ", "Р¤РµР№РєРѕРІС‹Рµ airdrop С‡Р°СЃС‚Рѕ РёСЃРїРѕР»СЊР·СѓСЋС‚ approve РІРјРµСЃС‚Рѕ claim. РџСЂРѕРІРµСЂСЊ, С‡С‚Рѕ СЂРµР°Р»СЊРЅРѕ СЂР°Р·СЂРµС€Р°РµС‚ РїРѕРґРїРёСЃСЊ."),
-        "uk": ("Airdrop-РїРѕРїРµСЂРµРґР¶РµРЅРЅСЏ", "Р¤РµР№РєРѕРІС– airdrop С‡Р°СЃС‚Рѕ РІРёРєРѕСЂРёСЃС‚РѕРІСѓСЋС‚СЊ approve Р·Р°РјС–СЃС‚СЊ claim. РџРµСЂРµРІС–СЂ, С‰Рѕ СЂРµР°Р»СЊРЅРѕ РґРѕР·РІРѕР»СЏС” РїС–РґРїРёСЃ."),
+        "ru": ("Предупреждение об airdrop", "Фейковые airdrop часто используют approve вместо claim. Проверь, что реально разрешает подпись."),
+        "uk": ("Попередження про airdrop", "Фейкові airdrop часто використовують approve замість claim. Перевір, що реально дозволяє підпис."),
     },
     {
         "en": ("Token safety", "A honeypot can allow buying but block selling. Check sell risk before buying a new token."),
-        "ru": ("Р‘РµР·РѕРїР°СЃРЅРѕСЃС‚СЊ С‚РѕРєРµРЅР°", "Honeypot РјРѕР¶РµС‚ СЂР°Р·СЂРµС€Р°С‚СЊ РїРѕРєСѓРїРєСѓ, РЅРѕ Р±Р»РѕРєРёСЂРѕРІР°С‚СЊ РїСЂРѕРґР°Р¶Сѓ. РџСЂРѕРІРµСЂСЊ sell-risk РїРµСЂРµРґ РїРѕРєСѓРїРєРѕР№ С‚РѕРєРµРЅР°."),
-        "uk": ("Р‘РµР·РїРµРєР° С‚РѕРєРµРЅР°", "Honeypot РјРѕР¶Рµ РґРѕР·РІРѕР»СЏС‚Рё РєСѓРїС–РІР»СЋ, Р°Р»Рµ Р±Р»РѕРєСѓРІР°С‚Рё РїСЂРѕРґР°Р¶. РџРµСЂРµРІС–СЂ sell-risk РїРµСЂРµРґ РєСѓРїС–РІР»РµСЋ С‚РѕРєРµРЅР°."),
+        "ru": ("Безопасность токена", "Honeypot может разрешать покупку, но блокировать продажу. Проверь sell-risk перед покупкой токена."),
+        "uk": ("Безпека токена", "Honeypot може дозволяти купівлю, але блокувати продаж. Перевір sell-risk перед купівлею токена."),
     },
     {
         "en": ("Google Ads risk", "Crypto phishing sites often buy ads for brand names. A top result is not always the official site."),
-        "ru": ("Р РёСЃРє Google Ads", "Crypto-С„РёС€РёРЅРі С‡Р°СЃС‚Рѕ РїРѕРєСѓРїР°РµС‚ СЂРµРєР»Р°РјСѓ РїРѕ РЅР°Р·РІР°РЅРёСЏРј Р±СЂРµРЅРґРѕРІ. Р’РµСЂС…РЅРёР№ СЂРµР·СѓР»СЊС‚Р°С‚ РЅРµ РІСЃРµРіРґР° РѕС„РёС†РёР°Р»СЊРЅС‹Р№ СЃР°Р№С‚."),
-        "uk": ("Р РёР·РёРє Google Ads", "Crypto-С„С–С€РёРЅРі С‡Р°СЃС‚Рѕ РєСѓРїСѓС” СЂРµРєР»Р°РјСѓ Р·Р° РЅР°Р·РІР°РјРё Р±СЂРµРЅРґС–РІ. Р’РµСЂС…РЅС–Р№ СЂРµР·СѓР»СЊС‚Р°С‚ РЅРµ Р·Р°РІР¶РґРё РѕС„С–С†С–Р№РЅРёР№ СЃР°Р№С‚."),
+        "ru": ("Риск Google Ads", "Крипто-фишинг часто покупает рекламу по названиям брендов. Верхний результат не всегда официальный сайт."),
+        "uk": ("Ризик Google Ads", "Крипто-фішинг часто купує рекламу за назвами брендів. Верхній результат не завжди офіційний сайт."),
+    },
+    {
+        "en": ("Revoke old approvals", "Old token approvals can stay active for months. Review and revoke unused approvals after using unknown dApps."),
+        "ru": ("Отзови старые разрешения", "Старые разрешения на токены могут работать месяцами. Проверяй и отзывай лишние approvals после неизвестных dApp."),
+        "uk": ("Відкликай старі дозволи", "Старі дозволи на токени можуть працювати місяцями. Перевіряй і відкликай зайві approvals після невідомих dApp."),
+    },
+    {
+        "en": ("Before buying a new token", "Check liquidity, sell ability, owner privileges and contract age. Cheap hype can hide a blocked sell path."),
+        "ru": ("Перед покупкой нового токена", "Проверь ликвидность, возможность продажи, права владельца и возраст контракта. Хайп может скрывать блокировку продажи."),
+        "uk": ("Перед купівлею нового токена", "Перевір ліквідність, можливість продажу, права власника і вік контракту. Хайп може приховувати блокування продажу."),
+    },
+    {
+        "en": ("Unreadable signature", "If a wallet shows unreadable data, stop and scan first. A blind signature can approve more than it says on the page."),
+        "ru": ("Непонятная подпись", "Если кошелёк показывает непонятные данные, остановись и сначала проверь. Слепая подпись может разрешить больше, чем написано на странице."),
+        "uk": ("Незрозумілий підпис", "Якщо гаманець показує незрозумілі дані, зупинись і спочатку перевір. Сліпий підпис може дозволити більше, ніж написано на сторінці."),
+    },
+    {
+        "en": ("Support never needs a seed phrase", "Real support will not ask for a recovery phrase or private key. Anyone asking for it is trying to take the wallet."),
+        "ru": ("Поддержке не нужна seed phrase", "Настоящая поддержка не просит фразу восстановления или private key. Если просят, у тебя пытаются забрать кошелёк."),
+        "uk": ("Підтримці не потрібна seed phrase", "Справжня підтримка не просить фразу відновлення або private key. Якщо просять, у тебе намагаються забрати гаманець."),
     },
 ]
 
@@ -8163,7 +7922,7 @@ def _tip_messages_for_today() -> tuple[dict, str]:
     for lang in PUSH_LANGS:
         title, body = raw.get(lang) or raw["en"]
         messages[lang] = {"title": title, "body": body}
-    return messages, f"safety_tip:{idx}:{_push_daily_key()}"
+    return messages, f"safety_tip:{idx}:{_today_utc_key()}"
 
 async def safety_tip_loop():
     await asyncio.sleep(90)
