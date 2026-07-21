@@ -30,16 +30,82 @@ const UI = {
   good: "#29D37A",
 };
 
-function cleanError(e, fallback) {
-  const msg = String(e?.message || fallback || "");
-  if (msg.includes("<html") || msg.includes("405 Not Allowed")) return fallback;
-  if (msg.includes("Network request failed")) return fallback;
-  return msg;
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i.test(String(value || "").trim());
+}
+
+function authCopy(lang, key) {
+  const ru = {
+    invalidEmail: "Проверь email: похоже, в адресе есть опечатка. Мы не сможем отправить код или привязать PRO, пока email написан неверно.",
+    shortPassword: "Пароль слишком короткий. Используй минимум 6 символов, чтобы аккаунт был защищён.",
+    googleConfig: "Вход через Google временно недоступен из-за настройки приложения. Email-вход работает, а Google-вход нужно проверить перед релизом.",
+    googleInvalid: "Google не подтвердил вход. Попробуй ещё раз и выбери аккаунт Google, к которому хочешь привязать Noytrix.",
+    googleNetwork: "Не удалось связаться с Google. Проверь интернет и попробуй снова через пару секунд.",
+    googleGeneric: "Google-вход не завершился. Мы не создали аккаунт и ничего не изменили. Попробуй снова или войди по email.",
+    emailDelivery: "Мы не смогли отправить код на email. Проверь адрес и попробуй снова. Если письмо не приходит, используй вход через Google.",
+    loginInvalid: "Не получилось войти. Проверь email и пароль. Если не помнишь пароль, восстанови доступ ниже.",
+    resetUnavailable: "Не удалось отправить код восстановления. Проверь email или попробуй вход через Google, если аккаунт был создан через Google.",
+    codeInvalid: "Код не подошёл или уже устарел. Проверь последнее письмо от Noytrix и введи самый свежий код.",
+  };
+  const uk = {
+    invalidEmail: "Перевір email: схоже, в адресі є помилка. Ми не зможемо надіслати код або прив'язати PRO, поки email написано неправильно.",
+    shortPassword: "Пароль занадто короткий. Використай мінімум 6 символів, щоб акаунт був захищений.",
+    googleConfig: "Вхід через Google тимчасово недоступний через налаштування застосунку. Email-вхід працює, а Google-вхід потрібно перевірити перед релізом.",
+    googleInvalid: "Google не підтвердив вхід. Спробуй ще раз і вибери акаунт Google, до якого хочеш прив'язати Noytrix.",
+    googleNetwork: "Не вдалося зв'язатися з Google. Перевір інтернет і спробуй ще раз за кілька секунд.",
+    googleGeneric: "Google-вхід не завершився. Ми не створили акаунт і нічого не змінили. Спробуй ще раз або увійди через email.",
+    emailDelivery: "Ми не змогли надіслати код на email. Перевір адресу і спробуй ще раз. Якщо лист не приходить, використай вхід через Google.",
+    loginInvalid: "Не вдалося увійти. Перевір email і пароль. Якщо не пам'ятаєш пароль, віднови доступ нижче.",
+    resetUnavailable: "Не вдалося надіслати код відновлення. Перевір email або спробуй вхід через Google, якщо акаунт був створений через Google.",
+    codeInvalid: "Код не підійшов або вже застарів. Перевір останній лист від Noytrix і введи найсвіжіший код.",
+  };
+  const en = {
+    invalidEmail: "Check the email address: it looks like there may be a typo. We cannot send a code or attach PRO until the email is correct.",
+    shortPassword: "The password is too short. Use at least 6 characters to keep the account protected.",
+    googleConfig: "Google sign-in is temporarily unavailable because of app configuration. Email sign-in still works, and Google sign-in must be checked before release.",
+    googleInvalid: "Google did not confirm the sign-in. Try again and choose the Google account you want to connect to Noytrix.",
+    googleNetwork: "Could not reach Google. Check your connection and try again in a few seconds.",
+    googleGeneric: "Google sign-in did not finish. We did not create an account or change anything. Try again or sign in with email.",
+    emailDelivery: "We could not send the email code. Check the address and try again. If the email does not arrive, use Google sign-in.",
+    loginInvalid: "Could not sign in. Check your email and password. If you do not remember the password, restore access below.",
+    resetUnavailable: "Could not send the recovery code. Check the email or try Google sign-in if this account was created with Google.",
+    codeInvalid: "The code is invalid or expired. Check the latest email from Noytrix and enter the newest code.",
+  };
+  const current = String(lang || "");
+  const dict = current.startsWith("uk") ? uk : current.startsWith("ru") ? ru : en;
+  return dict[key] || en[key] || "";
+}
+
+function friendlyAuthError(e, lang, fallbackKey) {
+  const msg = String(e?.message || "").toLowerCase();
+  const detail = String(e?.data?.detail || e?.data?.message || "").toLowerCase();
+  const text = `${msg} ${detail}`;
+
+  if (text.includes("google_client_id_missing") || text.includes("redirect_uri_mismatch")) {
+    return authCopy(lang, "googleConfig");
+  }
+  if (text.includes("google") && (text.includes("invalid") || text.includes("401") || text.includes("access_token_missing"))) {
+    return authCopy(lang, "googleInvalid");
+  }
+  if (text.includes("network request failed") || text.includes("timeout") || text.includes("fetch")) {
+    return authCopy(lang, fallbackKey === "googleGeneric" ? "googleNetwork" : fallbackKey);
+  }
+  if (text.includes("smtp") || text.includes("email") || text.includes("send code") || text.includes("failed to send")) {
+    return authCopy(lang, "emailDelivery");
+  }
+  if (text.includes("invalid") && text.includes("password")) {
+    return authCopy(lang, "loginInvalid");
+  }
+  if (text.includes("code")) {
+    return authCopy(lang, "codeInvalid");
+  }
+  return authCopy(lang, fallbackKey);
 }
 
 export default function EmailAuth() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const lang = String(i18n?.language || "");
 
   const login = useAuthStore((s) => s.login);
   const loginGoogle = useAuthStore((s) => s.loginGoogle);
@@ -98,7 +164,7 @@ export default function EmailAuth() {
       showNotice(
         "error",
         tr("auth.errorTitle", "Error"),
-        cleanError(e, tr("auth.alertGoogleError", "Google sign-in failed. Please try again."))
+        friendlyAuthError(e, lang, "googleGeneric")
       );
     } finally {
       setBusy(false);
@@ -116,6 +182,10 @@ export default function EmailAuth() {
       );
     }
 
+    if (!isValidEmail(email)) {
+      return showNotice("error", tr("auth.errorTitle", "Error"), authCopy(lang, "invalidEmail"));
+    }
+
     setBusy(true);
     try {
       await login({ email, password: loginPass });
@@ -124,7 +194,7 @@ export default function EmailAuth() {
       showNotice(
         "error",
         tr("auth.errorTitle", "Error"),
-        cleanError(e, tr("auth.alertLoginError", "Invalid email or password."))
+        friendlyAuthError(e, lang, "loginInvalid")
       );
     } finally {
       setBusy(false);
@@ -140,6 +210,14 @@ export default function EmailAuth() {
         tr("auth.errorTitle", "Error"),
         tr("auth.alertRegisterEmpty", "Fill in nickname, email and password.")
       );
+    }
+
+    if (!isValidEmail(email)) {
+      return showNotice("error", tr("auth.errorTitle", "Error"), authCopy(lang, "invalidEmail"));
+    }
+
+    if (String(regPass || "").length < 6) {
+      return showNotice("error", tr("auth.errorTitle", "Error"), authCopy(lang, "shortPassword"));
     }
 
     setBusy(true);
@@ -160,7 +238,7 @@ export default function EmailAuth() {
       showNotice(
         "error",
         tr("auth.errorTitle", "Error"),
-        cleanError(e, tr("auth.alertRegisterError", "Failed to send code."))
+        friendlyAuthError(e, lang, "emailDelivery")
       );
     } finally {
       setBusy(false);
@@ -198,7 +276,7 @@ export default function EmailAuth() {
       showNotice(
         "error",
         tr("auth.errorTitle", "Error"),
-        cleanError(e, tr("auth.alertRegisterInvalidCode", "Invalid or expired code."))
+        friendlyAuthError(e, lang, "codeInvalid")
       );
     } finally {
       setBusy(false);
@@ -216,6 +294,10 @@ export default function EmailAuth() {
       );
     }
 
+    if (!isValidEmail(email)) {
+      return showNotice("error", tr("auth.errorTitle", "Error"), authCopy(lang, "invalidEmail"));
+    }
+
     setBusy(true);
     try {
       await resetStart({ email });
@@ -228,7 +310,7 @@ export default function EmailAuth() {
       showNotice(
         "error",
         tr("auth.errorTitle", "Error"),
-        cleanError(e, tr("auth.alertResetError", "Failed to reset password."))
+        friendlyAuthError(e, lang, "resetUnavailable")
       );
     } finally {
       setBusy(false);
@@ -244,6 +326,14 @@ export default function EmailAuth() {
         tr("auth.errorTitle", "Error"),
         tr("auth.alertResetError", "Failed to reset password.")
       );
+    }
+
+    if (!isValidEmail(email)) {
+      return showNotice("error", tr("auth.errorTitle", "Error"), authCopy(lang, "invalidEmail"));
+    }
+
+    if (String(resetPass || "").length < 6) {
+      return showNotice("error", tr("auth.errorTitle", "Error"), authCopy(lang, "shortPassword"));
     }
 
     setBusy(true);
@@ -264,7 +354,7 @@ export default function EmailAuth() {
       showNotice(
         "error",
         tr("auth.errorTitle", "Error"),
-        cleanError(e, tr("auth.alertResetError", "Failed to reset password."))
+        friendlyAuthError(e, lang, "resetUnavailable")
       );
     } finally {
       setBusy(false);

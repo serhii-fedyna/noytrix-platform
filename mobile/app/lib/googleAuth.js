@@ -1,14 +1,16 @@
 import * as AuthSession from "expo-auth-session";
 import * as WebBrowser from "expo-web-browser";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 WebBrowser.maybeCompleteAuthSession();
 
 export async function signInWithGoogle() {
   const extra = Constants.expoConfig?.extra || Constants.manifest?.extra || {};
   const clientId =
-    extra.googleAndroidClientId ||
+    (Platform.OS === "android" ? extra.googleAndroidClientId : extra.googleWebClientId) ||
     extra.googleWebClientId ||
+    extra.googleAndroidClientId ||
     extra.googleClientId ||
     "";
 
@@ -34,17 +36,44 @@ export async function signInWithGoogle() {
 
   const authUrl = await request.makeAuthUrlAsync(discovery);
 
-  const result = await AuthSession.startAsync({
-    authUrl,
-    returnUrl: redirectUri,
-  });
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 
-  if (result.type !== "success" || !result.params?.access_token) {
+  if (result.type === "cancel" || result.type === "dismiss") {
     return null;
   }
 
+  if (result.type !== "success" || !result.url) {
+    throw new Error("google_auth_not_completed");
+  }
+
+  const params = parseGoogleAuthParams(result.url);
+  if (params.error) {
+    throw new Error(`google_${params.error}`);
+  }
+
+  if (!params.access_token) {
+    throw new Error("google_access_token_missing");
+  }
+
   return {
-    accessToken: result.params.access_token,
-    idToken: result.params.id_token || null,
+    accessToken: params.access_token,
+    idToken: params.id_token || null,
   };
+}
+
+function parseGoogleAuthParams(url) {
+  const out = {};
+  const raw = String(url || "");
+  const query = raw.includes("?") ? raw.split("?")[1].split("#")[0] : "";
+  const hash = raw.includes("#") ? raw.split("#")[1] : "";
+
+  [query, hash].filter(Boolean).forEach((part) => {
+    part.split("&").forEach((pair) => {
+      const [k, v = ""] = pair.split("=");
+      if (!k) return;
+      out[decodeURIComponent(k)] = decodeURIComponent(v.replace(/\+/g, " "));
+    });
+  });
+
+  return out;
 }
