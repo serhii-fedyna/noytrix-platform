@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
+import Svg, { Path } from "react-native-svg";
 import { useAuthStore } from "../lib/store.auth";
 import { signInWithGoogle } from "../lib/googleAuth";
 
@@ -377,7 +378,7 @@ export default function EmailAuth() {
           style={[styles.googleBtn, busy && styles.disabled]}
         >
           <View style={styles.googleIcon}>
-            <Text style={styles.googleIconText}>G</Text>
+            <GoogleG />
           </View>
           <Text numberOfLines={1} adjustsFontSizeToFit style={styles.googleText}>
             {tr("auth.googleBtn", "Continue with Google")}
@@ -659,6 +660,17 @@ function Cancel({ title, onPress }) {
   );
 }
 
+function GoogleG() {
+  return (
+    <Svg width={20} height={20} viewBox="0 0 48 48">
+      <Path fill="#FFC107" d="M43.61 20.08H42V20H24v8h11.3C33.65 32.66 29.22 36 24 36c-6.63 0-12-5.37-12-12s5.37-12 12-12c3.06 0 5.84 1.15 7.96 3.04l5.66-5.66C34.05 6.05 29.26 4 24 4 12.95 4 4 12.95 4 24s8.95 20 20 20 20-8.95 20-20c0-1.34-.14-2.65-.39-3.92z" />
+      <Path fill="#FF3D00" d="M6.31 14.69l6.57 4.82C14.66 15.1 18.98 12 24 12c3.06 0 5.84 1.15 7.96 3.04l5.66-5.66C34.05 6.05 29.26 4 24 4 16.32 4 9.66 8.34 6.31 14.69z" />
+      <Path fill="#4CAF50" d="M24 44c5.17 0 9.86-1.98 13.41-5.19l-6.19-5.24C29.21 35.09 26.72 36 24 36c-5.2 0-9.62-3.31-11.28-7.93l-6.52 5.02C9.5 39.56 16.23 44 24 44z" />
+      <Path fill="#1976D2" d="M43.61 20.08H42V20H24v8h11.3c-.79 2.24-2.23 4.17-4.08 5.57l6.19 5.24C36.97 39.21 44 34 44 24c0-1.34-.14-2.65-.39-3.92z" />
+    </Svg>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap: { width: "100%" },
 
@@ -751,12 +763,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
     alignItems: "center",
     justifyContent: "center",
-  },
-
-  googleIconText: {
-    color: "#4285F4",
-    fontSize: 18,
-    fontWeight: "900",
   },
 
   googleText: {
