@@ -64,15 +64,148 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const plans = [
-  { id: "m", title: "Month", save: "" },
-  { id: "h", title: "6 months", save: "Save 20%" },
-  { id: "l", title: "1 year", save: "Annual protection" },
+  { id: "m", titleKey: "planMTitle", saveKey: "planMSave" },
+  { id: "h", titleKey: "planHTitle", saveKey: "planHSave" },
+  { id: "l", titleKey: "planLTitle", saveKey: "planLSave", featured: true },
 ];
 
 const usd = (n) => `$${Number(n).toFixed(2)}`;
-const LOCAL_PRICES = { m: 9.99, h: 49.99, l: 199.99 };
+const LOCAL_PRICES = { m: 9.99, h: 39.99, l: 59.99 };
 const REVIEW_STATE_KEY = "noytrix.reviewPrompt.v1";
 const PRO_NUDGE_STATE_KEY = "noytrix.proNudge.v1";
+
+const PAYWALL_COPY = {
+  en: {
+    heroTitle: "Protect yourself before you connect, approve, sign or send",
+    heroSubtitle:
+      "Noytrix checks links, wallets, tokens, contracts and signatures before you act. PRO gives deeper checks, clearer AI explanations and fewer blind decisions.",
+    freeTitle: "What you already checked for free",
+    freeText:
+      "You can already see basic crypto risk signals without paying. PRO is for moments where guessing is not enough.",
+    freePointOne: "Basic checks help you decide whether an object deserves trust.",
+    freePointTwo: "If Noytrix sees a red flag, stop first and do not rush the action.",
+    freeScansLabel: "Free checks",
+    lastRiskLabel: "Last risk",
+    opensLabel: "App opens",
+    noRiskYet: "none yet",
+    proTitle: "Why PRO matters",
+    proText:
+      "PRO is built for people who touch crypto regularly and want a second pair of eyes before money leaves a wallet.",
+    proPointOne: "More checks for links, wallets, tokens, contracts and suspicious setups.",
+    proPointTwo: "Deeper risk analysis before Connect, Approve, Sign or Send.",
+    proPointThree: "A simple AI explanation in human language: what is risky and what to do next.",
+    proPointFour: "Google Play purchase restore if you change phone or reinstall the app.",
+    whyWorthTitle: "One bad click can cost more than a year of PRO",
+    whyWorthText:
+      "Noytrix does not promise profit. It helps you avoid blind actions when a fake link, token, wallet or signature could put funds at risk.",
+    noProfitPromise: "This is not financial advice and not a profit promise. It is a risk check before you decide.",
+    tariffsTitle: "Choose your protection",
+    tariffsLead: "Choose how long Noytrix should protect you before Connect, Approve, Sign or Send.",
+    tariffsNote:
+      "Free checks are limited. PRO keeps deeper checks, AI explanations and purchase recovery available.",
+    planMTitle: "1 month",
+    planMSave: "Flexible start",
+    planMText: "Full protection for one month. Best if you want to test Noytrix before a longer plan.",
+    planHTitle: "6 months",
+    planHSave: "Save 33%",
+    planHText: "For active crypto users. Six months of deeper checks for less than paying month by month.",
+    planLTitle: "1 year",
+    planLSave: "Best value",
+    planLText: "A full year of protection for about half the month-by-month price. Best if crypto is part of your routine.",
+    bestValue: "Best value",
+    joinValueText: "Less than one bad crypto mistake",
+    joinCtaBuy: "Get full protection",
+  },
+  ru: {
+    heroTitle: "Защити себя до Connect, Approve, Sign или Send",
+    heroSubtitle:
+      "Noytrix проверяет ссылки, кошельки, токены, контракты и подписи до действия. PRO даёт более глубокие проверки, понятные AI-объяснения и меньше слепых решений.",
+    freeTitle: "Что ты уже проверил бесплатно",
+    freeText:
+      "Ты уже видишь базовые крипто-риски без оплаты. PRO нужен в моменты, когда угадывать уже опасно.",
+    freePointOne: "Базовая проверка помогает понять, стоит ли доверять объекту.",
+    freePointTwo: "Если Noytrix видит красный флаг, лучше остановиться и не спешить.",
+    freeScansLabel: "Бесплатных проверок",
+    lastRiskLabel: "Последний риск",
+    opensLabel: "Заходов в приложение",
+    noRiskYet: "ещё нет",
+    proTitle: "Почему PRO важен",
+    proText:
+      "PRO создан для тех, кто регулярно работает с криптой и хочет вторую проверку до того, как деньги уйдут из кошелька.",
+    proPointOne: "Больше проверок ссылок, кошельков, токенов, контрактов и подозрительных схем.",
+    proPointTwo: "Глубже анализ риска перед Connect, Approve, Sign или Send.",
+    proPointThree: "Простое AI-объяснение человеческим языком: что опасно и что делать дальше.",
+    proPointFour: "Восстановление покупки через Google Play, если сменил телефон или переустановил приложение.",
+    whyWorthTitle: "Один плохой клик может стоить дороже года PRO",
+    whyWorthText:
+      "Noytrix не обещает прибыль. Он помогает не действовать вслепую, когда фейковая ссылка, токен, кошелёк или подпись могут поставить средства под риск.",
+    noProfitPromise: "Это не финансовый совет и не обещание прибыли. Это проверка риска перед твоим решением.",
+    tariffsTitle: "Выбери защиту",
+    tariffsLead: "Выбери, как долго Noytrix будет защищать тебя перед Connect, Approve, Sign или Send.",
+    tariffsNote:
+      "Бесплатные проверки ограничены. PRO открывает глубокие проверки, AI-объяснения и восстановление покупки.",
+    planMTitle: "1 месяц",
+    planMSave: "Гибкий старт",
+    planMText: "Полная защита на месяц. Подходит, если хочешь спокойно попробовать Noytrix перед длинным планом.",
+    planHTitle: "6 месяцев",
+    planHSave: "Экономия 33%",
+    planHText: "Для активных пользователей крипты. Полгода глубоких проверок дешевле, чем платить каждый месяц.",
+    planLTitle: "1 год",
+    planLSave: "Лучший выбор",
+    planLText: "Год защиты примерно за половину цены помесячной оплаты. Лучший вариант, если крипта часть твоей рутины.",
+    bestValue: "Лучший выбор",
+    joinValueText: "Дешевле одной плохой крипто-ошибки",
+    joinCtaBuy: "Открыть полную защиту",
+  },
+  uk: {
+    heroTitle: "Захисти себе до Connect, Approve, Sign або Send",
+    heroSubtitle:
+      "Noytrix перевіряє посилання, гаманці, токени, контракти й підписи до дії. PRO дає глибші перевірки, зрозумілі AI-пояснення і менше сліпих рішень.",
+    freeTitle: "Що ти вже перевірив безкоштовно",
+    freeText:
+      "Ти вже бачиш базові крипто-ризики без оплати. PRO потрібен у моменти, коли вгадувати вже небезпечно.",
+    freePointOne: "Базова перевірка допомагає зрозуміти, чи варто довіряти об'єкту.",
+    freePointTwo: "Якщо Noytrix бачить червоний прапорець, краще зупинитися і не поспішати.",
+    freeScansLabel: "Безкоштовних перевірок",
+    lastRiskLabel: "Останній ризик",
+    opensLabel: "Відкриттів застосунку",
+    noRiskYet: "ще немає",
+    proTitle: "Чому PRO важливий",
+    proText:
+      "PRO створений для тих, хто регулярно працює з криптою і хоче другу перевірку до того, як гроші підуть із гаманця.",
+    proPointOne: "Більше перевірок посилань, гаманців, токенів, контрактів і підозрілих схем.",
+    proPointTwo: "Глибший аналіз ризику перед Connect, Approve, Sign або Send.",
+    proPointThree: "Просте AI-пояснення людською мовою: що небезпечно і що робити далі.",
+    proPointFour: "Відновлення покупки через Google Play, якщо змінив телефон або перевстановив застосунок.",
+    whyWorthTitle: "Один поганий клік може коштувати дорожче за рік PRO",
+    whyWorthText:
+      "Noytrix не обіцяє прибуток. Він допомагає не діяти наосліп, коли фейкове посилання, токен, гаманець або підпис можуть поставити кошти під ризик.",
+    noProfitPromise: "Це не фінансова порада і не обіцянка прибутку. Це перевірка ризику перед твоїм рішенням.",
+    tariffsTitle: "Обери захист",
+    tariffsLead: "Обери, як довго Noytrix захищатиме тебе перед Connect, Approve, Sign або Send.",
+    tariffsNote:
+      "Безкоштовні перевірки обмежені. PRO відкриває глибші перевірки, AI-пояснення та відновлення покупки.",
+    planMTitle: "1 місяць",
+    planMSave: "Гнучкий старт",
+    planMText: "Повний захист на місяць. Підійде, якщо хочеш спокійно спробувати Noytrix перед довшим планом.",
+    planHTitle: "6 місяців",
+    planHSave: "Економія 33%",
+    planHText: "Для активних користувачів крипти. Пів року глибших перевірок дешевше, ніж платити щомісяця.",
+    planLTitle: "1 рік",
+    planLSave: "Найкращий вибір",
+    planLText: "Рік захисту приблизно за половину ціни помісячної оплати. Найкращий варіант, якщо крипта частина твоєї рутини.",
+    bestValue: "Найкращий вибір",
+    joinValueText: "Дешевше за одну погану крипто-помилку",
+    joinCtaBuy: "Відкрити повний захист",
+  },
+};
+
+function languageOf(code) {
+  const value = String(code || "").toLowerCase();
+  if (value.startsWith("uk") || value.startsWith("ua")) return "uk";
+  if (value.startsWith("ru")) return "ru";
+  return "en";
+}
 
 function normalizeProductId(product) {
   return String(product?.id || product?.productId || "").trim();
@@ -134,7 +267,12 @@ export default function ProScreen() {
   });
   const [storeProducts, setStoreProducts] = useState({ products: [], subs: [] });
 
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const paywallLang = languageOf(i18n?.language);
+  const pw = useCallback(
+    (key) => t(`proPaywall.${key}`, PAYWALL_COPY[paywallLang]?.[key] || PAYWALL_COPY.en[key] || ""),
+    [t, paywallLang]
+  );
 
   const purchased = ent.proMonthly || ent.pro6m || ent.proYearly;
 
@@ -316,47 +454,33 @@ export default function ProScreen() {
         >
           <View style={{ marginTop: 8, marginBottom: 12 }}>
             <Text style={s.pageTitle}>Noytrix PRO</Text>
-            <Text style={s.heroTitle}>
-              {t("proValue.heroTitle", "Проверяй крипто-риск до покупки, подписи или перевода")}
-            </Text>
-            <Text style={s.pageSub}>
-              {t(
-                "proValue.heroSubtitle",
-                "Noytrix помогает понять, где опасная ссылка, кошелёк, токен или контракт. PRO открывает больше проверок и более глубокий анализ, но не обещает прибыль."
-              )}
-            </Text>
+            <Text style={s.heroTitle}>{pw("heroTitle")}</Text>
+            <Text style={s.pageSub}>{pw("heroSubtitle")}</Text>
           </View>
 
           <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={30} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
               <View style={s.alertHeader}>
                 <Ionicons name="gift-outline" size={22} color={C.accent} />
-                <Text style={s.title}>
-                  {t("proValue.freeTitle", "Что ты уже получил бесплатно")}
-                </Text>
+                <Text style={s.title}>{pw("freeTitle")}</Text>
               </View>
 
-              <Text style={s.textStrong}>
-                {t(
-                  "proValue.freeText",
-                  "Ты уже можешь проверить часть крипто-рисков без оплаты. Мы показываем базовый вердикт и предупреждаем, если видим опасные сигналы."
-                )}
-              </Text>
+              <Text style={s.textStrong}>{pw("freeText")}</Text>
 
               <View style={s.valueGrid}>
                 <ValueTile
                   icon="scan-outline"
-                  label={t("proValue.freeScansLabel", "Бесплатных проверок")}
+                  label={pw("freeScansLabel")}
                   value={String(paywallStats.scanCount || 0)}
                 />
                 <ValueTile
                   icon="warning-outline"
-                  label={t("proValue.lastRiskLabel", "Последний риск")}
-                  value={paywallStats.lastLevel || t("proValue.noRiskYet", "ещё нет")}
+                  label={pw("lastRiskLabel")}
+                  value={paywallStats.lastLevel || pw("noRiskYet")}
                 />
                 <ValueTile
                   icon="phone-portrait-outline"
-                  label={t("proValue.opensLabel", "Заходов в приложение")}
+                  label={pw("opensLabel")}
                   value={String(paywallStats.appOpens || 0)}
                 />
               </View>
@@ -364,11 +488,11 @@ export default function ProScreen() {
               <View style={{ marginTop: 12 }}>
                 <Bullet
                   icon="checkmark-circle-outline"
-                  text={t("proValue.freePointOne", "Базовая проверка помогает понять, стоит ли доверять объекту.")}
+                  text={pw("freePointOne")}
                 />
                 <Bullet
                   icon="checkmark-circle-outline"
-                  text={t("proValue.freePointTwo", "Если Noytrix видит красный флаг, лучше остановиться и не спешить.")}
+                  text={pw("freePointTwo")}
                 />
               </View>
             </BlurView>
@@ -378,32 +502,27 @@ export default function ProScreen() {
             <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
               <View style={s.alertHeader}>
                 <Ionicons name="shield-checkmark-outline" size={22} color={C.accent} />
-                <Text style={s.title}>{t("proValue.proTitle", "Что даёт PRO")}</Text>
+                <Text style={s.title}>{pw("proTitle")}</Text>
               </View>
 
-              <Text style={s.textStrong}>
-                {t(
-                  "proValue.proText",
-                  "PRO нужен тем, кто проверяет крипто-объекты регулярно и хочет меньше слепых решений. Он даёт больше проверок, глубже анализ и понятные объяснения."
-                )}
-              </Text>
+              <Text style={s.textStrong}>{pw("proText")}</Text>
 
               <View style={{ marginTop: 12 }}>
                 <Bullet
                   icon="infinite-outline"
-                  text={t("proValue.proPointOne", "Больше проверок и меньше ограничений для активного пользователя.")}
+                  text={pw("proPointOne")}
                 />
                 <Bullet
                   icon="search-outline"
-                  text={t("proValue.proPointTwo", "Глубже анализ ссылок, кошельков, токенов, контрактов и подозрительных схем.")}
+                  text={pw("proPointTwo")}
                 />
                 <Bullet
                   icon="chatbubble-ellipses-outline"
-                  text={t("proValue.proPointThree", "Простой ответ человеческим языком: почему опасно и что лучше сделать.")}
+                  text={pw("proPointThree")}
                 />
                 <Bullet
                   icon="refresh-outline"
-                  text={t("proValue.proPointFour", "Покупку можно восстановить через Google Play, если сменил телефон или переустановил приложение.")}
+                  text={pw("proPointFour")}
                 />
               </View>
             </BlurView>
@@ -416,29 +535,18 @@ export default function ProScreen() {
                   <Ionicons name="alert-circle" size={20} color={C.red} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={s.caseTitle}>
-                    {t("proValue.whyWorthTitle", "Почему это выгодно")}
-                  </Text>
-                  <Text style={s.caseText}>
-                    {t(
-                      "proValue.whyWorthText",
-                      "Одна ошибка с фейковой ссылкой, токеном или подписью может стоить намного дороже подписки. PRO не зарабатывает деньги за тебя, но помогает не действовать вслепую."
-                    )}
-                  </Text>
+                  <Text style={s.caseTitle}>{pw("whyWorthTitle")}</Text>
+                  <Text style={s.caseText}>{pw("whyWorthText")}</Text>
                 </View>
               </View>
-              <Text style={s.disclaimer}>
-                {t(
-                  "proValue.noProfitPromise",
-                  "Важно: это не инвестиционный совет и не обещание прибыли. Решение всегда остаётся за тобой."
-                )}
-              </Text>
+              <Text style={s.disclaimer}>{pw("noProfitPromise")}</Text>
             </BlurView>
           </View>
 
           <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
-              <Text style={s.h2}>{t("pro.tariffsTitle", "Choose your protection")}</Text>
+              <Text style={s.h2}>{pw("tariffsTitle")}</Text>
+              <Text style={s.pricingLead}>{pw("tariffsLead")}</Text>
 
               {plans.map((p, i) => {
                 const isActive =
@@ -446,20 +554,21 @@ export default function ProScreen() {
                   (p.id === "h" && ent.pro6m) ||
                   (p.id === "m" && ent.proMonthly);
 
-                const saveText = t(`pro.plans.${p.id}.save`, p.save);
+                const saveText = pw(p.saveKey);
 
                 return (
                   <View
                     key={p.id}
                     style={[
                       s.planItem,
+                      p.featured && !isActive && s.planItemFeatured,
                       i === plans.length - 1 && { marginBottom: 0 },
                       isActive && { borderColor: "rgba(255,165,0,0.35)" },
                     ]}
                   >
                     <View style={{ flex: 1, paddingRight: 10 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-                        <Text style={s.planTitle}>{t(`pro.plans.${p.id}.title`, p.title)}</Text>
+                        <Text style={s.planTitle}>{pw(p.titleKey)}</Text>
 
                         {isActive ? (
                           <View style={s.badgeActive}>
@@ -471,6 +580,10 @@ export default function ProScreen() {
                             />
                             <Text style={s.badgeText}>{t("pro.badges.active", "Active")}</Text>
                           </View>
+                        ) : p.featured ? (
+                          <View style={s.badgeBest}>
+                            <Text style={s.badgeBestText}>{pw("bestValue")}</Text>
+                          </View>
                         ) : null}
                       </View>
 
@@ -480,12 +593,7 @@ export default function ProScreen() {
                         <Text style={s.planSave}>{saveText}</Text>
                       ) : null}
 
-                      <Text style={s.planAnchor}>
-                        {t(
-                          "pro.priceAnchor",
-                          "One bad trade can cost $100+. PRO costs less than your mistake."
-                        )}
-                      </Text>
+                      <Text style={s.planAnchor}>{pw(`plan${p.id.toUpperCase()}Text`)}</Text>
                     </View>
 
                     <TouchableOpacity
@@ -507,10 +615,7 @@ export default function ProScreen() {
 
               {!purchased ? (
                 <Text style={s.limitText}>
-                  {t(
-                    "pro.tariffsNote",
-                    "Limited free scans per day. Upgrade to unlock full crypto protection."
-                  )}
+                  {pw("tariffsNote")}
                 </Text>
               ) : (
                 <Text style={s.limitText}>{t("pro.restoreHint", "Your PRO access is active.")}</Text>
@@ -628,7 +733,7 @@ export default function ProScreen() {
                 <View style={s.joinRow}>
                   <Text style={s.dim}>{t("pro.join.valueLabel", "Value")}</Text>
                   <Text style={[s.text, { color: C.green, flex: 1, textAlign: "right" }]}>
-                    {t("pro.join.valueText", "Less than one bad crypto mistake")}
+                    {pw("joinValueText")}
                   </Text>
                 </View>
 
@@ -643,7 +748,7 @@ export default function ProScreen() {
                     onPress={() => handleBuy("m")}
                     activeOpacity={0.9}
                   >
-                    <Text style={s.ctaText}>{t("pro.join.ctaBuy", "Get full protection")}</Text>
+                    <Text style={s.ctaText}>{pw("joinCtaBuy")}</Text>
                   </TouchableOpacity>
                 )}
 
@@ -754,6 +859,7 @@ const s = StyleSheet.create({
   },
   title: { color: C.text, fontSize: 18, fontWeight: "900", flex: 1 },
   h2: { color: C.text, fontSize: 18, fontWeight: "900", marginBottom: 12 },
+  pricingLead: { color: C.sub, fontSize: 13, lineHeight: 18, marginTop: -4, marginBottom: 12 },
   sectionTitle: { color: C.text, fontSize: 18, fontWeight: "900", marginBottom: 10 },
   text: { color: C.sub, fontSize: 14, lineHeight: 20 },
   textStrong: { color: C.soft, fontSize: 14, lineHeight: 20, marginTop: 8, fontWeight: "700" },
@@ -837,6 +943,10 @@ const s = StyleSheet.create({
     padding: 12,
     marginBottom: 10,
   },
+  planItemFeatured: {
+    borderColor: "rgba(255,165,0,0.40)",
+    backgroundColor: "rgba(255,165,0,0.07)",
+  },
   planTitle: { color: C.text, fontSize: 15, fontWeight: "900" },
   planPrice: { color: C.green, fontSize: 16, marginTop: 5, fontWeight: "900" },
   planSave: { color: C.accent, fontSize: 12, marginTop: 4, fontWeight: "800" },
@@ -860,6 +970,16 @@ const s = StyleSheet.create({
     backgroundColor: "rgba(76,217,100,0.08)",
   },
   badgeText: { color: C.text, fontSize: 12, fontWeight: "900" },
+  badgeBest: {
+    marginLeft: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(255,165,0,0.38)",
+    backgroundColor: "rgba(255,165,0,0.10)",
+  },
+  badgeBestText: { color: C.accent, fontSize: 11, fontWeight: "900" },
   buyBtn: {
     backgroundColor: C.accent,
     borderRadius: 14,
