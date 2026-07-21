@@ -17,6 +17,7 @@ export const API = {
   registerVerify:`${BACKEND}/auth/register/verify`,
   registerDone:  `${BACKEND}/auth/register/complete`, 
   login:         `${BACKEND}/auth/login`,
+  googleLogin:   `${BACKEND}/auth/google`,
 
   
   resetStart:    `${BACKEND}/auth/reset/start`,

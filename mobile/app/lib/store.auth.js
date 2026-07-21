@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   getAuthState,
   login as apiLogin,
+  loginGoogle as apiLoginGoogle,
   registerStart as apiRegisterStart,
   registerVerify as apiRegisterVerify,
   resetStart as apiResetStart,
@@ -75,6 +76,16 @@ export const useAuthStore = create((set, get) => ({
     await identifyTikTokUser(user || { email });
     await logEvent("login_success", { email: user?.email || email || "" });
     return get().user;
+  },
+
+  loginGoogle: async ({ accessToken }) => {
+    await logEvent("login_google_started", { source: "google" });
+    await apiLoginGoogle({ accessToken });
+    await get().init();
+    const user = get().user;
+    await identifyTikTokUser(user || {});
+    await logEvent("login_google_success", { email: user?.email || "" });
+    return user;
   },
 
   registerStart: async (payload) => {

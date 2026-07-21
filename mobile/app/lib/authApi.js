@@ -204,6 +204,29 @@ export async function login({ email, password }) {
   return data;
 }
 
+export async function loginGoogle({ accessToken }) {
+  const token = String(accessToken || "").trim();
+  if (!token) throw new Error("google_access_token_missing");
+
+  const data = await jsonFetch(API.googleLogin, {
+    method: "POST",
+    body: { access_token: token },
+  });
+
+  const user = data?.user || null;
+  const access =
+    data?.access_token || data?.accessToken || data?.tokens?.access_token || null;
+  const refresh =
+    data?.refresh_token ||
+    data?.refreshToken ||
+    data?.tokens?.refresh_token ||
+    null;
+
+  await saveAuthState({ user, access_token: access, refresh_token: refresh });
+  await identifyUser({ email: user?.email, authUserId: user?.id, google: true });
+  return data;
+}
+
 export async function registerStart({ email, password, nick }) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
   await identifyUser({ email: normalizedEmail });
@@ -373,6 +396,9 @@ export async function me() {
 
 export async function authLogin(payload) {
   return login(payload);
+}
+export async function authGoogleLogin(payload) {
+  return loginGoogle(payload);
 }
 export async function authRegisterStart(payload) {
   return registerStart(payload);

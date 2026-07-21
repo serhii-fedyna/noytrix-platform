@@ -5,6 +5,7 @@ WebBrowser.maybeCompleteAuthSession();
 
 export async function signInWithGoogle() {
   const androidId = Constants.expoConfig?.extra?.googleAndroidClientId
+    || Constants.expoConfig?.extra?.googleWebClientId
     || Constants.manifest?.extra?.googleAndroidClientId;
   const redirectUri = AuthSession.makeRedirectUri({ scheme: Constants.expoConfig?.scheme || "noytrix" });
 
@@ -21,14 +22,14 @@ export async function signInWithGoogle() {
   });
 
   const result = await AuthSession.startAsync({
-    authUrl: request.makeAuthUrl(),
+    authUrl: await request.makeAuthUrlAsync(discovery),
     returnUrl: redirectUri,
   });
 
   if (result.type !== "success" || !result.params?.access_token) return null;
 
   const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-    headers: { Authorization: Bearer  },
+    headers: { Authorization: `Bearer ${result.params.access_token}` },
   });
   const profile = await res.json(); // {sub,email,name,given_name,picture...}
   profile.idToken = result.params.id_token;

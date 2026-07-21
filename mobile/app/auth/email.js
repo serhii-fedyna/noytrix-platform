@@ -17,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { useAuthStore } from "../lib/store.auth";
+import { signInWithGoogle } from "../lib/googleAuth";
 
 const UI = {
   brand: "#FFB020",
@@ -41,6 +42,7 @@ export default function EmailAuth() {
   const { t } = useTranslation();
 
   const login = useAuthStore((s) => s.login);
+  const loginGoogle = useAuthStore((s) => s.loginGoogle);
   const registerStart = useAuthStore((s) => s.registerStart);
   const registerVerify = useAuthStore((s) => s.registerVerify);
   const resetStart = useAuthStore((s) => s.resetStart);
@@ -80,6 +82,27 @@ export default function EmailAuth() {
   const goProfile = () => {
     setModal(null);
     router.replace("/(tabs)/profile");
+  };
+
+  const onGoogle = async () => {
+    setBusy(true);
+    try {
+      const result = await signInWithGoogle();
+      if (!result?.accessToken) {
+        setBusy(false);
+        return;
+      }
+      await loginGoogle({ accessToken: result.accessToken });
+      goProfile();
+    } catch (e) {
+      showNotice(
+        "error",
+        tr("auth.errorTitle", "Error"),
+        cleanError(e, tr("auth.alertGoogleError", "Google sign-in failed. Please try again."))
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const onLogin = async () => {
@@ -256,6 +279,20 @@ export default function EmailAuth() {
       >
         <Text style={styles.title}>{tr("auth.title", "Sign in / Sign up")}</Text>
         <Text style={styles.subtitle}>{tr("auth.subtitle", "Choose a method.")}</Text>
+
+        <TouchableOpacity
+          disabled={busy}
+          activeOpacity={0.88}
+          onPress={onGoogle}
+          style={[styles.googleBtn, busy && styles.disabled]}
+        >
+          <View style={styles.googleIcon}>
+            <Text style={styles.googleIconText}>G</Text>
+          </View>
+          <Text numberOfLines={1} adjustsFontSizeToFit style={styles.googleText}>
+            {tr("auth.googleBtn", "Continue with Google")}
+          </Text>
+        </TouchableOpacity>
 
         <MainButton
           orange
@@ -601,6 +638,41 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
     textDecorationLine: "underline",
+  },
+
+  googleBtn: {
+    height: 58,
+    borderRadius: 18,
+    marginTop: 18,
+    paddingHorizontal: 14,
+    backgroundColor: "#F4F7FB",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.20)",
+  },
+
+  googleIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  googleIconText: {
+    color: "#4285F4",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+
+  googleText: {
+    color: "#1F2937",
+    fontSize: 16,
+    fontWeight: "900",
   },
 
   overlay: { flex: 1, justifyContent: "center" },

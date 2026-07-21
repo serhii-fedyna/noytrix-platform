@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   Platform,
   Modal,
+  ScrollView,
 } from "react-native";
 import * as LocalAuthentication from "expo-local-authentication";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -25,6 +26,7 @@ import { logEvent } from "./lib/analytics";
 import { ReviewPromptHost } from "./lib/reviewPrompt";
 import { normalizeLang } from "./i18n/lang";
 import { syncPushLanguageTag } from "./lib/pushLanguage";
+import EmailAuth from "./auth/email";
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 const NOTIFICATIONS_PREF_KEY = "profile.notifications";
@@ -300,15 +302,116 @@ function PremiumAlert({ alert, onClose }) {
   );
 }
 
-function AppShell({ children, appAlert, setAppAlert }) {
+function AppShell({ children, appAlert, setAppAlert, showGrowthTools = true }) {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
       {children}
       <PremiumAlert alert={appAlert} onClose={() => setAppAlert(null)} />
-      <ReviewPromptHost />
-      <ProNudgeHost />
+      {showGrowthTools && <ReviewPromptHost />}
+      {showGrowthTools && <ProNudgeHost />}
     </SafeAreaProvider>
+  );
+}
+
+function authGateCopy() {
+  const lang = normalizeLang(i18n.language);
+  if (lang === "uk") {
+    return {
+      badge: "ЗАХИСТ ПРИВ'ЯЗАНИЙ ДО АКАУНТА",
+      title: "Увійдіть, щоб відкрити Noytrix",
+      text: "Акаунт потрібен, щоб зберігати історію перевірок, PRO-доступ, покупки Google Play і відновлення захисту на новому телефоні.",
+      points: [
+        "PRO не загубиться після перевстановлення.",
+        "Історія перевірок буде прив'язана до вас.",
+        "Сповіщення та мова працюватимуть однаково на всіх екранах.",
+      ],
+    };
+  }
+  if (lang === "ru") {
+    return {
+      badge: "ЗАЩИТА ПРИВЯЗАНА К АККАУНТУ",
+      title: "Войдите, чтобы открыть Noytrix",
+      text: "Аккаунт нужен, чтобы сохранять историю проверок, PRO-доступ, покупки Google Play и восстановление защиты на новом телефоне.",
+      points: [
+        "PRO не потеряется после переустановки.",
+        "История проверок будет привязана к тебе.",
+        "Уведомления и язык будут работать одинаково на всех экранах.",
+      ],
+    };
+  }
+  return {
+    badge: "ACCOUNT-BASED PROTECTION",
+    title: "Sign in to open Noytrix",
+    text: "An account keeps your scan history, PRO access, Google Play purchases and protection recovery connected to you.",
+    points: [
+      "PRO is recoverable after reinstalling.",
+      "Scan history stays attached to your account.",
+      "Notifications and language stay consistent across the app.",
+    ],
+  };
+}
+
+function AuthRequiredScreen() {
+  const copy = authGateCopy();
+
+  return (
+    <ScrollView
+      style={{
+        flex: 1,
+        backgroundColor: "#020413",
+      }}
+      contentContainerStyle={{
+        flexGrow: 1,
+        paddingHorizontal: 20,
+        paddingTop: 56,
+        paddingBottom: 24,
+      }}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={{ flex: 1, justifyContent: "center" }}>
+        <View
+          style={{
+            alignSelf: "flex-start",
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: "rgba(255,176,32,0.34)",
+            backgroundColor: "rgba(255,176,32,0.10)",
+            marginBottom: 18,
+          }}
+        >
+          <Text style={{ color: "#ffb020", fontSize: 12, fontWeight: "900", letterSpacing: 0 }}>
+            {copy.badge}
+          </Text>
+        </View>
+
+        <Text style={{ color: "#ffb020", fontSize: 36, lineHeight: 41, fontWeight: "900" }}>
+          Noytrix
+        </Text>
+        <Text style={{ color: "#ffffff", fontSize: 28, lineHeight: 34, fontWeight: "900", marginTop: 8 }}>
+          {copy.title}
+        </Text>
+        <Text style={{ color: "#A8B4CF", fontSize: 15, lineHeight: 22, fontWeight: "700", marginTop: 12 }}>
+          {copy.text}
+        </Text>
+
+        <View style={{ marginTop: 18, marginBottom: 18, gap: 10 }}>
+          {copy.points.map((point) => (
+            <View key={point} style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+              <Text style={{ color: "#ffb020", fontSize: 16, fontWeight: "900", lineHeight: 21 }}>✓</Text>
+              <Text style={{ flex: 1, color: "#D9E4FF", fontSize: 14, lineHeight: 21, fontWeight: "700" }}>
+                {point}
+              </Text>
+            </View>
+          ))}
+        </View>
+
+        <EmailAuth />
+      </View>
+    </ScrollView>
   );
 }
 
@@ -319,6 +422,7 @@ export default function RootLayout() {
   const logout = useAuthStore((s) => s.logout);
 
   const [hasToken, setHasToken] = useState(false);
+  const [authStateChecked, setAuthStateChecked] = useState(false);
   const [appAlert, setAppAlert] = useState(null);
 
   const [bioChecked, setBioChecked] = useState(false);
@@ -370,10 +474,13 @@ export default function RootLayout() {
 
     (async () => {
       try {
+        if (!cancelled) setAuthStateChecked(false);
         const state = await getAuthState();
         if (!cancelled) setHasToken(!!state?.access_token);
       } catch {
         if (!cancelled) setHasToken(false);
+      } finally {
+        if (!cancelled) setAuthStateChecked(true);
       }
     })();
 
@@ -592,7 +699,15 @@ export default function RootLayout() {
     };
   }, [isReady, isAuth, hasToken]);
 
-  if (!isReady) return null;
+  if (!isReady || !authStateChecked) return null;
+
+  if (!isAuth || !hasToken) {
+    return (
+      <AppShell appAlert={appAlert} setAppAlert={setAppAlert} showGrowthTools={false}>
+        <AuthRequiredScreen />
+      </AppShell>
+    );
+  }
 
   if (isAuth && hasToken && !bioOk && bioChecked) {
     return (
