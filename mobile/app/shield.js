@@ -1705,7 +1705,7 @@ export default function Shield() {
       setQuotaBlocked(false);
     }
 
-    logEvent("scan_submitted", { screen: "shield", lang: currentLang, has_input: true });
+    logEvent("scan_submitted", { screen: "shield", lang: currentLang, has_input: true, kind: detectKind(value) });
 
     setLoading(true);
     setBackendError("");
@@ -1837,6 +1837,7 @@ export default function Shield() {
         score: Number(final?.score ?? 0),
         kind: final?.kind || "text",
         backend_ok: true,
+        ai_completed: !!final?.aiHumanVerdict,
       });
       recordReviewPromptScan({
         screen: "shield",
@@ -2691,7 +2692,6 @@ export default function Shield() {
     </LinearGradient>
   );
 }
-
 
 
 

@@ -18,6 +18,14 @@ const SERVER_EVENTS = new Set([
   "scan_started",
   "scan_completed",
   "scan_failed",
+  "wallet_checked",
+  "url_checked",
+  "domain_checked",
+  "contract_checked",
+  "token_checked",
+  "transaction_checked",
+  "text_checked",
+  "ai_analysis_completed",
   "scan_result_viewed",
   "risk_explanation_viewed",
   "paywall_viewed",
@@ -87,10 +95,30 @@ function canonicalServerEventName(name, params = {}) {
   return SERVER_EVENTS.has(n) ? n : "";
 }
 
+function canonicalScanKind(kind = "") {
+  const k = String(kind || "").toLowerCase().trim();
+  if (k === "url" || k === "domain" || k === "wallet" || k === "contract" || k === "token" || k === "transaction") return k;
+  if (k === "ticker" || k === "coin" || k === "asset") return "token";
+  if (k === "address") return "wallet";
+  return k || "text";
+}
+
+function scanKindEventName(kind = "") {
+  const k = canonicalScanKind(kind);
+  if (k === "url") return "url_checked";
+  if (k === "domain") return "domain_checked";
+  if (k === "wallet") return "wallet_checked";
+  if (k === "contract") return "contract_checked";
+  if (k === "token") return "token_checked";
+  if (k === "transaction") return "transaction_checked";
+  return "text_checked";
+}
+
 function cleanTikTokParams(params = {}) {
   const out = {};
   Object.entries(params || {}).forEach(([key, value]) => {
     if (value === null || value === undefined) return;
+    if (isSensitiveKey(key)) return;
     if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       out[key] = value;
     } else {
@@ -144,20 +172,66 @@ export async function setInstallAttribution(attribution = {}) {
   }
 }
 
-function tikTokEventName(name) {
+function tikTokEventNames(name, params = {}) {
   const n = String(name || "").toLowerCase();
-  if (n === "registration_success" || n === "register_success" || n === "sign_up") return "Registration";
-  if (n === "login_success" || n === "auth_identify") return "Login";
-  if (n === "purchase_success" || n === "google_play_purchase_verified") return "Purchase";
-  if (n === "purchase_start" || n === "google_play_purchase_start") return "Subscribe";
-  return "";
+  const out = [];
+  const add = (eventName) => {
+    if (eventName && !out.includes(eventName)) out.push(eventName);
+  };
+
+  if (n === "registration_success" || n === "register_success" || n === "sign_up") {
+    add("Registration");
+    add("signup_completed");
+  }
+  if (n === "login_success" || n === "auth_identify" || n === "login_google_success") {
+    add("Login");
+    add("login_success");
+  }
+  if (n === "scan_submitted" || n === "scan_started") add("scan_started");
+  if (n === "scan_result" || n === "scan_completed" || n === "scan_failed") {
+    const ok = n === "scan_completed" || (n === "scan_result" && params?.backend_ok !== false);
+    const failed = n === "scan_failed" || (n === "scan_result" && params?.backend_ok === false);
+    if (failed) {
+      add("scan_failed");
+    } else if (ok) {
+      add("scan_completed");
+      add(scanKindEventName(params?.kind));
+      if (
+        params?.ai_completed === true ||
+        params?.has_ai === true ||
+        params?.ai_available === true ||
+        String(params?.ai_status || "").toLowerCase() === "completed"
+      ) {
+        add("ai_analysis_completed");
+      }
+    }
+  }
+  if (n === "risk_explanation_viewed") add("risk_explanation_viewed");
+  if (n === "pro_screen_open" || n === "pro_opened" || n === "home_open_pro" || n === "paywall_viewed" || n === "paywall_view") {
+    add("paywall_view");
+  }
+  if (n === "purchase_start" || n === "google_play_purchase_start" || n === "purchase_started") {
+    add("Subscribe");
+    add("purchase_started");
+  }
+  if (n === "purchase_success" || n === "google_play_purchase_verified" || n === "purchase_completed") {
+    add("Purchase");
+    add("purchase_success");
+  }
+  if (n === "purchase_error" || n === "purchase_failed") add("purchase_failed");
+  if (n === "purchase_cancelled") add("purchase_cancelled");
+  if (n === "restore_success" || n === "google_play_restore_success" || n === "paywall_restore_completed") add("restore_purchase_completed");
+  if (n === "review_prompt_feedback_sent" || n === "app_feedback_submitted") add("app_feedback_submitted");
+
+  return out;
 }
 
 async function logTikTokEvent(name, params = {}) {
   try {
-    const mapped = tikTokEventName(name);
-    if (!mapped || !TikTokEvents?.trackEvent) return;
-    TikTokEvents.trackEvent(mapped, cleanTikTokParams({ ...params, platform: Platform.OS }));
+    const mappedEvents = tikTokEventNames(name, params);
+    if (!mappedEvents.length || !TikTokEvents?.trackEvent) return;
+    const cleanParams = cleanTikTokParams({ ...params, platform: Platform.OS });
+    mappedEvents.forEach((eventName) => TikTokEvents.trackEvent(eventName, cleanParams));
   } catch (e) {
     console.log("[TIKTOK] event error:", e);
   }

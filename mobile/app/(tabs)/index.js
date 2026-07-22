@@ -877,7 +877,7 @@ export default function Home() {
       return;
     }
 
-    logEvent("scan_submitted", { screen: "home", source: "home_hero", lang: currentLang });
+    logEvent("scan_submitted", { screen: "home", source: "home_hero", lang: currentLang, kind: detectKind(value), has_input: true });
 
     setLoading(true);
     setBackendError("");
@@ -974,6 +974,7 @@ export default function Home() {
         score: Number(final?.score ?? 0),
         kind: final?.kind || "text",
         backend_ok: true,
+        ai_completed: !!final?.aiHumanVerdict,
       });
       recordReviewPromptScan({
         screen: "home",

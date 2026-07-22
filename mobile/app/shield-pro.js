@@ -2048,7 +2048,7 @@ ${uri}`,
     const proof = await loadProProof();
     const effectiveUid = await getBestKnownUid(user || proof?.authUser, installUid, access || proof?.accessToken || "");
 
-    logEvent("scan_submitted", { screen: "shield_pro", lang: currentLang, has_input: true });
+    logEvent("scan_submitted", { screen: "shield_pro", lang: currentLang, has_input: true, kind: detectKind(raw) });
 
     setLoading(true);
     setOut(null);
@@ -2131,6 +2131,7 @@ ${uri}`,
         score: Number(normalized?.score ?? 0),
         kind: normalized?.kind || "text",
         backend_ok: true,
+        ai_completed: !!normalized?.aiHumanVerdict,
       });
       recordReviewPromptScan({
         screen: "shield_pro",
