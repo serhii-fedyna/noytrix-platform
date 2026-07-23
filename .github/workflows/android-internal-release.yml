@@ -1,0 +1,138 @@
+name: Android Internal Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noytrix-android-internal-release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Mobile checks
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run JavaScript tests when present
+        run: npm test --if-present
+
+      - name: Validate Expo configuration
+        run: npx expo config --json > /tmp/noytrix-expo-config.json
+
+      - name: Bundle Android JavaScript
+        run: npx expo export --platform android --output-dir .ci-export --no-bytecode
+
+  build-and-upload:
+    name: Build signed AAB and upload to Google Play Internal Testing
+    needs: test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Restore Google services configuration
+        shell: bash
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON_B64"
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > mobile/google-services.json
+          test -s mobile/google-services.json
+
+      - name: Check release configuration
+        working-directory: mobile
+        run: |
+          node -e "const c=require('./eas.json'); if(c.cli?.appVersionSource!=='remote') throw new Error('Expected remote app version source'); if(c.build?.production?.autoIncrement!==true) throw new Error('EAS autoIncrement must be enabled'); if(c.build?.production?.android?.buildType!=='app-bundle') throw new Error('Production build must be an AAB');"
+          npx expo config --json > /tmp/noytrix-release-config.json
+
+      - name: Build signed Android App Bundle with EAS
+        working-directory: mobile
+        shell: bash
+        run: |
+          test -n "$EXPO_TOKEN"
+          npx --yes eas-cli@21.0.2 build \
+            --platform android \
+            --profile production \
+            --non-interactive \
+            --wait \
+            --json > "$RUNNER_TEMP/eas-build.json"
+
+      - name: Download AAB from EAS
+        working-directory: mobile
+        shell: bash
+        env:
+          EAS_RESULT: ${{ runner.temp }}/eas-build.json
+        run: |
+          mkdir -p artifacts
+          BUILD_URL="$(node - <<'NODE'
+          const fs = require('fs');
+          const data = JSON.parse(fs.readFileSync(process.env.EAS_RESULT, 'utf8'));
+          function findUrl(value) {
+            if (!value || typeof value !== 'object') return '';
+            for (const key of ['buildUrl', 'applicationArchiveUrl']) {
+              if (typeof value[key] === 'string' && value[key].startsWith('http')) return value[key];
+            }
+            for (const item of Object.values(value)) {
+              const found = findUrl(item);
+              if (found) return found;
+            }
+            return '';
+          }
+          const url = findUrl(data);
+          if (!url) throw new Error('EAS did not return an Android artifact URL');
+          process.stdout.write(url);
+          NODE
+          )"
+          curl --fail --location --retry 3 "$BUILD_URL" --output artifacts/noytrix-release.aab
+          test -s artifacts/noytrix-release.aab
+
+      - name: Upload AAB as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noytrix-android-aab-${{ github.run_number }}
+          path: mobile/artifacts/noytrix-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to Google Play Internal Testing
+        uses: google-github-actions/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.noytrix.app
+          releaseFiles: mobile/artifacts/noytrix-release.aab
+          track: internal
+          status: completed
