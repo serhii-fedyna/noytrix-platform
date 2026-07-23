@@ -1,4 +1,4 @@
-# Android CI/CD
+# Android Production CI/CD
 
 The workflow at `.github/workflows/android-internal-release.yml` runs on every
 push to `master` and can also be started manually from GitHub Actions.
@@ -12,11 +12,11 @@ It performs the following steps:
 5. Uses EAS-managed versioning to increment `versionCode` and build the signed
    Android App Bundle. The version is kept in EAS so repeated CI runs cannot
    reuse the same Google Play version number.
-6. Uploads the AAB to Google Play Internal Testing.
+6. Uploads the completed release to the Google Play Production track.
 
-The workflow does not publish directly to the public production track. A
-release must first pass Internal Testing and then be promoted in Google Play
-Console. This avoids sending an unverified build to all users automatically.
+Google Play may still hold a release for its review. After Google approves it,
+the update becomes available to users according to Google Play rollout and
+device auto-update rules.
 
 ## One-time manual setup
 
@@ -39,7 +39,8 @@ If the existing service account is not already linked:
 2. Create or use the Google Play service account and download its JSON key.
 3. In Play Console, link the Cloud project under **API access**.
 4. Invite the service account email under **Users and permissions**.
-5. Grant permission to manage testing tracks and release apps to testing tracks.
+5. Grant permission to manage production releases and release apps to testing
+   tracks.
 
 The package name must remain `com.noytrix.app`.
 
@@ -61,5 +62,6 @@ the GitHub secret field. Never put that JSON in the repository.
 ## First run
 
 After all three secrets are present, push a normal commit to `master` or start
-**Android Internal Release** from the Actions tab. A failed build or upload
-does not publish anything publicly; inspect the failed job before retrying.
+**Android Production Release** from the Actions tab. A failed build does not
+publish anything. A successful upload submits the release to Google Play
+Production and may trigger Google Play review before users receive it.
