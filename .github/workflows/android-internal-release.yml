@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: noytrix-android-internal-release
@@ -62,6 +62,34 @@ jobs:
           cache: npm
           cache-dependency-path: mobile/package-lock.json
 
+      - name: Bump Android versionCode
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const appPath = 'mobile/app.json';
+          const gradlePath = 'mobile/android/app/build.gradle';
+          const app = JSON.parse(fs.readFileSync(appPath, 'utf8'));
+          const current = Number(app.expo?.android?.versionCode);
+          if (!Number.isInteger(current) || current < 1) {
+            throw new Error(`Invalid android.versionCode: ${current}`);
+          }
+          const next = current + 1;
+          app.expo.android.versionCode = next;
+          fs.writeFileSync(appPath, JSON.stringify(app, null, 2) + '\n');
+
+          const gradle = fs.readFileSync(gradlePath, 'utf8');
+          const updated = gradle.replace(/(versionCode\s+)\d+/, `$1${next}`);
+          if (updated === gradle) throw new Error('Native versionCode was not found in build.gradle');
+          fs.writeFileSync(gradlePath, updated);
+          console.log(`Android versionCode: ${current} -> ${next}`);
+          NODE
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add mobile/app.json mobile/android/app/build.gradle
+          git commit -m "chore: bump Android versionCode [skip ci]"
+          git push origin HEAD:master
+
       - name: Install dependencies
         working-directory: mobile
         run: npm ci
@@ -76,7 +104,7 @@ jobs:
       - name: Check release configuration
         working-directory: mobile
         run: |
-          node -e "const c=require('./eas.json'); if(c.cli?.appVersionSource!=='remote') throw new Error('Expected remote app version source'); if(c.build?.production?.autoIncrement!==true) throw new Error('EAS autoIncrement must be enabled'); if(c.build?.production?.android?.buildType!=='app-bundle') throw new Error('Production build must be an AAB');"
+          node -e "const c=require('./eas.json'); if(c.cli?.appVersionSource!=='local') throw new Error('Expected local app version source'); if(c.build?.production?.autoIncrement!==false) throw new Error('CI must persist the versionCode bump'); if(c.build?.production?.android?.buildType!=='app-bundle') throw new Error('Production build must be an AAB'); const a=require('./app.json'); const g=require('fs').readFileSync('android/app/build.gradle','utf8'); const v=String(a.expo.android.versionCode); if(!g.includes('versionCode '+v)) throw new Error('app.json and native versionCode differ'); console.log('Building Android versionCode '+v);"
           npx expo config --json > /tmp/noytrix-release-config.json
 
       - name: Build signed Android App Bundle with EAS

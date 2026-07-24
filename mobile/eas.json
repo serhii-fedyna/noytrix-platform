@@ -1,11 +1,11 @@
 {
   "cli": {
     "requireCommit": false,
-    "appVersionSource": "remote"
+    "appVersionSource": "local"
   },
   "build": {
     "production": {
-      "autoIncrement": true,
+      "autoIncrement": false,
       "android": {
         "buildType": "app-bundle"
       }
