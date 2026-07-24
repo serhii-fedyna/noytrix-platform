@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.noytrix.app",
-      "versionCode": 361,
+      "versionCode": 364,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-foreground.png",
@@ -37,6 +37,7 @@
       },
       "permissions": [
         "com.android.vending.BILLING",
+        "com.google.android.gms.permission.AD_ID",
         "POST_NOTIFICATIONS",
         "VIBRATE",
         "RECEIVE_BOOT_COMPLETED"
