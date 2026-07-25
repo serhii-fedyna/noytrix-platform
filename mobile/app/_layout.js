@@ -519,6 +519,8 @@ export default function RootLayout() {
           OneSignal.initialize(ONESIGNAL_APP_ID);
           globalThis.__NOYTRIX_ONESIGNAL_INITIALIZED__ = true;
         }
+        // The native SDK finishes initWithContext asynchronously.
+        await new Promise((resolve) => setTimeout(resolve, 1000));
         await syncPushLanguageTag(i18n.language);
 
         console.log("[ONESIGNAL] initialized");
