@@ -17,6 +17,8 @@ jobs:
   test:
     name: Mobile checks
     runs-on: ubuntu-22.04
+    env:
+      NODE_ENV: production
     defaults:
       run:
         working-directory: mobile
@@ -49,8 +51,12 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     env:
-      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      NODE_ENV: production
       GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+      ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+      ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+      ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+      ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,6 +67,15 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Bump Android versionCode
         shell: bash
@@ -101,58 +116,39 @@ jobs:
           printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > mobile/google-services.json
           test -s mobile/google-services.json
 
-      - name: Check release configuration
+      - name: Restore production signing keystore
+        shell: bash
+        run: |
+          test -n "$ANDROID_UPLOAD_KEYSTORE_B64"
+          test -n "$ANDROID_UPLOAD_STORE_PASSWORD"
+          test -n "$ANDROID_UPLOAD_KEY_ALIAS"
+          test -n "$ANDROID_UPLOAD_KEY_PASSWORD"
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_B64" | base64 --decode > mobile/android/app/release-upload.jks
+          test -s mobile/android/app/release-upload.jks
+
+      - name: Check release configuration and signing key
         working-directory: mobile
         run: |
-          node -e "const c=require('./eas.json'); if(c.cli?.appVersionSource!=='local') throw new Error('Expected local app version source'); if(c.build?.production?.autoIncrement!==false) throw new Error('CI must persist the versionCode bump'); if(c.build?.production?.android?.buildType!=='app-bundle') throw new Error('Production build must be an AAB'); const a=require('./app.json'); const g=require('fs').readFileSync('android/app/build.gradle','utf8'); const v=String(a.expo.android.versionCode); if(!g.includes('versionCode '+v)) throw new Error('app.json and native versionCode differ'); console.log('Building Android versionCode '+v);"
+          node -e "const a=require('./app.json'); const g=require('fs').readFileSync('android/app/build.gradle','utf8'); const v=String(a.expo.android.versionCode); if(!g.includes('versionCode '+v)) throw new Error('app.json and native versionCode differ'); console.log('Building Android versionCode '+v);"
           npx expo config --json > /tmp/noytrix-release-config.json
 
-      - name: Build signed Android App Bundle with EAS
-        working-directory: mobile
-        shell: bash
-        run: |
-          test -n "$EXPO_TOKEN"
-          npx --yes eas-cli@21.0.2 build \
-            --platform android \
-            --profile production \
-            --non-interactive \
-            --wait \
-            --json > "$RUNNER_TEMP/eas-build.json"
-
-      - name: Download AAB from EAS
-        working-directory: mobile
+      - name: Build signed Android App Bundle with Gradle
+        working-directory: mobile/android
         shell: bash
         env:
-          EAS_RESULT: ${{ runner.temp }}/eas-build.json
+          ANDROID_UPLOAD_STORE_FILE: release-upload.jks
         run: |
-          mkdir -p artifacts
-          BUILD_URL="$(node - <<'NODE'
-          const fs = require('fs');
-          const data = JSON.parse(fs.readFileSync(process.env.EAS_RESULT, 'utf8'));
-          function findUrl(value) {
-            if (!value || typeof value !== 'object') return '';
-            for (const key of ['buildUrl', 'applicationArchiveUrl']) {
-              if (typeof value[key] === 'string' && value[key].startsWith('http')) return value[key];
-            }
-            for (const item of Object.values(value)) {
-              const found = findUrl(item);
-              if (found) return found;
-            }
-            return '';
-          }
-          const url = findUrl(data);
-          if (!url) throw new Error('EAS did not return an Android artifact URL');
-          process.stdout.write(url);
-          NODE
-          )"
-          curl --fail --location --retry 3 "$BUILD_URL" --output artifacts/noytrix-release.aab
-          test -s artifacts/noytrix-release.aab
+          chmod +x gradlew
+          ./gradlew :app:bundleRelease --no-daemon --stacktrace
+          mkdir -p app/artifacts
+          cp app/build/outputs/bundle/release/app-release.aab app/artifacts/noytrix-release.aab
+          test -s app/artifacts/noytrix-release.aab
 
       - name: Upload AAB as CI artifact
         uses: actions/upload-artifact@v4
         with:
           name: noytrix-android-aab-${{ github.run_number }}
-          path: mobile/artifacts/noytrix-release.aab
+          path: mobile/android/app/artifacts/noytrix-release.aab
           if-no-files-found: error
           retention-days: 14
 

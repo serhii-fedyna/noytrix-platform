@@ -19,6 +19,9 @@ venv/
 *.pem
 *.mobileprovision
 google-services.json
+credentials.json
+credentials/
+**/credentials/
 
 # Databases and runtime files
 *.db

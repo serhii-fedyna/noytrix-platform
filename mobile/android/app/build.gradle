@@ -92,7 +92,7 @@ android {
         applicationId 'com.noytrix.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 361
+        versionCode 364
         versionName "1.0.81"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
@@ -107,11 +107,24 @@ android {
             keyPassword 'android'
         }
         releaseUpload {
+            def isReleaseTask = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
             def uploadStoreFile = System.getenv("ANDROID_UPLOAD_STORE_FILE")
-            storeFile uploadStoreFile ? file(uploadStoreFile) : file('debug.keystore')
-            storePassword System.getenv("ANDROID_UPLOAD_STORE_PASSWORD") ?: 'android'
-            keyAlias System.getenv("ANDROID_UPLOAD_KEY_ALIAS") ?: 'androiddebugkey'
-            keyPassword System.getenv("ANDROID_UPLOAD_KEY_PASSWORD") ?: 'android'
+            def uploadStorePassword = System.getenv("ANDROID_UPLOAD_STORE_PASSWORD")
+            def uploadKeyAlias = System.getenv("ANDROID_UPLOAD_KEY_ALIAS")
+            def uploadKeyPassword = System.getenv("ANDROID_UPLOAD_KEY_PASSWORD")
+            def resolvedStoreFile = uploadStoreFile ? file(uploadStoreFile) : file('debug.keystore')
+
+            if (isReleaseTask && (!uploadStoreFile || !uploadStorePassword || !uploadKeyAlias || !uploadKeyPassword)) {
+                throw new GradleException('Production release signing is not configured. Set ANDROID_UPLOAD_STORE_FILE, ANDROID_UPLOAD_STORE_PASSWORD, ANDROID_UPLOAD_KEY_ALIAS, and ANDROID_UPLOAD_KEY_PASSWORD.')
+            }
+            if (isReleaseTask && !resolvedStoreFile.exists()) {
+                throw new GradleException("Production signing keystore was not found: ${resolvedStoreFile}")
+            }
+
+            storeFile resolvedStoreFile
+            storePassword uploadStorePassword ?: 'android'
+            keyAlias uploadKeyAlias ?: 'androiddebugkey'
+            keyPassword uploadKeyPassword ?: 'android'
         }
     }
     buildTypes {
