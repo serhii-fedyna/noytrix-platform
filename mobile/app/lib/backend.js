@@ -1,7 +1,13 @@
 // app/lib/backend.js
+import Constants from "expo-constants";
 
+const EXTRA =
+  Constants?.expoConfig?.extra ||
+  Constants?.manifest?.extra ||
+  Constants?.manifest2?.extra?.expoClient?.extra ||
+  {};
 
-export const BACKEND = "https://api.noytrixapp.com";
+export const BACKEND = String(EXTRA?.EXPO_PUBLIC_API || "https://noytrix.com").replace(/\/+$/, "");
 
 
 export const CHAT_PATH   = "/api/chat";

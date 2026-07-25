@@ -30,9 +30,10 @@ import { useI18n } from "./i18n/useI18n";
 import { logEvent } from "./lib/analytics";
 import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { showAppAlert } from "./lib/appAlert";
+import { BACKEND } from "./lib/backend";
+import AiVerdictCard from "./components/AiVerdictCard";
 
 
-const BACKEND = "https://noytrix.com";
 const AUTH_KEY = "auth_state_v1";
 const APP_KEY =
   Constants?.expoConfig?.extra?.NOYTRIX_APP_KEY ||
@@ -2525,13 +2526,10 @@ ${uri}`,
                   </View>
                 </View>
 
-                {!!normalizedOut.aiHumanVerdict && (
-                  <View style={{ marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(0,0,0,0.18)", padding: 12 }}>
-                    <Text style={{ color: T.text, fontSize: 15, lineHeight: 21, textAlign: "center", fontWeight: "800" }}>
-                      {normalizedOut.aiHumanVerdict}
-                    </Text>
-                  </View>
-                )}
+                <AiVerdictCard
+                  title={tx("scan.aiVerdict.title", pickLang(currentLang, "AI-вердикт", "AI verdict", "AI-вердикт"))}
+                  text={normalizedOut.aiHumanVerdict}
+                />
 
                 {!!normalizedOut.confirmedRedFlag && (
                   <View
@@ -2914,10 +2912,10 @@ ${uri}`,
                   )}
                 </>
               )}
-            </BlurCard>
-          </>
-        )}
+        </BlurCard>
 
+        {false && (
+          <>
         <BlurCard>
           <SectionHeader
             title={tx("shieldPro.crowd.title", pickLang(currentLang, "Public reputation feed", "Public reputation feed"))}
@@ -3045,6 +3043,10 @@ ${uri}`,
             )}
           </Text>
         </BlurCard>
+          </>
+        )}
+          </>
+        )}
       </ScrollView>
 
       <Modal visible={showSamples} transparent animationType="fade" onRequestClose={() => setShowSamples(false)}>

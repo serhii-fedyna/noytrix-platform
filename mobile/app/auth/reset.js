@@ -1,9 +1,10 @@
 // app/auth/reset.js
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, StyleSheet } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuthStore } from "../../stores/auth/useAuthStore";
+import { showAppAlert } from "../lib/appAlert";
 export default function Reset() {
   const { t } = useTranslation();
   const router = useRouter();

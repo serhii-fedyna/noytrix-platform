@@ -6,12 +6,12 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuthStore } from "../../stores/auth/useAuthStore";
-import Constants from "expo-constants";
 import { useTranslation } from "react-i18next";
+import { BACKEND } from "../lib/backend";
+import { showAppAlert } from "../lib/appAlert";
 
 const T = {
   bg: "#0a1322",
@@ -21,9 +21,6 @@ const T = {
   soft: "#bcd2ff",
   accent: "#FFA500",
 };
-
-const EXTRA = Constants?.expoConfig?.extra ?? {};
-const BACKEND = EXTRA?.EXPO_PUBLIC_API || "https://noytrix.com";
 
 export default function SignUp() {
   const { t } = useTranslation();

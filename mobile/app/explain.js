@@ -30,11 +30,11 @@ import * as Sharing from "expo-sharing";
 
 import { logEvent } from "./lib/analytics";
 import { showAppAlert } from "./lib/appAlert";
+import { BACKEND } from "./lib/backend";
 
 const PRO_SCREEN_ROUTE = "/explain-pro";
 const PRO_PAYWALL_ROUTE = "/pro";
 
-const BACKEND = "https://noytrix.com";
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
 

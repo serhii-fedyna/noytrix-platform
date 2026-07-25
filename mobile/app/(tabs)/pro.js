@@ -1,6 +1,5 @@
 ﻿import React, { useEffect, useState, useCallback } from "react";
 import {
-  Alert,
   LayoutAnimation,
   Platform,
   ScrollView,
@@ -27,6 +26,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import { logEvent } from "../lib/analytics";
+import { showAppAlert } from "../lib/appAlert";
 
 const GRAD = { bgStart: "#06080f", bgMid: "#0a1233", bgEnd: "#0b1c4f" };
 const C = {
@@ -42,10 +42,6 @@ const C = {
   black: "#1B2333",
   blue: "#9DB5FF",
 };
-
-function showAppAlert(title, message) {
-  Alert.alert(String(title || ""), String(message || ""));
-}
 
 function isUserPurchaseCancel(err) {
   const text = String(err?.code || err?.message || err || "").toLowerCase();
@@ -219,7 +215,7 @@ function priceFromOffer(offer) {
 
 async function syncLocalProFlags(ent) {
   try {
-    const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly);
+    const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly || ent?.proLifetime);
     if (hasPro) {
       await AsyncStorage.setItem("isPro", "true");
       await AsyncStorage.setItem("noytrix.isPro", "true");
@@ -264,6 +260,7 @@ export default function ProScreen() {
     proMonthly: false,
     pro6m: false,
     proYearly: false,
+    proLifetime: false,
   });
   const [storeProducts, setStoreProducts] = useState({ products: [], subs: [] });
 
@@ -274,7 +271,7 @@ export default function ProScreen() {
     [t, paywallLang]
   );
 
-  const purchased = ent.proMonthly || ent.pro6m || ent.proYearly;
+  const purchased = ent.proMonthly || ent.pro6m || ent.proYearly || ent.proLifetime;
 
   useEffect(() => {
     logEvent("pro_screen_open", { screen: "pro" });
@@ -386,7 +383,7 @@ export default function ProScreen() {
       const e = await checkEntitlements();
       setEnt(e);
       await syncLocalProFlags(e);
-      logEvent("purchase_success", { screen: "pro", plan: planId, price_label: priceFor(planId), pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
+      logEvent("purchase_success", { screen: "pro", plan: planId, price_label: priceFor(planId), pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly, pro_lifetime: !!e?.proLifetime });
 
       showAppAlert(t("pro.alerts.purchaseTitle"), t("pro.alerts.purchaseBody"));
     } catch (err) {
@@ -410,10 +407,10 @@ export default function ProScreen() {
       const e = await restorePurchases();
       setEnt(e);
       await syncLocalProFlags(e);
-      logEvent("restore_success", { screen: "pro", pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly });
-      logEvent("paywall_restore_completed", { screen: "pro", restored: !!(e?.proMonthly || e?.pro6m || e?.proYearly) });
+      logEvent("restore_success", { screen: "pro", pro_monthly: !!e?.proMonthly, pro_6m: !!e?.pro6m, pro_yearly: !!e?.proYearly, pro_lifetime: !!e?.proLifetime });
+      logEvent("paywall_restore_completed", { screen: "pro", restored: !!(e?.proMonthly || e?.pro6m || e?.proYearly || e?.proLifetime) });
 
-      const restored = !!(e?.proMonthly || e?.pro6m || e?.proYearly);
+      const restored = !!(e?.proMonthly || e?.pro6m || e?.proYearly || e?.proLifetime);
       showAppAlert(
         t("pro.restoreTitle", "Restore"),
         restored
@@ -435,7 +432,7 @@ export default function ProScreen() {
     if (planId === "l" && ent.proYearly) return t("pro.planActions.active", "Active");
     if (planId === "h" && ent.pro6m) return t("pro.planActions.active", "Active");
     if (planId === "m" && ent.proMonthly) return t("pro.planActions.active", "Active");
-    if (ent.proYearly) return t("pro.planActions.includedYearly", "Included");
+    if (ent.proYearly || ent.proLifetime) return t("pro.planActions.includedYearly", "Included");
     return t("pro.planActions.available", "Available");
   };
 

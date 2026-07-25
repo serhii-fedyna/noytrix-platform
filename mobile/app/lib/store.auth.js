@@ -25,6 +25,14 @@ function enhanceUser(user) {
 }
 
 const AVATAR_KEY = "avatar_uri_v1";
+const BOOT_TIMEOUT_MS = 8000;
+
+function withTimeout(promise, timeoutMs, fallback) {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
+  ]);
+}
 
 export const useAuthStore = create((set, get) => ({
   user: null,
@@ -34,17 +42,21 @@ export const useAuthStore = create((set, get) => ({
 
   init: async () => {
     try {
-      const [state, avatarUri] = await Promise.all([
-        getAuthState(), // { user, access_token, refresh_token }
-        AsyncStorage.getItem(AVATAR_KEY),
-      ]);
+      const [state, avatarUri] = await withTimeout(
+        Promise.all([
+          getAuthState(), // { user, access_token, refresh_token }
+          AsyncStorage.getItem(AVATAR_KEY),
+        ]),
+        BOOT_TIMEOUT_MS,
+        [{ user: null, access_token: null, refresh_token: null }, null],
+      );
 
       let user = state?.user ? enhanceUser(state.user) : null;
       const isAuth = !!state?.access_token;
 
       if (isAuth && !user) {
         try {
-          const profile = await apiMe(); 
+          const profile = await withTimeout(apiMe(), 5000, null);
           if (profile) user = enhanceUser(profile);
         } catch {}
       }

@@ -11,8 +11,8 @@ import {
 } from "react-native-iap";
 import { logEvent } from "./analytics";
 import { getInstallUserId, identityHeaders, identifyUser } from "./identity";
+import { BACKEND } from "./backend";
 
-const BACKEND = "https://api.noytrixapp.com";
 const PACKAGE_NAME = "com.noytrix.app";
 
 const PRODUCT_IDS = {
@@ -69,6 +69,7 @@ async function persistPro(active, meta = {}) {
   await AsyncStorage.setItem("entitlement.id", "pro");
   await AsyncStorage.setItem("entitlementId", "pro");
   await AsyncStorage.setItem("noytrix_pro_flag", "1");
+  await AsyncStorage.setItem("iap.activePlan", String(meta?.planId || meta?.activePlan || ""));
   await AsyncStorage.setItem(
     "iap.lastGooglePlayVerify",
     JSON.stringify({ ...meta, active: true, updatedAt: Date.now() })
@@ -88,6 +89,7 @@ async function clearPro(meta = {}) {
     ["entitlement.id", ""],
     ["entitlementId", ""],
     ["noytrix_pro_flag", "0"],
+    ["iap.activePlan", ""],
     ["iap.lastGooglePlayVerify", JSON.stringify({ ...meta, active: false, updatedAt: Date.now() })],
   ]);
 }
@@ -109,12 +111,46 @@ function isProProduct(productId) {
   return productId === PRODUCT_IDS.proSubscription || productId === PRODUCT_IDS.proLifetime;
 }
 
-function entitlementFromProduct(productId) {
+function normalizePlanId(planId) {
+  const raw = String(planId || "").trim().toLowerCase();
+  if (["m", "month", "monthly", "pro"].includes(raw)) return "m";
+  if (["h", "6m", "six_month", "six-month", "half", "pro6month"].includes(raw)) return "h";
+  if (["l", "year", "annual", "yearly", "pro-1year"].includes(raw)) return "l";
+  if (["lifetime", "prolifetime"].includes(raw)) return "lifetime";
+  if (["bot", PRODUCT_IDS.bot].includes(raw)) return "bot";
+  return "";
+}
+
+function planIdFromServer(server = {}, fallback = "") {
+  return normalizePlanId(
+    server?.activePlan ||
+      server?.active_plan ||
+      server?.basePlanId ||
+      server?.base_plan_id ||
+      server?.basePlan ||
+      server?.base_plan ||
+      server?.planId ||
+      server?.plan_id ||
+      server?.plan ||
+      server?.product_id ||
+      server?.productId ||
+      fallback
+  );
+}
+
+function entitlementFromProduct(productId, planId = "", server = {}) {
+  const plan = planIdFromServer(server, planId);
+  const isLifetime = productId === PRODUCT_IDS.proLifetime || plan === "lifetime";
+  const isBot = productId === PRODUCT_IDS.bot || plan === "bot";
+  const isSubscription = productId === PRODUCT_IDS.proSubscription || ["m", "h", "l"].includes(plan);
+
   return {
-    proMonthly: isProProduct(productId),
-    pro6m: isProProduct(productId),
-    proYearly: isProProduct(productId),
-    bot: productId === PRODUCT_IDS.bot,
+    proMonthly: isSubscription && (plan === "m" || !plan),
+    pro6m: isSubscription && plan === "h",
+    proYearly: isSubscription && plan === "l",
+    proLifetime: isLifetime,
+    bot: isBot,
+    activePlan: isLifetime ? "lifetime" : isBot ? "bot" : plan || "",
   };
 }
 
@@ -186,7 +222,7 @@ async function serverStatus() {
   return response.json().catch(() => null);
 }
 
-async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
+async function verifyPurchaseOnServer(purchase, forcedProductId = null, planId = "") {
   const userId = await getRevenueCatAppUserId();
   const productId = forcedProductId || productIdOf(purchase);
   const purchaseToken = purchaseTokenOf(purchase);
@@ -208,6 +244,8 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
       packageName: PACKAGE_NAME,
       productType,
       productId,
+      basePlanId: SUBSCRIPTION_BASE_PLAN[planId] || "",
+      planId,
       purchaseToken,
     }),
   });
@@ -219,7 +257,8 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
   }
 
   if (body.active || body.googleActive) {
-    await persistPro(true, { productId, productType, orderId: body.orderId, source: "google_play" });
+    const serverPlan = planIdFromServer(body, planId);
+    await persistPro(true, { productId, productType, planId: serverPlan, orderId: body.orderId, source: "google_play" });
     await identifyUser({
       purchaseToken,
       productId,
@@ -228,7 +267,7 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null) {
     }).catch(() => null);
   }
 
-  return { ...entitlementFromProduct(productId), active: !!(body.active || body.googleActive), server: body };
+  return { ...entitlementFromProduct(productId, planId, body), active: !!(body.active || body.googleActive), server: body };
 }
 
 function attachListeners() {
@@ -394,7 +433,7 @@ async function buyProduct(productId, planId = "m") {
         };
 
   const purchase = await requestPurchaseAndWait(request);
-  const verified = await verifyPurchaseOnServer(purchase, productId);
+  const verified = await verifyPurchaseOnServer(purchase, productId, planId);
 
   if (verified.active) {
     await finishTransaction({ purchase, isConsumable: false }).catch((e) => {
@@ -427,7 +466,7 @@ export async function restorePurchases() {
     await ensureInit();
     logEvent("google_play_restore_start", {});
     const purchases = await getAvailablePurchases();
-    let merged = { proMonthly: false, pro6m: false, proYearly: false, bot: false };
+    let merged = { proMonthly: false, pro6m: false, proYearly: false, proLifetime: false, bot: false, activePlan: "" };
 
     for (const purchase of purchases || []) {
       const productId = productIdOf(purchase);
@@ -439,7 +478,9 @@ export async function restorePurchases() {
             proMonthly: merged.proMonthly || verified.proMonthly,
             pro6m: merged.pro6m || verified.pro6m,
             proYearly: merged.proYearly || verified.proYearly,
+            proLifetime: merged.proLifetime || verified.proLifetime,
             bot: merged.bot || verified.bot,
+            activePlan: merged.activePlan || verified.activePlan || "",
           };
           await finishTransaction({ purchase, isConsumable: false }).catch((e) => {
             console.log("[IAP] finish restored transaction error:", e);
@@ -452,8 +493,9 @@ export async function restorePurchases() {
 
     const status = await serverStatus().catch(() => null);
     if (status?.active) {
-      await persistPro(true, { source: "google_play_restore_server_status" });
-      merged = { ...merged, proMonthly: true, pro6m: true, proYearly: true };
+      const serverEntitlement = entitlementFromProduct(status?.productId || status?.product_id || PRODUCT_IDS.proSubscription, "", status);
+      await persistPro(true, { source: "google_play_restore_server_status", planId: serverEntitlement.activePlan });
+      merged = { ...merged, ...serverEntitlement };
     }
 
     logEvent("google_play_restore_success", merged);
@@ -469,8 +511,9 @@ export async function checkEntitlements(options = {}) {
   try {
     const status = await serverStatus().catch(() => null);
     if (status?.active) {
-      await persistPro(true, { source: "server_status" });
-      return { proMonthly: true, pro6m: true, proYearly: true, bot: false };
+      const serverEntitlement = entitlementFromProduct(status?.productId || status?.product_id || PRODUCT_IDS.proSubscription, "", status);
+      await persistPro(true, { source: "server_status", planId: serverEntitlement.activePlan });
+      return { ...serverEntitlement, active: true };
     }
 
     if (options?.skipRestore) {

@@ -373,7 +373,7 @@ function AuthRequiredScreen() {
       <View style={{ flex: 1, justifyContent: "center" }}>
         <View
           style={{
-            alignSelf: "flex-start",
+            alignSelf: "center",
             paddingHorizontal: 14,
             paddingVertical: 8,
             borderRadius: 999,
@@ -388,13 +388,13 @@ function AuthRequiredScreen() {
           </Text>
         </View>
 
-        <Text style={{ color: "#ffb020", fontSize: 36, lineHeight: 41, fontWeight: "900" }}>
+        <Text style={{ color: "#ffb020", fontSize: 36, lineHeight: 41, fontWeight: "900", textAlign: "center" }}>
           Noytrix
         </Text>
-        <Text style={{ color: "#ffffff", fontSize: 28, lineHeight: 34, fontWeight: "900", marginTop: 8 }}>
+        <Text style={{ color: "#ffffff", fontSize: 28, lineHeight: 34, fontWeight: "900", marginTop: 8, textAlign: "center" }}>
           {copy.title}
         </Text>
-        <Text style={{ color: "#A8B4CF", fontSize: 15, lineHeight: 22, fontWeight: "700", marginTop: 12 }}>
+        <Text style={{ color: "#A8B4CF", fontSize: 15, lineHeight: 22, fontWeight: "700", marginTop: 12, textAlign: "center" }}>
           {copy.text}
         </Text>
 
@@ -490,6 +490,7 @@ export default function RootLayout() {
   }, [isReady, isAuth]);
 
   useEffect(() => {
+    if (!isReady) return;
     if (oneSignalInitDone.current) return;
     oneSignalInitDone.current = true;
 
@@ -633,7 +634,7 @@ export default function RootLayout() {
     };
 
     initOneSignal();
-  }, []);
+  }, [isReady]);
 
   useEffect(() => {
     if (!isReady) return;
@@ -699,15 +700,7 @@ export default function RootLayout() {
     };
   }, [isReady, isAuth, hasToken]);
 
-  if (!isReady || !authStateChecked) return null;
-
-  if (!isAuth || !hasToken) {
-    return (
-      <AppShell appAlert={appAlert} setAppAlert={setAppAlert} showGrowthTools={false}>
-        <AuthRequiredScreen />
-      </AppShell>
-    );
-  }
+  if (!isReady) return null;
 
   if (isAuth && hasToken && !bioOk && bioChecked) {
     return (

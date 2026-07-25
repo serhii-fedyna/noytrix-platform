@@ -107,7 +107,8 @@
       "title": "Set new access key",
       "subtitle": "We will send a new access key to your email.",
       "button": "Restore access"
-    }
+    },
+    "googleBtn": "Continue with Google"
   },
   "home": {
     "title": "Noytrix",

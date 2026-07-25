@@ -29,9 +29,10 @@ import { showAppAlert } from "../lib/appAlert";
 import { recordReviewPromptScan } from "../lib/reviewPrompt";
 import { useAuthStore } from "../lib/store.auth";
 import { identityHeaders } from "../lib/identity";
+import { BACKEND } from "../lib/backend";
+import AiVerdictCard from "../components/AiVerdictCard";
 import NoyBot from "../../components/NoyBot";
 
-const BACKEND = "https://noytrix.com";
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
 const SHIELD_PREFILL_KEY = "shield.prefill";
@@ -1276,13 +1277,10 @@ export default function Home() {
                   </Text>
                 )}
 
-                {!!normalizedReport.aiHumanVerdict && (
-                  <View style={{ marginTop: 14, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(0,0,0,0.18)", padding: 12 }}>
-                    <Text style={{ color: C.text, fontSize: 15, lineHeight: 21, textAlign: "center", fontWeight: "800" }}>
-                      {normalizedReport.aiHumanVerdict}
-                    </Text>
-                  </View>
-                )}
+                <AiVerdictCard
+                  title={TT("scan.aiVerdict.title", "AI verdict", "AI-вердикт", "AI-вердикт")}
+                  text={normalizedReport.aiHumanVerdict}
+                />
               </View>
 
               <View style={{ marginTop: 14 }}>

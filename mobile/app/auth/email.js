@@ -85,6 +85,9 @@ function friendlyAuthError(e, lang, fallbackKey) {
   if (text.includes("google_client_id_missing") || text.includes("redirect_uri_mismatch")) {
     return authCopy(lang, "googleConfig");
   }
+  if (text.includes("code_challenge") || text.includes("invalid_request")) {
+    return authCopy(lang, "googleConfig");
+  }
   if (text.includes("google") && (text.includes("invalid") || text.includes("401") || text.includes("access_token_missing"))) {
     return authCopy(lang, "googleInvalid");
   }
@@ -687,6 +690,7 @@ const styles = StyleSheet.create({
     fontSize: 25,
     lineHeight: 31,
     fontWeight: "900",
+    textAlign: "center",
   },
 
   subtitle: {
@@ -695,6 +699,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 21,
     fontWeight: "700",
+    textAlign: "center",
   },
 
   verifyText: {
@@ -769,6 +774,8 @@ const styles = StyleSheet.create({
     color: "#1F2937",
     fontSize: 16,
     fontWeight: "900",
+    textAlign: "center",
+    flexShrink: 1,
   },
 
   overlay: { flex: 1, justifyContent: "center" },

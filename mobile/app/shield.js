@@ -17,8 +17,9 @@ import { logEvent } from "./lib/analytics";
 import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { shareImagePremium } from "./lib/sharePremium";
 import { showAppAlert } from "./lib/appAlert";
+import { BACKEND } from "./lib/backend";
+import AiVerdictCard from "./components/AiVerdictCard";
 
-const BACKEND = "https://noytrix.com";
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
 const SHIELD_PREFILL_KEY = "shield.prefill";
@@ -2296,13 +2297,10 @@ export default function Shield() {
                   </View>
                 </View>
 
-                {!!normalizedReport.aiHumanVerdict && (
-                  <View style={{ marginTop: 12, borderRadius: 16, borderWidth: 1, borderColor: "rgba(255,255,255,0.10)", backgroundColor: "rgba(0,0,0,0.18)", padding: 12 }}>
-                    <Text style={{ color: T.text, fontSize: 15, lineHeight: 21, textAlign: "center", fontWeight: "800" }}>
-                      {normalizedReport.aiHumanVerdict}
-                    </Text>
-                  </View>
-                )}
+                <AiVerdictCard
+                  title={tx("scan.aiVerdict.title", pickLang(currentLang, "AI-вердикт", "AI verdict", "AI-вердикт"))}
+                  text={normalizedReport.aiHumanVerdict}
+                />
               </View>
 
               <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 12 }}>
@@ -2692,7 +2690,6 @@ export default function Shield() {
     </LinearGradient>
   );
 }
-
 
 
 

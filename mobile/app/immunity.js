@@ -34,10 +34,11 @@ import * as Sharing from "expo-sharing";
 
 import { showAppAlert } from "./lib/appAlert";
 import { logEvent } from "./lib/analytics";
+import { BACKEND } from "./lib/backend";
 
 const BINANCE = "https://api.binance.com";
 const CG = "https://api.coingecko.com/api/v3";
-const NOYTRIX_API = "https://noytrix.com";
+const NOYTRIX_API = BACKEND;
 
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
