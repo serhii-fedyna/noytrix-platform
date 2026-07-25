@@ -114,7 +114,10 @@ jobs:
         run: |
           test -n "$GOOGLE_SERVICES_JSON_B64"
           printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > mobile/google-services.json
+          mkdir -p mobile/android/app
+          cp mobile/google-services.json mobile/android/app/google-services.json
           test -s mobile/google-services.json
+          test -s mobile/android/app/google-services.json
 
       - name: Restore production signing keystore
         shell: bash
