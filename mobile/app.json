@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.noytrix.app",
-      "versionCode": 366,
+      "versionCode": 367,
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-foreground.png",
