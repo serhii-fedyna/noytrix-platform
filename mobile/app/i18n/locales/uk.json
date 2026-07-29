@@ -108,7 +108,9 @@
       "subtitle": "Ми надішлемо новий ключ доступу на вашу пошту.",
       "button": "Відновити доступ"
     },
-    "googleBtn": "Продовжити з Google"
+    "googleBtn": "Продовжити з Google",
+    "oauthRedirectTitle": "Завершуємо безпечний вхід",
+    "oauthRedirectText": "Акаунт Google підтверджено. Це займе лише кілька секунд."
   },
   "home": {
     "title": "Noytrix",

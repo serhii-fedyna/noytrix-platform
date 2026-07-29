@@ -108,7 +108,9 @@
       "subtitle": "We will send a new access key to your email.",
       "button": "Restore access"
     },
-    "googleBtn": "Continue with Google"
+    "googleBtn": "Continue with Google",
+    "oauthRedirectTitle": "Completing secure sign-in",
+    "oauthRedirectText": "Your Google account is confirmed. This takes only a moment."
   },
   "home": {
     "title": "Noytrix",
