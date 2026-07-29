@@ -4,6 +4,7 @@ import i18n from "./i18n";
 import React, { useEffect, useRef, useState } from "react";
 import { Stack, router, usePathname } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import {
   View,
@@ -27,6 +28,9 @@ import { ReviewPromptHost } from "./lib/reviewPrompt";
 import { normalizeLang } from "./i18n/lang";
 import { syncPushLanguageTag } from "./lib/pushLanguage";
 import EmailAuth from "./auth/email";
+
+// Keep the native splash visible until the root startup gate has a real UI ready.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 const NOTIFICATIONS_PREF_KEY = "profile.notifications";
@@ -488,6 +492,16 @@ export default function RootLayout() {
       cancelled = true;
     };
   }, [isReady, isAuth]);
+
+  useEffect(() => {
+    const startupReady =
+      isReady &&
+      authStateChecked &&
+      ((!isAuth || !hasToken) || bioChecked);
+
+    if (!startupReady) return;
+    SplashScreen.hideAsync().catch(() => {});
+  }, [isReady, authStateChecked, isAuth, hasToken, bioChecked]);
 
   useEffect(() => {
     if (!isReady) return;

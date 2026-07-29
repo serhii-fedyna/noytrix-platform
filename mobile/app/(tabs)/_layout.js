@@ -1,25 +1,15 @@
 // app/(tabs)/_layout.js
-import React, { useEffect } from "react";
+import React from "react";
 import { Tabs } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { StyleSheet, View } from "react-native";
-import * as SplashScreen from "expo-splash-screen";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
-
-SplashScreen.preventAutoHideAsync();
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const { t } = useTranslation();
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      SplashScreen.hideAsync();
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
 
   const ACTIVE = "#FFA500";
   const INACTIVE = "#8D9DB5";
