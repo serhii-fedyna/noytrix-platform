@@ -786,6 +786,10 @@ export default function RootLayout() {
     );
   }
 
+  if (authStateChecked && !isAuth && !hasToken) {
+    return <AuthRequiredScreen />;
+  }
+
   return (
     <AppShell appAlert={appAlert} setAppAlert={setAppAlert}>
       <Stack screenOptions={{ headerShown: false }}>

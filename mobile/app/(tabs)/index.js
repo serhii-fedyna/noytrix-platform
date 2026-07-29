@@ -351,29 +351,8 @@ function formatLevelLabel(level, lang) {
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || null;
   const structured = result && typeof result === "object" ? result.structured || null : null;
-  const chunks = [];
-  const add = (value) => {
-    if (Array.isArray(value)) {
-      value.forEach(add);
-      return;
-    }
-    const text = typeof value === "string" ? value.trim() : "";
-    if (text && !chunks.includes(text)) chunks.push(text);
-  };
-
-  add(structured?.details);
-  add(structured?.attack_scenario);
-  add(structured?.hidden_danger);
-  add(structured?.attacker_intent);
-  add(structured?.loss_scenario);
-  add(structured?.risks);
-  add(structured?.actions);
-  add(structured?.confidence_note);
-  add(structured?.short);
-  add(result?.text);
-  add(raw?.ai_explanation);
-
-  return chunks.join("\n\n").trim();
+  const primary = structured?.short || result?.text || structured?.details || raw?.ai_explanation || "";
+  return String(primary).trim().slice(0, 900);
 }
 
 function formatSourceName(name, lang) {

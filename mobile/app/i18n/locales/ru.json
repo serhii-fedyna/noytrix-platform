@@ -745,6 +745,9 @@
   },
   "shieldPro": {
     "title": "ScamShield PRO",
+    "verdictBasis": {
+      "title": "Почему Noytrix вынес этот вердикт"
+    },
     "subtitle": "Глубокий multi-API анализ + реальные статусы источников + premium verdict engine.",
     "unlimited": "PRO • без лимитов",
     "copied": "Скопировано в буфер.",

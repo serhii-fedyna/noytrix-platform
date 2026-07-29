@@ -21,6 +21,7 @@ export async function signInWithGoogle() {
 
   const redirectUri = AuthSession.makeRedirectUri({
     native: `${Application.applicationId || "com.noytrix.app"}:/oauthredirect`,
+    isTripleSlashed: false,
   });
 
   const discovery = {
@@ -39,7 +40,10 @@ export async function signInWithGoogle() {
     },
   });
 
-  const result = await request.promptAsync(discovery);
+  const result = await request.promptAsync(discovery, { useProxy: false });
+  try {
+    await WebBrowser.dismissBrowser();
+  } catch {}
 
   if (result.type === "cancel" || result.type === "dismiss") {
     return null;

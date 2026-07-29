@@ -2063,6 +2063,9 @@ def _scan_client_safe_response(data: dict) -> dict:
     score = int(data.get("score") or 0)
     level = text_value(data.get("level"), data.get("verdict"), "safe").lower()
     kind = text_value(data.get("kind"), data.get("risk_type"), "text").lower()
+    is_pro = bool(data.get("isPro"))
+    lang = str(data.get("lang") or "en").lower()
+    lang = "uk" if lang.startswith("uk") or lang.startswith("ua") else "ru" if lang.startswith("ru") else "en"
     confirmed_red_flag = bool(data.get("confirmed_red_flag"))
     if not confirmed_red_flag and score >= 85:
         confirmed_red_flag = _has_confirmed_hard_evidence(data) or bool(data.get("malicious_sources"))
@@ -2091,7 +2094,7 @@ def _scan_client_safe_response(data: dict) -> dict:
         "risk_type": kind,
         "confidence": int(data.get("confidence") or data.get("confidence_score") or 0),
         "confidence_score": int(data.get("confidence_score") or data.get("confidence") or 0),
-        "isPro": bool(data.get("isPro")),
+        "isPro": is_pro,
         "confirmed_red_flag": confirmed_red_flag,
         "ai_verdict": verdict or level,
         "ai_verdict_en": text_value(data.get("ai_verdict_en"), data.get("verdict_en"), verdict, level),
@@ -2103,51 +2106,77 @@ def _scan_client_safe_response(data: dict) -> dict:
         "summary": text_value(data.get("summary")),
     }
 
+    basis = {
+        "en": {
+            "safe": "Noytrix did not find confirmed threat signals in this check. This does not guarantee that future signatures or wallet requests are safe.",
+            "suspicious": "Noytrix found warning signals, but the evidence is not strong enough to call this a confirmed scam. Do not connect or sign until you verify the object.",
+            "danger": "Noytrix marked this as dangerous because the analysis found confirmed threat signals or a high-risk action pattern. Do not connect, approve, sign, or send funds.",
+            "critical": "Noytrix marked this as critical because the analysis found confirmed threat signals or a high-risk action pattern. Do not connect, approve, sign, or send funds.",
+        },
+        "ru": {
+            "safe": "Noytrix не нашёл подтверждённых признаков угрозы в этой проверке. Это не гарантирует безопасность будущих подписей или запросов кошелька.",
+            "suspicious": "Noytrix нашёл предупреждающие признаки, но их недостаточно для подтверждённого скама. Не подключай кошелёк и не подписывай, пока не проверишь объект.",
+            "danger": "Noytrix отметил объект как опасный, потому что анализ нашёл подтверждённые признаки угрозы или опасный сценарий действия. Не подключай кошелёк, не выдавай approve, не подписывай и не отправляй средства.",
+            "critical": "Noytrix отметил объект как критически опасный, потому что анализ нашёл подтверждённые признаки угрозы или опасный сценарий действия. Не подключай кошелёк, не выдавай approve, не подписывай и не отправляй средства.",
+        },
+        "uk": {
+            "safe": "Noytrix не знайшов підтверджених ознак загрози під час цієї перевірки. Це не гарантує безпеку майбутніх підписів або запитів гаманця.",
+            "suspicious": "Noytrix знайшов попереджувальні ознаки, але їх недостатньо для підтвердженого скаму. Не підключай гаманець і не підписуй, доки не перевіриш об’єкт.",
+            "danger": "Noytrix позначив об’єкт як небезпечний, бо аналіз знайшов підтверджені ознаки загрози або небезпечний сценарій дії. Не підключай гаманець, не надавай approve, не підписуй і не надсилай кошти.",
+            "critical": "Noytrix позначив об’єкт як критично небезпечний, бо аналіз знайшов підтверджені ознаки загрози або небезпечний сценарій дії. Не підключай гаманець, не надавай approve, не підписуй і не надсилай кошти.",
+        },
+    }
+    safe["verdict_basis"] = basis[lang].get(level, basis[lang]["suspicious"])
+
     ai_result = data.get("ai_explanation_result")
     if isinstance(ai_result, dict):
         structured = ai_result.get("structured") if isinstance(ai_result.get("structured"), dict) else {}
+        short_text = text_value(structured.get("short"), ai_result.get("text"), structured.get("details"), data.get("ai_explanation"))
+        visible_structured = {
+            "short": short_text,
+            "details": short_text if not is_pro else text_value(structured.get("details")),
+            "risks": [] if not is_pro else [text_value(x) for x in (structured.get("risks") or []) if text_value(x)],
+            "actions": [] if not is_pro else [text_value(x) for x in (structured.get("actions") or []) if text_value(x)],
+            "confidence_note": "" if not is_pro else text_value(structured.get("confidence_note")),
+            "severity_label": text_value(structured.get("severity_label")),
+            "next_step_priority": text_value(structured.get("next_step_priority")),
+            "attack_scenario": "" if not is_pro else text_value(structured.get("attack_scenario")),
+            "hidden_danger": "" if not is_pro else text_value(structured.get("hidden_danger")),
+            "attacker_intent": "" if not is_pro else text_value(structured.get("attacker_intent")),
+            "loss_scenario": "" if not is_pro else text_value(structured.get("loss_scenario")),
+        }
         safe["ai_explanation_result"] = {
             "available": bool(ai_result.get("available")),
             "reason": text_value(ai_result.get("reason")),
             "model": text_value(ai_result.get("model")),
             "language": text_value(ai_result.get("language")),
             "mode": text_value(ai_result.get("mode")),
-            "text": text_value(ai_result.get("text"), structured.get("details"), structured.get("short")),
-            "structured": {
-                "short": text_value(structured.get("short")),
-                "details": text_value(structured.get("details")),
-                "risks": [text_value(x) for x in (structured.get("risks") or []) if text_value(x)],
-                "actions": [text_value(x) for x in (structured.get("actions") or []) if text_value(x)],
-                "confidence_note": text_value(structured.get("confidence_note")),
-                "severity_label": text_value(structured.get("severity_label")),
-                "next_step_priority": text_value(structured.get("next_step_priority")),
-                "attack_scenario": text_value(structured.get("attack_scenario")),
-                "hidden_danger": text_value(structured.get("hidden_danger")),
-                "attacker_intent": text_value(structured.get("attacker_intent")),
-                "loss_scenario": text_value(structured.get("loss_scenario")),
-            },
+            "text": short_text if not is_pro else text_value(ai_result.get("text"), structured.get("details"), short_text),
+            "structured": visible_structured,
         }
         safe["ai_explanation"] = safe["ai_explanation_result"]["text"]
     else:
         safe["ai_explanation"] = text_value(data.get("ai_explanation"), data.get("explanation"))
 
-    quota = data.get("quota")
-    if isinstance(quota, dict):
-        safe["quota"] = {
-            "limit": int(quota.get("limit") or 999999),
-            "used": int(quota.get("used") or 0),
-            "left": int(quota.get("left") or 999999),
-            "is_pro": bool(quota.get("is_pro") or data.get("isPro")),
-            "plan": text_value(quota.get("plan"), "PRO" if data.get("isPro") else "Free"),
-        }
-    else:
-        safe["quota"] = {"limit": 999999, "used": 0, "left": 999999, "is_pro": bool(data.get("isPro")), "plan": "PRO" if data.get("isPro") else "Free"}
-    if data.get("isPro"):
-        safe["quota"]["limit"] = safe["quota"].get("limit") or 999999
-        safe["quota"]["used"] = safe["quota"].get("used") or 0
-        safe["quota"]["left"] = safe["quota"].get("left") or 999999
-        safe["quota"]["is_pro"] = True
-        safe["quota"]["plan"] = safe["quota"].get("plan") or "PRO"
+    quota = data.get("quota") if isinstance(data.get("quota"), dict) else {}
+    quota_is_pro = bool(quota.get("is_pro")) or is_pro
+    raw_limit = quota.get("freeLimit")
+    if raw_limit is None:
+        raw_limit = quota.get("limit")
+    free_limit = int(raw_limit or DAILY_FREE_LIMIT)
+    raw_used = quota.get("used")
+    used = int(raw_used if raw_used is not None else 0)
+    raw_left = quota.get("left")
+    left = None if quota_is_pro else max(0, int(raw_left) if raw_left is not None else free_limit - used)
+    safe["quota"] = {
+        "limit": free_limit,
+        "freeLimit": free_limit,
+        "used": used,
+        "left": left,
+        "is_pro": quota_is_pro,
+        "unlimited": quota_is_pro,
+        "plan": text_value(quota.get("plan"), "PRO" if quota_is_pro else "Free"),
+    }
 
     safe["scoring"] = {
         "internal_confirmed_signals": 0,
@@ -2182,7 +2211,7 @@ def _scan_client_safe_response(data: dict) -> dict:
                 })
             elif primitive(item):
                 evidence.append({"text": str(item)})
-    safe["evidence"] = evidence
+    safe["evidence"] = evidence if is_pro else []
 
     sources = []
     if isinstance(data.get("sources"), list):
@@ -2196,7 +2225,8 @@ def _scan_client_safe_response(data: dict) -> dict:
                 "verdict": text_value(src.get("verdict"), "unknown"),
                 "status_text": text_value(src.get("status_text")),
             })
-    safe["sources"] = sources
+    safe["sources"] = sources if is_pro else []
+    safe["pro_locked"] = not is_pro
 
     return safe
 
@@ -6749,7 +6779,14 @@ async def security_analyze_core(payload: dict) -> dict:
 
     lang = normalize_lang(str(payload.get("lang") or "en"))
     user_id = str(payload.get("user_id") or payload.get("userId") or "security_core").strip()
-    is_pro_user = bool(payload.get("is_pro") or payload.get("isPro") or payload.get("pro") or True)
+    pro_flag = payload.get("is_pro")
+    if pro_flag is None:
+        pro_flag = payload.get("isPro")
+    if pro_flag is None:
+        pro_flag = payload.get("pro")
+    # Internal callers that do not send an entitlement flag keep the historical
+    # unlimited behavior; explicit False is honored for the public free flow.
+    is_pro_user = True if pro_flag is None else bool(pro_flag)
     external_check = bool(payload.get("external_check") or payload.get("externalCheck"))
     internal_only = bool(payload.get("internal_only") or payload.get("internalOnly") or (NOYTRIX_INTERNAL_MODE and not external_check))
 
@@ -6779,6 +6816,8 @@ async def security_analyze_core(payload: dict) -> dict:
         "version": "v1",
         "engine": "noytrix_security_core",
         "latency_ms": int((time.time() - started) * 1000),
+        "lang": lang,
+        "isPro": is_pro_user,
 
         "input": target,
         "normalized_input": data.get("normalized_input") or target,
@@ -6963,7 +7002,7 @@ async def scan(
             data["ai_explanation_result"] = await generate_ai_security_explanation(
                 data,
                 L,
-                "detailed",
+                "short",
             )
             data["ai_explanation"] = (
                 (data.get("ai_explanation_result") or {}).get("text")
@@ -6975,7 +7014,7 @@ async def scan(
                 "available": False,
                 "reason": str(e)[:300],
                 "language": L,
-                "mode": "detailed",
+                "mode": "short",
                 "text": "",
             }
 

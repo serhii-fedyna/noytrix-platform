@@ -402,30 +402,8 @@ function formatLevelLabel(level, lang) {
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || {};
   const structured = result?.structured || {};
-  const chunks = [];
-  const add = (value) => {
-    if (Array.isArray(value)) {
-      value.forEach(add);
-      return;
-    }
-    const text = typeof value === "string" ? value.trim() : "";
-    if (text && !chunks.includes(text)) chunks.push(text);
-  };
-
-  add(structured.details);
-  add(structured.attack_scenario);
-  add(structured.hidden_danger);
-  add(structured.attacker_intent);
-  add(structured.loss_scenario);
-  add(structured.risks);
-  add(structured.actions);
-  add(structured.confidence_note);
-  add(structured.short);
-  add(result.text);
-  add(raw?.ai_explanation);
-  add(raw?.human_explanation);
-
-  return chunks.join("\n\n").trim();
+  const primary = structured.short || result.text || structured.details || raw?.ai_explanation || raw?.human_explanation || "";
+  return String(primary).trim().slice(0, 900);
 }
 
 function formatSourceVerdict(verdict, lang) {
@@ -854,6 +832,7 @@ function normalizeScanReport(raw, currentLang) {
       null,
     aiHumanVerdict: getAiVerdictText(raw),
     aiExplanationResult: raw.ai_explanation_result || null,
+    verdictBasis: raw.verdict_basis || raw.verdictBasis || "",
     sources: Array.isArray(raw.sources) ? raw.sources : [],
     evidenceList: Array.isArray(raw.evidence) ? raw.evidence : [],
     scoring: raw.scoring || {
@@ -2530,6 +2509,26 @@ ${uri}`,
                   title={tx("scan.aiVerdict.title", pickLang(currentLang, "AI-вердикт", "AI verdict", "AI-вердикт"))}
                   text={normalizedOut.aiHumanVerdict}
                 />
+
+                {!!normalizedOut.verdictBasis && (
+                  <View
+                    style={{
+                      marginTop: 12,
+                      padding: 14,
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: "rgba(255,176,32,0.25)",
+                      backgroundColor: "rgba(255,176,32,0.07)",
+                    }}
+                  >
+                    <Text style={{ color: T.text, fontWeight: "900", fontSize: 15, marginBottom: 6 }}>
+                      {tx("shieldPro.verdictBasis.title", pickLang(currentLang, "Почему Noytrix вынес этот вердикт", "Why Noytrix reached this verdict", "Чому Noytrix виніс цей вердикт"))}
+                    </Text>
+                    <Text style={{ color: T.dim, lineHeight: 21 }}>
+                      {normalizedOut.verdictBasis}
+                    </Text>
+                  </View>
+                )}
 
                 {!!normalizedOut.confirmedRedFlag && (
                   <View

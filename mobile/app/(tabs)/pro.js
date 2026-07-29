@@ -497,6 +497,65 @@ export default function ProScreen() {
 
           <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
+              <Text style={s.h2}>{pw("tariffsTitle")}</Text>
+              <Text style={s.pricingLead}>{pw("tariffsLead")}</Text>
+
+              {plans.map((p, i) => {
+                const isActive =
+                  (p.id === "l" && ent.proYearly) ||
+                  (p.id === "h" && ent.pro6m) ||
+                  (p.id === "m" && ent.proMonthly);
+                const saveText = pw(p.saveKey);
+
+                return (
+                  <View
+                    key={p.id}
+                    style={[
+                      s.planItem,
+                      p.featured && !isActive && s.planItemFeatured,
+                      i === plans.length - 1 && { marginBottom: 0 },
+                      isActive && { borderColor: "rgba(255,165,0,0.35)" },
+                    ]}
+                  >
+                    <View style={{ flex: 1, paddingRight: 10 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
+                        <Text style={s.planTitle}>{pw(p.titleKey)}</Text>
+                        {isActive ? (
+                          <View style={s.badgeActive}>
+                            <Ionicons name="checkmark-circle" size={14} color={C.green} style={{ marginRight: 6 }} />
+                            <Text style={s.badgeText}>{t("pro.badges.active", "Active")}</Text>
+                          </View>
+                        ) : p.featured ? (
+                          <View style={s.badgeBest}>
+                            <Text style={s.badgeBestText}>{pw("bestValue")}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={s.planPrice}>{priceFor(p.id)}</Text>
+                      {!!saveText && saveText !== `pro.plans.${p.id}.save` ? <Text style={s.planSave}>{saveText}</Text> : null}
+                      <Text style={s.planAnchor}>{pw(`plan${p.id.toUpperCase()}Text`)}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[s.buyBtn, isActive && { backgroundColor: "rgba(255,255,255,0.10)" }, loading && { opacity: 0.6 }]}
+                      onPress={() => handleBuy(p.id)}
+                      activeOpacity={0.9}
+                    >
+                      <Text style={[s.buyText, isActive ? { color: C.text } : { color: C.black }]}>{labelForPlan(p.id)}</Text>
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+
+              {!purchased ? <Text style={s.limitText}>{pw("tariffsNote")}</Text> : <Text style={s.limitText}>{t("pro.restoreHint", "Your PRO access is active.")}</Text>}
+              <TouchableOpacity style={s.restoreBtn} onPress={handleRestore} activeOpacity={0.85}>
+                <Ionicons name="refresh-outline" size={15} color={C.sub} style={{ marginRight: 6 }} />
+                <Text style={s.restoreText}>{t("pro.restoreButton", "Restore purchase")}</Text>
+              </TouchableOpacity>
+            </BlurView>
+          </View>
+
+          <View style={[cardChrome(), { marginBottom: 14 }]}>
+            <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
               <View style={s.alertHeader}>
                 <Ionicons name="shield-checkmark-outline" size={22} color={C.accent} />
                 <Text style={s.title}>{pw("proTitle")}</Text>
@@ -537,95 +596,6 @@ export default function ProScreen() {
                 </View>
               </View>
               <Text style={s.disclaimer}>{pw("noProfitPromise")}</Text>
-            </BlurView>
-          </View>
-
-          <View style={[cardChrome(), { marginBottom: 14 }]}>
-            <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
-              <Text style={s.h2}>{pw("tariffsTitle")}</Text>
-              <Text style={s.pricingLead}>{pw("tariffsLead")}</Text>
-
-              {plans.map((p, i) => {
-                const isActive =
-                  (p.id === "l" && ent.proYearly) ||
-                  (p.id === "h" && ent.pro6m) ||
-                  (p.id === "m" && ent.proMonthly);
-
-                const saveText = pw(p.saveKey);
-
-                return (
-                  <View
-                    key={p.id}
-                    style={[
-                      s.planItem,
-                      p.featured && !isActive && s.planItemFeatured,
-                      i === plans.length - 1 && { marginBottom: 0 },
-                      isActive && { borderColor: "rgba(255,165,0,0.35)" },
-                    ]}
-                  >
-                    <View style={{ flex: 1, paddingRight: 10 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", flexWrap: "wrap" }}>
-                        <Text style={s.planTitle}>{pw(p.titleKey)}</Text>
-
-                        {isActive ? (
-                          <View style={s.badgeActive}>
-                            <Ionicons
-                              name="checkmark-circle"
-                              size={14}
-                              color={C.green}
-                              style={{ marginRight: 6 }}
-                            />
-                            <Text style={s.badgeText}>{t("pro.badges.active", "Active")}</Text>
-                          </View>
-                        ) : p.featured ? (
-                          <View style={s.badgeBest}>
-                            <Text style={s.badgeBestText}>{pw("bestValue")}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-
-                      <Text style={s.planPrice}>{priceFor(p.id)}</Text>
-
-                      {!!saveText && saveText !== `pro.plans.${p.id}.save` ? (
-                        <Text style={s.planSave}>{saveText}</Text>
-                      ) : null}
-
-                      <Text style={s.planAnchor}>{pw(`plan${p.id.toUpperCase()}Text`)}</Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={[
-                        s.buyBtn,
-                        isActive && { backgroundColor: "rgba(255,255,255,0.10)" },
-                        loading && { opacity: 0.6 },
-                      ]}
-                      onPress={() => handleBuy(p.id)}
-                      activeOpacity={0.9}
-                    >
-                      <Text style={[s.buyText, isActive ? { color: C.text } : { color: C.black }]}>
-                        {labelForPlan(p.id)}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })}
-
-              {!purchased ? (
-                <Text style={s.limitText}>
-                  {pw("tariffsNote")}
-                </Text>
-              ) : (
-                <Text style={s.limitText}>{t("pro.restoreHint", "Your PRO access is active.")}</Text>
-              )}
-
-              <TouchableOpacity
-                style={s.restoreBtn}
-                onPress={handleRestore}
-                activeOpacity={0.85}
-              >
-                <Ionicons name="refresh-outline" size={15} color={C.sub} style={{ marginRight: 6 }} />
-                <Text style={s.restoreText}>{t("pro.restoreButton", "Restore purchase")}</Text>
-              </TouchableOpacity>
             </BlurView>
           </View>
 
