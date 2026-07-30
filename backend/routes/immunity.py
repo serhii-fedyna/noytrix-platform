@@ -1,7 +1,7 @@
 from collections.abc import Callable
 from typing import Optional
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 
@@ -195,6 +195,12 @@ def create_immunity_router(
 
         uid = payload.user.userId or get_user_id(request, None)
         quota_info = enforce_free_quota(request, feature="immunity_analyze", user_id=uid, lang=L)
+
+        if not quota_info.get("isPro") and quota_info.get("limitReached"):
+            raise HTTPException(
+                status_code=429,
+                detail={"message": t["quota"]["exceeded"], "quota": quota_info},
+            )
 
         reasons = []
         score = 0

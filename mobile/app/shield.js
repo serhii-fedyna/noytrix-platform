@@ -747,6 +747,15 @@ function formatLevelLabel(level, lang) {
   return pickLang(lang, "Безопасно", "Safe", "Безпечно");
 }
 
+function localizeVerdictLabel(value, level, lang) {
+  const label = String(value || "").trim();
+  const normalized = label.toLowerCase();
+  if (["critical", "danger", "suspicious", "safe"].includes(normalized)) {
+    return formatLevelLabel(normalized, lang);
+  }
+  return label || formatLevelLabel(level, lang);
+}
+
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || {};
   const structured = result?.structured || {};
@@ -769,6 +778,15 @@ function normalizeScanReport(raw, currentLang) {
   const honeypot = token.honeypot || null;
   const topContributors = Array.isArray(details.top_score_contributors) ? details.top_score_contributors : [];
 
+  const rawVerdictLabel =
+    raw.ai_verdict_localized ||
+    raw.verdict_localized ||
+    (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk || raw.verdict_uk : raw.ai_verdict_en || raw.verdict_en) ||
+    raw.ai_verdict ||
+    raw.verdict ||
+    raw.level ||
+    "";
+
   return {
     ...raw,
     kind,
@@ -776,14 +794,7 @@ function normalizeScanReport(raw, currentLang) {
     level,
     kindLabel: formatKindLabel(kind, raw.kind_localized, currentLang),
     levelLabel: formatLevelLabel(level, currentLang),
-    verdictLabel:
-      raw.ai_verdict_localized ||
-      raw.verdict_localized ||
-      (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk || raw.verdict_uk : raw.ai_verdict_en || raw.verdict_en) ||
-      raw.ai_verdict ||
-      raw.verdict ||
-      raw.level ||
-      "",
+    verdictLabel: localizeVerdictLabel(rawVerdictLabel, level, currentLang),
     aiVerdictLabel:
       raw.ai_verdict_localized ||
       (currentLang === "ru" ? raw.ai_verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk : raw.ai_verdict_en) ||
@@ -1499,7 +1510,7 @@ export default function Shield() {
     return tx(
       "shield.quota.pillFree",
       pickLang(currentLang, `FREE • ${normalized.used}/${normalized.limit} проверок`, `FREE • ${normalized.used}/${normalized.limit} checks`, `FREE • ${normalized.used}/${normalized.limit} перевірок`),
-      { used: normalized.used, limit: normalized.limit }
+      { used: normalized.used, limit: normalized.limit, left: normalized.left }
     );
   }, [isPro, quota, currentLang, tx]);
 
@@ -2043,8 +2054,6 @@ export default function Shield() {
           <Text style={{ color: T.text, fontWeight: "900" }}>{quotaPillText}</Text>
         </View>
 
-        <Text style={{ color: T.dim, marginBottom: 14, fontSize: 13, lineHeight: 18 }}>{freeInfoText}</Text>
-
         <BlurCard>
           <View
             style={{
@@ -2309,6 +2318,8 @@ export default function Shield() {
             </BlurCard>
           </>
         )}
+        {false && (
+        <>
         <BlurCard style={{ borderColor: "rgba(255,176,32,0.28)" }}>
           <Text style={{ color: T.text, fontWeight: "900", fontSize: 18, marginBottom: 8 }}>
             {tx("shield.proBlock.title", pickLang(currentLang, "Почему PRO важен", "Why PRO matters"))}
@@ -2460,6 +2471,8 @@ export default function Shield() {
             )}
           </Text>
         </BlurCard>
+        </>
+        )}
       </ScrollView>
 
       {!isPro && (

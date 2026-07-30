@@ -156,7 +156,7 @@ const PAYWALL_COPY = {
     joinCtaBuy: "Открыть полную защиту",
   },
   uk: {
-    heroTitle: "Захисти себе до Connect, Approve, Sign або Send",
+    heroTitle: "Захисти себе до підключення, дозволу, підпису чи надсилання",
     heroSubtitle:
       "Noytrix перевіряє посилання, гаманці, токени, контракти й підписи до дії. PRO дає глибші перевірки, зрозумілі AI-пояснення і менше сліпих рішень.",
     freeTitle: "Що ти вже перевірив безкоштовно",
@@ -172,7 +172,7 @@ const PAYWALL_COPY = {
     proText:
       "PRO створений для тих, хто регулярно працює з криптою і хоче другу перевірку до того, як гроші підуть із гаманця.",
     proPointOne: "Більше перевірок посилань, гаманців, токенів, контрактів і підозрілих схем.",
-    proPointTwo: "Глибший аналіз ризику перед Connect, Approve, Sign або Send.",
+    proPointTwo: "Глибший аналіз ризику перед підключенням, дозволом, підписом чи надсиланням.",
     proPointThree: "Просте AI-пояснення людською мовою: що небезпечно і що робити далі.",
     proPointFour: "Відновлення покупки через Google Play, якщо змінив телефон або перевстановив застосунок.",
     whyWorthTitle: "Один поганий клік може коштувати дорожче за рік PRO",
@@ -180,7 +180,7 @@ const PAYWALL_COPY = {
       "Noytrix не обіцяє прибуток. Він допомагає не діяти наосліп, коли фейкове посилання, токен, гаманець або підпис можуть поставити кошти під ризик.",
     noProfitPromise: "Це не фінансова порада і не обіцянка прибутку. Це перевірка ризику перед твоїм рішенням.",
     tariffsTitle: "Обери захист",
-    tariffsLead: "Обери, як довго Noytrix захищатиме тебе перед Connect, Approve, Sign або Send.",
+    tariffsLead: "Обери, як довго Noytrix захищатиме тебе перед підключенням, дозволом, підписом чи надсиланням.",
     tariffsNote:
       "Безкоштовні перевірки обмежені. PRO відкриває глибші перевірки, AI-пояснення та відновлення покупки.",
     planMTitle: "1 місяць",
@@ -440,46 +440,6 @@ export default function ProScreen() {
           </View>
 
           <View style={[cardChrome(), { marginBottom: 14 }]}>
-            <BlurView intensity={30} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
-              <View style={s.alertHeader}>
-                <Ionicons name="gift-outline" size={22} color={C.accent} />
-                <Text style={s.title}>{pw("freeTitle")}</Text>
-              </View>
-
-              <Text style={s.textStrong}>{pw("freeText")}</Text>
-
-              <View style={s.valueGrid}>
-                <ValueTile
-                  icon="scan-outline"
-                  label={pw("freeScansLabel")}
-                  value={String(paywallStats.scanCount || 0)}
-                />
-                <ValueTile
-                  icon="warning-outline"
-                  label={pw("lastRiskLabel")}
-                  value={paywallStats.lastLevel || pw("noRiskYet")}
-                />
-                <ValueTile
-                  icon="phone-portrait-outline"
-                  label={pw("opensLabel")}
-                  value={String(paywallStats.appOpens || 0)}
-                />
-              </View>
-
-              <View style={{ marginTop: 12 }}>
-                <Bullet
-                  icon="checkmark-circle-outline"
-                  text={pw("freePointOne")}
-                />
-                <Bullet
-                  icon="checkmark-circle-outline"
-                  text={pw("freePointTwo")}
-                />
-              </View>
-            </BlurView>
-          </View>
-
-          <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
               <Text style={s.h2}>{pw("tariffsTitle")}</Text>
               <Text style={s.pricingLead}>{pw("tariffsLead")}</Text>
@@ -535,36 +495,6 @@ export default function ProScreen() {
                 <Ionicons name="refresh-outline" size={15} color={C.sub} style={{ marginRight: 6 }} />
                 <Text style={s.restoreText}>{t("pro.restoreButton", "Restore purchase")}</Text>
               </TouchableOpacity>
-            </BlurView>
-          </View>
-
-          <View style={[cardChrome(), { marginBottom: 14 }]}>
-            <BlurView intensity={26} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
-              <View style={s.alertHeader}>
-                <Ionicons name="shield-checkmark-outline" size={22} color={C.accent} />
-                <Text style={s.title}>{pw("proTitle")}</Text>
-              </View>
-
-              <Text style={s.textStrong}>{pw("proText")}</Text>
-
-              <View style={{ marginTop: 12 }}>
-                <Bullet
-                  icon="infinite-outline"
-                  text={pw("proPointOne")}
-                />
-                <Bullet
-                  icon="search-outline"
-                  text={pw("proPointTwo")}
-                />
-                <Bullet
-                  icon="chatbubble-ellipses-outline"
-                  text={pw("proPointThree")}
-                />
-                <Bullet
-                  icon="refresh-outline"
-                  text={pw("proPointFour")}
-                />
-              </View>
             </BlurView>
           </View>
 

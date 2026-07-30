@@ -400,6 +400,15 @@ function formatLevelLabel(level, lang) {
   return pickLang(lang, "Безопасно", "Safe", "Безпечно");
 }
 
+function localizeVerdictLabel(value, level, lang) {
+  const label = String(value || "").trim();
+  const normalized = label.toLowerCase();
+  if (["critical", "danger", "suspicious", "safe"].includes(normalized)) {
+    return formatLevelLabel(normalized, lang);
+  }
+  return label || formatLevelLabel(level, lang);
+}
+
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || {};
   const structured = result?.structured || {};
@@ -864,6 +873,15 @@ function normalizeScanReport(raw, currentLang) {
   const honeypot = token?.honeypot || null;
   const topContributors = Array.isArray(details.top_score_contributors) ? details.top_score_contributors : [];
 
+  const rawVerdictLabel =
+    raw.ai_verdict_localized ||
+    raw.verdict_localized ||
+    (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk || raw.verdict_uk : raw.ai_verdict_en || raw.verdict_en) ||
+    raw.ai_verdict ||
+    raw.verdict ||
+    raw.level ||
+    "";
+
   return {
     ...raw,
     kind: inputKind,
@@ -871,14 +889,7 @@ function normalizeScanReport(raw, currentLang) {
     level,
     kindLabel: formatKindLabel(inputKind, raw.kind_localized, currentLang),
     levelLabel: formatLevelLabel(level, currentLang),
-    verdictLabel:
-      raw.ai_verdict_localized ||
-      raw.verdict_localized ||
-      (currentLang === "ru" ? raw.ai_verdict_ru || raw.verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk || raw.verdict_uk : raw.ai_verdict_en || raw.verdict_en) ||
-      raw.ai_verdict ||
-      raw.verdict ||
-      raw.level ||
-      "",
+    verdictLabel: localizeVerdictLabel(rawVerdictLabel, level, currentLang),
     aiVerdictLabel:
       raw.ai_verdict_localized ||
       (currentLang === "ru" ? raw.ai_verdict_ru : currentLang === "uk" ? raw.ai_verdict_uk : raw.ai_verdict_en) ||

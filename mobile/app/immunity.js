@@ -2050,6 +2050,7 @@ ${uri}`,
           </View>
         </BlurCard>
 
+        {false && (
         <InfoCard
           title={isRu ? "Зачем нужен Immunity" : "Why Immunity exists"}
           text={
@@ -2067,6 +2068,7 @@ ${uri}`,
               : "1) Search and open a pair. 2) Check facts. 3) Run Risk Engine. 4) Follow the concrete plan."
           }
         />
+        )}
       </ScrollView>
 
       <Modal visible={coinOpen} animationType="slide" transparent>

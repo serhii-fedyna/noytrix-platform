@@ -6983,7 +6983,9 @@ async def scan(
 
     pro = bool(quota_info.get("isPro", False))
 
-    if (not pro) and int(quota_info.get("left", 0) or 0) <= 0 and int(quota_info.get("used", 0) or 0) >= int(quota_info.get("freeLimit", DAILY_FREE_LIMIT) or DAILY_FREE_LIMIT):
+    # The helper records the allowed request first. Only a later request carries
+    # limitReached, so users receive all four advertised FREE scans.
+    if (not pro) and bool(quota_info.get("limitReached")):
         raise HTTPException(
             status_code=429,
             detail={
