@@ -232,6 +232,7 @@ async function syncLocalProFlags(ent) {
 }
 
 export default function ProScreen() {
+  const authUserId = useAuthStore((state) => state.user?.id || null);
   const [openFaq, setOpenFaq] = useState(-1);
   const [loading, setLoading] = useState(true);
   const [paywallStats, setPaywallStats] = useState({
@@ -346,7 +347,7 @@ export default function ProScreen() {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [authUserId]);
 
   const handleBuy = async (planId) => {
     try {

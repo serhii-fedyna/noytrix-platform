@@ -32,6 +32,7 @@ import { identityHeaders } from "../lib/identity";
 import { BACKEND } from "../lib/backend";
 import AiVerdictCard from "../components/AiVerdictCard";
 import { hasAccountProAccess } from "../lib/proEntitlement";
+import { normalizeFreeQuota } from "../lib/quota";
 import NoyBot from "../../components/NoyBot";
 
 const AUTH_KEY = "auth_state_v1";
@@ -871,11 +872,7 @@ export default function Home() {
         const qRaw = detail?.quota || backend?.quota || null;
 
         if (qRaw) {
-          const used = Number(qRaw.used || 0);
-          const limit = Number(qRaw.freeLimit || qRaw.limit || 4);
-          const left = Math.max(0, Number(qRaw.left ?? (limit - used)));
-
-          setQuota({ used, limit, left, dayKey: String(qRaw.day || "") });
+          setQuota(normalizeFreeQuota(qRaw));
         }
 
         setQuotaMsg(
@@ -898,12 +895,7 @@ export default function Home() {
         setQuotaBlocked(false);
         setShowQuotaModal(false);
       } else if (quotaFromServer) {
-        const q = {
-          used: Number(quotaFromServer.used || 0),
-          limit: Number(quotaFromServer.freeLimit || quotaFromServer.limit || 4),
-          left: Math.max(0, Number(quotaFromServer.left ?? ((quotaFromServer.freeLimit || quotaFromServer.limit || 4) - (quotaFromServer.used || 0)))),
-          dayKey: String(quotaFromServer.day || ""),
-        };
+        const q = normalizeFreeQuota(quotaFromServer);
         setQuota(q);
         setQuotaBlocked(q.left <= 0 || q.used >= q.limit);
         setShowQuotaModal(false);

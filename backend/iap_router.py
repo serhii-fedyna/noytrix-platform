@@ -12,7 +12,13 @@ from auth.deps import get_current_user
 from auth.models import User
 from iap_models import IAPPurchase
 from identity import resolve_user_id
-from subscriptions import entitlement_status_for_user, sync_google_play_purchase
+from subscriptions import (
+    SubscriptionOwnershipError,
+    entitlement_status_for_user,
+    subscription_owner_for_purchase,
+    subscription_summary,
+    sync_google_play_purchase,
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -23,6 +29,17 @@ class GoogleVerifyIn(BaseModel):
     productId: str
     purchaseToken: str
     packageName: str
+    basePlanId: str | None = None
+    planId: str | None = None
+
+
+GOOGLE_PLAY_PACKAGE_NAME = os.getenv("GOOGLE_PLAY_PACKAGE_NAME", "com.noytrix.app").strip()
+GOOGLE_PLAY_PRODUCTS = {
+    "pro_access": "subs",
+    "prolifetime": "inapp",
+    "pro_ai_bot": "inapp",
+}
+PRO_ENTITLED_PRODUCTS = {"pro_access", "prolifetime"}
 
 def _google_access_token() -> str:
     sa_path = os.getenv("GOOGLE_PLAY_SA_JSON", "").strip()
@@ -47,6 +64,19 @@ def _call_android_publisher(product_type: str, package_name: str, product_id: st
     if r.status_code >= 400:
         raise HTTPException(status_code=400, detail=f"Google verify failed: {r.status_code} {r.text[:300]}")
     return r.json()
+
+
+def _acknowledge_android_purchase(product_type: str, package_name: str, product_id: str, token: str) -> None:
+    """Best-effort server acknowledgement; validation remains the source of truth."""
+    at = _google_access_token()
+    headers = {"Authorization": f"Bearer {at}", "Content-Type": "application/json"}
+    if product_type == "subs":
+        url = f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package_name}/purchases/subscriptions/{product_id}/tokens/{token}:acknowledge"
+    else:
+        url = f"https://androidpublisher.googleapis.com/androidpublisher/v3/applications/{package_name}/purchases/products/{product_id}/tokens/{token}:acknowledge"
+    response = requests.post(url, headers=headers, json={}, timeout=20)
+    if response.status_code >= 400:
+        raise RuntimeError(f"Google acknowledgement failed: {response.status_code}")
 
 def _dt_from_ms(ms: int | str | None) -> datetime | None:
     if not ms:
@@ -73,6 +103,7 @@ def _account_entitlement(current: User) -> tuple[str, dict]:
 def iap_account_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     identity_user_id, ent = _account_entitlement(current)
     active = bool(ent.get("active"))
+    subscription = subscription_summary(ent.get("subscriptionId")) if active else {}
     return {
         "ok": True,
         "plan": "PRO" if active else "FREE",
@@ -80,6 +111,7 @@ def iap_account_status(current: User = Depends(get_current_user), db: Session = 
         "isPro": active,
         "identityUserId": identity_user_id,
         "entitlement": ent,
+        **subscription,
     }
 
 
@@ -93,14 +125,33 @@ def iap_status(current: User = Depends(get_current_user), db: Session = Depends(
 def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
     ptype = (payload.productType or "").strip().lower()
     if ptype not in ("subs", "inapp"):
-        raise HTTPException(status_code=400, detail="productType must be 'subs' or 'inapp'")
+        raise HTTPException(status_code=400, detail="Invalid Google Play product type")
 
     product_id = payload.productId.strip()
     token = payload.purchaseToken.strip()
     package_name = payload.packageName.strip()
 
     if not product_id or not token or not package_name:
-        raise HTTPException(status_code=400, detail="Missing productId/purchaseToken/packageName")
+        raise HTTPException(status_code=400, detail="Missing Google Play purchase details")
+    if package_name != GOOGLE_PLAY_PACKAGE_NAME:
+        raise HTTPException(status_code=400, detail="This purchase does not belong to the Noytrix Android app")
+    expected_type = GOOGLE_PLAY_PRODUCTS.get(product_id)
+    if expected_type is None or expected_type != ptype:
+        raise HTTPException(status_code=400, detail="This Google Play product is not valid for the selected plan")
+
+    identity_user_id, _ = _account_entitlement(current)
+    existing_purchase = db.query(IAPPurchase).filter(IAPPurchase.purchase_token == token).first()
+    if existing_purchase and int(existing_purchase.user_id) != int(current.id):
+        raise HTTPException(
+            status_code=409,
+            detail="This Google Play purchase is already linked to another Noytrix account. Sign in to the account used for the purchase.",
+        )
+    subscription_owner = subscription_owner_for_purchase("google_play", token)
+    if subscription_owner and subscription_owner != identity_user_id:
+        raise HTTPException(
+            status_code=409,
+            detail="This Google Play purchase is already linked to another Noytrix account. Sign in to the account used for the purchase.",
+        )
 
     data = _call_android_publisher(ptype, package_name, product_id, token)
 
@@ -130,12 +181,12 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
         # 2nd level: require payment received if present
         if active and payment_state is not None:
             try:
-                if int(payment_state) != 1:
+                if int(payment_state) not in {1, 2}:
                     active = False
-                    status = "unknown"
+                    status = "pending"
             except Exception:
                 active = False
-                status = "unknown"
+                status = "pending"
 
         # if canceled but still not expired -> keep active (normal behavior)
         # we store cancel_reason for analytics
@@ -152,7 +203,7 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
             status = "active"
         elif purchase_state == 2:
             active = False
-            status = "unknown"
+            status = "pending"
         else:
             active = False
             status = "canceled"
@@ -161,17 +212,17 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
 
     raw_json = json.dumps(data, ensure_ascii=False)
     now = datetime.utcnow()
-    identity_user_id = resolve_user_id(
-        [("auth_user_id", str(current.id)), ("email", current.email), ("google_play_token", token)],
-        meta={"source": "iap_google_verify"},
-    )
-
     expiry_naive = _to_naive_utc(expiry_dt)
     purchase_naive = _to_naive_utc(purchase_dt)
 
     # ===== Upgrades/Downgrades: if token is linked, previous entitlement should be invalidated =====
     if linked_token:
         prev = db.query(IAPPurchase).filter(IAPPurchase.purchase_token == linked_token).first()
+        if prev and int(prev.user_id) != int(current.id):
+            raise HTTPException(
+                status_code=409,
+                detail="This Google Play purchase is already linked to another Noytrix account. Sign in to the account used for the purchase.",
+            )
         if prev and (prev.status or "").lower() == "active":
             prev.status = "canceled"
             prev.updated_at = now
@@ -201,7 +252,6 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
         )
         db.add(rec)
     else:
-        rec.user_id = current.id
         rec.product_type = ptype
         rec.product_id = product_id
         rec.package_name = package_name
@@ -217,27 +267,50 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
         rec.raw = raw_json
         rec.updated_at = now
 
-    subscription_id = sync_google_play_purchase(
-        user_id=identity_user_id,
-        product_type=ptype,
-        product_id=product_id,
-        purchase_token=token,
-        data=data,
-        active=active,
-        status=status,
-        expires_at=expiry_dt.isoformat() if expiry_dt else None,
-        environment="production",
-    )
+    try:
+        subscription_id = sync_google_play_purchase(
+            user_id=identity_user_id,
+            product_type=ptype,
+            product_id=product_id,
+            purchase_token=token,
+            data=data,
+            active=active,
+            status=status,
+            expires_at=expiry_dt.isoformat() if expiry_dt else None,
+            environment="test" if data.get("testPurchase") else "production",
+            grant_pro=product_id in PRO_ENTITLED_PRODUCTS,
+        )
+    except SubscriptionOwnershipError:
+        raise HTTPException(
+            status_code=409,
+            detail="This Google Play purchase is already linked to another Noytrix account. Sign in to the account used for the purchase.",
+        )
 
     db.commit()
 
+    if active and ack_state in (None, 0):
+        try:
+            _acknowledge_android_purchase(ptype, package_name, product_id, token)
+        except Exception:
+            # The client will also finish the transaction. Never revoke a valid
+            # entitlement solely because acknowledgement is temporarily delayed.
+            pass
+
+    _, entitlement = _account_entitlement(current)
+    is_pro = bool(entitlement.get("active"))
+
     return {
         "ok": True,
-        "active": active,
+        "active": is_pro,
+        "googleActive": active,
         "status": status,
-        "plan": "PRO" if active else "FREE",
+        "plan": "PRO" if is_pro else "FREE",
+        "isPro": is_pro,
         "identityUserId": identity_user_id,
         "subscriptionId": subscription_id,
+        "productId": product_id,
+        "productType": ptype,
+        "entitlement": entitlement,
         "expiryUtc": expiry_dt.isoformat() if expiry_dt else None,
         "orderId": order_id,
         "purchaseTimeUtc": purchase_dt.isoformat() if purchase_dt else None,

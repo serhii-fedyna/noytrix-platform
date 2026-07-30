@@ -39,6 +39,9 @@ jobs:
       - name: Run JavaScript tests when present
         run: npm test --if-present
 
+      - name: Check translations are complete
+        run: npm run check:locales
+
       - name: Validate Expo configuration
         run: npx expo config --json > /tmp/noytrix-expo-config.json
 

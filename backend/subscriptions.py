@@ -13,6 +13,11 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 SUBSCRIPTIONS_DB_PATH = DATA_DIR / "subscriptions.sqlite3"
+PRO_PRODUCT_IDS = {"pro_access", "prolifetime", "pro"}
+
+
+class SubscriptionOwnershipError(ValueError):
+    """Raised when a verified store purchase is presented by another account."""
 
 
 def _now_iso() -> str:
@@ -196,17 +201,20 @@ def upsert_subscription(
         row = None
         if token:
             row = cur.execute(
-                "SELECT id FROM subscriptions WHERE provider=? AND purchase_token=? LIMIT 1",
+                "SELECT id, user_id FROM subscriptions WHERE provider=? AND purchase_token=? LIMIT 1",
                 (provider_norm, token),
             ).fetchone()
         if row is None and original:
             row = cur.execute(
-                "SELECT id FROM subscriptions WHERE provider=? AND original_transaction_id=? LIMIT 1",
+                "SELECT id, user_id FROM subscriptions WHERE provider=? AND original_transaction_id=? LIMIT 1",
                 (provider_norm, original),
             ).fetchone()
 
         if row:
             sub_id = int(row["id"])
+            owner_id = str(row["user_id"] or "").strip()
+            if owner_id and owner_id != uid:
+                raise SubscriptionOwnershipError("purchase_already_linked_to_another_account")
             cur.execute(
                 """
                 UPDATE subscriptions
@@ -261,6 +269,60 @@ def upsert_subscription(
             sub_id = int(cur.lastrowid)
         conn.commit()
         return sub_id
+    finally:
+        conn.close()
+
+
+def subscription_owner_for_purchase(
+    provider: str,
+    purchase_token: str | None,
+    original_transaction_id: str | None = None,
+) -> str | None:
+    """Return the account already bound to a store purchase, if any."""
+    provider_norm = normalize_provider(provider)
+    token = str(purchase_token or "").strip()
+    original = str(original_transaction_id or "").strip()
+    if not token and not original:
+        return None
+    conn = _connect()
+    try:
+        row = None
+        if token:
+            row = conn.execute(
+                "SELECT user_id FROM subscriptions WHERE provider=? AND purchase_token=? LIMIT 1",
+                (provider_norm, token),
+            ).fetchone()
+        if row is None and original:
+            row = conn.execute(
+                "SELECT user_id FROM subscriptions WHERE provider=? AND original_transaction_id=? LIMIT 1",
+                (provider_norm, original),
+            ).fetchone()
+        return str(row["user_id"] or "").strip() if row else None
+    finally:
+        conn.close()
+
+
+def subscription_summary(subscription_id: Any) -> dict:
+    """Small, safe subscription summary for the signed-in account status API."""
+    try:
+        sid = int(subscription_id)
+    except Exception:
+        return {}
+    conn = _connect()
+    try:
+        row = conn.execute(
+            "SELECT product_id, status, expires_at, auto_renew, environment FROM subscriptions WHERE id=? LIMIT 1",
+            (sid,),
+        ).fetchone()
+        if not row:
+            return {}
+        return {
+            "productId": row["product_id"],
+            "subscriptionStatus": row["status"],
+            "expiresAt": row["expires_at"],
+            "autoRenew": bool(row["auto_renew"]),
+            "environment": row["environment"],
+        }
     finally:
         conn.close()
 
@@ -587,7 +649,9 @@ def _active_subscription_for_user(user_id: str) -> Optional[sqlite3.Row]:
             """
             SELECT id, provider, product_id, expires_at, source
             FROM subscriptions
-            WHERE user_id=? AND lower(status) IN ('active', 'purchased', 'verified')
+            WHERE user_id=?
+              AND lower(product_id) IN ('pro_access', 'prolifetime', 'pro')
+              AND lower(status) IN ('active', 'purchased', 'verified')
             ORDER BY updated_at DESC
             """,
             (uid,),
@@ -687,6 +751,7 @@ def sync_google_play_purchase(
     status: str,
     expires_at: str | None,
     environment: str = "production",
+    grant_pro: bool = True,
 ) -> int:
     provider = "google_play"
     order_id = str(data.get("orderId") or "").strip() or None
@@ -713,30 +778,34 @@ def sync_google_play_purchase(
         source="google_play_verified",
         raw=data,
     )
-    fallback_active = None if active else _active_subscription_for_user(user_id)
-    entitlement_active = bool(active or fallback_active)
-    set_entitlement(
-        user_id=user_id,
-        entitlement="pro",
-        is_active=entitlement_active,
-        expires_at=expires_at if active else (fallback_active["expires_at"] if fallback_active else None),
-        source="google_play_verified" if active else (fallback_active["source"] if fallback_active else f"google_play_{status}"),
-        provider=provider if active else (fallback_active["provider"] if fallback_active else provider),
-        subscription_id=sub_id if active else (int(fallback_active["id"]) if fallback_active else sub_id),
-    )
-    record_purchase_event(
-        user_id=user_id,
-        provider=provider,
-        event_type="purchase_verified" if active else f"purchase_{status or 'inactive'}",
-        product_id=product_id,
-        status=status,
-        purchase_token=purchase_token,
-        transaction_id=order_id,
-        original_transaction_id=original,
-        environment=environment,
-        raw=data,
-    )
+    if grant_pro:
+        fallback_active = None if active else _active_subscription_for_user(user_id)
+        entitlement_active = bool(active or fallback_active)
+        set_entitlement(
+            user_id=user_id,
+            entitlement="pro",
+            is_active=entitlement_active,
+            expires_at=expires_at if active else (fallback_active["expires_at"] if fallback_active else None),
+            source="google_play_verified" if active else (fallback_active["source"] if fallback_active else f"google_play_{status}"),
+            provider=provider if active else (fallback_active["provider"] if fallback_active else provider),
+            subscription_id=sub_id if active else (int(fallback_active["id"]) if fallback_active else sub_id),
+        )
     status_norm = str(status or "").lower()
+    event_id = f"google_play:{purchase_token}:{order_id or 'no_order'}:{status_norm or 'unknown'}"
+    if purchase_event_exists(provider, event_id) is None:
+        record_purchase_event(
+            user_id=user_id,
+            provider=provider,
+            external_event_id=event_id,
+            event_type="purchase_verified" if active else f"purchase_{status or 'inactive'}",
+            product_id=product_id,
+            status=status,
+            purchase_token=purchase_token,
+            transaction_id=order_id,
+            original_transaction_id=original,
+            environment=environment,
+            raw=data,
+        )
     analytics_event = (
         "purchase_completed"
         if active

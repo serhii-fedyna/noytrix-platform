@@ -20,6 +20,7 @@ import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
 import { hasAccountProAccess } from "./lib/proEntitlement";
+import { normalizeFreeQuota } from "./lib/quota";
 
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
@@ -1492,7 +1493,15 @@ export default function Shield() {
 
   const samplesI18n = tx("shield.samples.items", null, { returnObjects: true });
 
-  const quotaPillText = useMemo(() => { if (isPro) return pickLang(currentLang, "PRO • безлимит", "PRO • unlimited"); const used = Number(quota?.used || 0); const limit = Number(quota?.limit || quota?.freeLimit || 4); return pickLang(currentLang, `FREE • ${used}/${limit} проверок`, `FREE • ${used}/${limit} checks`); }, [isPro, quota, currentLang]);
+  const quotaPillText = useMemo(() => {
+    if (isPro) return tx("shield.quota.pillPro", pickLang(currentLang, "PRO • безлимит", "PRO • unlimited", "PRO • безліміт"));
+    const normalized = normalizeFreeQuota(quota, SHIELD_FREE_DAILY_LIMIT);
+    return tx(
+      "shield.quota.pillFree",
+      pickLang(currentLang, `FREE • ${normalized.used}/${normalized.limit} проверок`, `FREE • ${normalized.used}/${normalized.limit} checks`, `FREE • ${normalized.used}/${normalized.limit} перевірок`),
+      { used: normalized.used, limit: normalized.limit }
+    );
+  }, [isPro, quota, currentLang, tx]);
 
   const freeInfoText = useMemo(() => {
     return tx(
@@ -1628,18 +1637,11 @@ export default function Shield() {
       const serverQuota = backend?.quota || null;
 
       if (serverQuota && !isPro) {
-        const used = Number(serverQuota.used || 0);
-        const limit = Number(serverQuota.freeLimit || serverQuota.limit || 4);
-        const left = Math.max(0, Number(serverQuota.left ?? (limit - used)));
+        const normalized = normalizeFreeQuota(serverQuota, SHIELD_FREE_DAILY_LIMIT);
 
-        setQuota({
-          used,
-          limit,
-          left,
-          dayKey: String(serverQuota.day || ""),
-        });
+        setQuota(normalized);
 
-        setQuotaBlocked(left <= 0 || used >= limit);
+        setQuotaBlocked(normalized.left <= 0 || normalized.used >= normalized.limit);
       }
 
       if (res.status === 429) {
@@ -1668,18 +1670,11 @@ export default function Shield() {
         setQuotaBlocked(false);
         setShowQuotaModal(false);
       } else if (serverQuota) {
-        const used = Number(serverQuota.used || 0);
-        const limit = Number(serverQuota.freeLimit || serverQuota.limit || SHIELD_FREE_DAILY_LIMIT);
-        const left = Math.max(0, Number(serverQuota.left ?? (limit - used)));
+        const normalized = normalizeFreeQuota(serverQuota, SHIELD_FREE_DAILY_LIMIT);
 
-        setQuota({
-          used,
-          limit,
-          left,
-          dayKey: String(serverQuota.day || shieldTodayKey()),
-        });
+        setQuota({ ...normalized, dayKey: normalized.dayKey || shieldTodayKey() });
 
-        setQuotaBlocked(left <= 0 || used >= limit);
+        setQuotaBlocked(normalized.left <= 0 || normalized.used >= normalized.limit);
       } else {
         const q = await loadShieldQuotaLocal();
         const next = {

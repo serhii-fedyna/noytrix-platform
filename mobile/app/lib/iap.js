@@ -245,7 +245,9 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null, planId =
     throw new Error(String(detail));
   }
 
-  if (body.active || body.googleActive) {
+  // Only a server entitlement can unlock PRO. `googleActive` merely means
+  // Google recognizes a product and may also be true for non-PRO products.
+  if (body.active) {
     const serverPlan = planIdFromServer(body, planId);
     await persistPro(true, { productId, productType, planId: serverPlan, orderId: body.orderId, source: "google_play" });
     await identifyUser({
@@ -256,7 +258,7 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null, planId =
     }).catch(() => null);
   }
 
-  return { ...entitlementFromProduct(productId, planId, body), active: !!(body.active || body.googleActive), server: body };
+  return { ...entitlementFromProduct(productId, planId, body), active: !!body.active, googleActive: !!body.googleActive, server: body };
 }
 
 function attachListeners() {
@@ -451,49 +453,56 @@ export async function buyBot() {
 }
 
 export async function restorePurchases() {
-  try {
-    await ensureInit();
-    logEvent("google_play_restore_start", {});
-    const purchases = await getAvailablePurchases();
-    let merged = { proMonthly: false, pro6m: false, proYearly: false, proLifetime: false, bot: false, activePlan: "" };
+  await ensureInit();
+  logEvent("google_play_restore_start", {});
+  const purchases = await getAvailablePurchases();
+  let matchingPurchaseCount = 0;
+  let verificationError = null;
+  let merged = { proMonthly: false, pro6m: false, proYearly: false, proLifetime: false, bot: false, activePlan: "", active: false };
 
-    for (const purchase of purchases || []) {
-      const productId = productIdOf(purchase);
-      if (!PRODUCT_TYPES[productId]) continue;
-      try {
-        const verified = await verifyPurchaseOnServer(purchase, productId);
-        if (verified.active) {
-          merged = {
-            proMonthly: merged.proMonthly || verified.proMonthly,
-            pro6m: merged.pro6m || verified.pro6m,
-            proYearly: merged.proYearly || verified.proYearly,
-            proLifetime: merged.proLifetime || verified.proLifetime,
-            bot: merged.bot || verified.bot,
-            activePlan: merged.activePlan || verified.activePlan || "",
-          };
-          await finishTransaction({ purchase, isConsumable: false }).catch((e) => {
-            console.log("[IAP] finish restored transaction error:", e);
-          });
-        }
-      } catch (e) {
-        console.log("[IAP] restore verify error:", e);
+  for (const purchase of purchases || []) {
+    const productId = productIdOf(purchase);
+    if (!PRODUCT_TYPES[productId]) continue;
+    matchingPurchaseCount += 1;
+    try {
+      const verified = await verifyPurchaseOnServer(purchase, productId);
+      if (verified.active) {
+        merged = {
+          proMonthly: merged.proMonthly || verified.proMonthly,
+          pro6m: merged.pro6m || verified.pro6m,
+          proYearly: merged.proYearly || verified.proYearly,
+          proLifetime: merged.proLifetime || verified.proLifetime,
+          bot: merged.bot || verified.bot,
+          activePlan: merged.activePlan || verified.activePlan || "",
+          active: true,
+        };
       }
+      await finishTransaction({ purchase, isConsumable: false }).catch((error) => {
+        console.log("[IAP] finish restored transaction error:", error);
+      });
+    } catch (error) {
+      verificationError = error;
+      console.log("[IAP] restore verify error:", error);
     }
-
-    const status = await serverStatus().catch(() => null);
-    if (status?.active) {
-      const serverEntitlement = entitlementFromProduct(status?.productId || status?.product_id || PRODUCT_IDS.proSubscription, "", status);
-      await persistPro(true, { source: "google_play_restore_server_status", planId: serverEntitlement.activePlan });
-      merged = { ...merged, ...serverEntitlement };
-    }
-
-    logEvent("google_play_restore_success", merged);
-    return merged;
-  } catch (e) {
-    console.log("[IAP] restorePurchases error:", e);
-    logEvent("google_play_restore_error", { err: String(e?.message || e || "error") });
-    return { proMonthly: false, pro6m: false, proYearly: false, bot: false };
   }
+
+  const status = await serverStatus().catch(() => null);
+  if (status?.active) {
+    const serverEntitlement = entitlementFromProduct(status?.productId || status?.product_id || PRODUCT_IDS.proSubscription, "", status);
+    await persistPro(true, { source: "google_play_restore_server_status", planId: serverEntitlement.activePlan });
+    merged = { ...merged, ...serverEntitlement, active: true };
+  }
+
+  const restored = !!(merged.proMonthly || merged.pro6m || merged.proYearly || merged.proLifetime);
+  if (matchingPurchaseCount > 0 && !restored && verificationError) {
+    const restoreError = new Error(String(verificationError?.message || "Unable to verify this Google Play purchase."));
+    restoreError.code = "RESTORE_VERIFICATION_FAILED";
+    logEvent("google_play_restore_error", { err: restoreError.message });
+    throw restoreError;
+  }
+
+  logEvent("google_play_restore_success", { ...merged, matching_purchase_count: matchingPurchaseCount });
+  return merged;
 }
 
 export async function checkEntitlements(options = {}) {
@@ -511,7 +520,7 @@ export async function checkEntitlements(options = {}) {
     }
 
     const restored = await restorePurchases();
-    if (restored.proMonthly || restored.pro6m || restored.proYearly || restored.bot) {
+    if (restored.proMonthly || restored.pro6m || restored.proYearly || restored.proLifetime) {
       return restored;
     }
     await clearPro({ source: "restore_empty" });

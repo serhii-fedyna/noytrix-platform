@@ -10,7 +10,8 @@
     "web": "expo start --web",
     "build": "eas build",
     "eas-build-pre-install": "node scripts/prepare-google-services.js",
-    "submit": "eas submit"
+    "submit": "eas submit",
+    "check:locales": "node scripts/check-locales.js"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

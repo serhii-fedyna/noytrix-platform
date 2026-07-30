@@ -181,6 +181,7 @@ MAX_REDIRECTS = int(os.getenv("SCAN_MAX_REDIRECTS", "6"))
 
 DAILY_FREE_LIMIT = int(os.getenv("DAILY_FREE_LIMIT", "4"))
 FREE_SCAN_DAILY_FREE_LIMIT = DAILY_FREE_LIMIT  # legacy alias
+ALLOW_LOCAL_SCAN_BYPASS = (os.getenv("NOYTRIX_ALLOW_LOCAL_SCAN_BYPASS", "").strip().lower() in {"1", "true", "yes", "on"})
 
 NOYTRIX_APP_KEY = (os.getenv("NOYTRIX_APP_KEY") or "").strip()
 APP_KEY_HEADER = "x-app-key"
@@ -1705,50 +1706,17 @@ def init_quota_db():
 init_quota_db()
 
 def is_pro(user_id: Optional[str]) -> bool:
-    if not user_id:
+    """Read PRO only from the canonical subscription entitlement store.
+
+    Legacy guest/device records are deliberately excluded. An account must have
+    an active entitlement created by a verified provider purchase or an audited
+    manual grant.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
         return False
-
-    uid_raw = str(user_id).strip()
-    if not uid_raw:
-        return False
-
-    def _guest_pro_active(*ids: str) -> bool:
-        candidates = [str(x or "").strip() for x in ids if str(x or "").strip()]
-        if not candidates:
-            return False
-        return any(guest_has_pro(candidate) for candidate in candidates)
-
-    if _guest_pro_active(uid_raw, uid_raw.lower()):
-        return True
-
     try:
-        conn = sqlite3.connect(str(APP_DB_PATH))
-        cur = conn.cursor()
-
-        try:
-            uid_int = int(uid_raw)
-            cur.execute("SELECT id, email, nick, plan FROM users WHERE id=?", (uid_int,))
-            row = cur.fetchone()
-            if row and _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower()):
-                conn.close()
-                return True
-        except Exception:
-            pass
-
-        cur.execute("SELECT id, email, nick, plan FROM users WHERE lower(email)=lower(?)", (uid_raw,))
-        row = cur.fetchone()
-        if row and _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower()):
-            conn.close()
-            return True
-
-        cur.execute("SELECT id, email, nick, plan FROM users WHERE lower(nick)=lower(?)", (uid_raw,))
-        row = cur.fetchone()
-        if row and _guest_pro_active(str(row[0]), str(row[1] or "").lower(), str(row[2] or "").lower()):
-            conn.close()
-            return True
-
-        conn.close()
-        return False
+        return bool(entitlement_status_for_user(uid, "pro").get("active"))
     except Exception:
         return False
 
@@ -1759,18 +1727,11 @@ def enforce_free_quota(
     lang: str = "en",
     is_pro_override: Optional[bool] = None,
 ) -> dict:
-    if str(user_id or "").strip().lower() in {"web_demo", "website", "site_demo"}:
-        return {
-            "isPro": True,
-            "freeLimit": DAILY_FREE_LIMIT,
-            "feature": feature,
-            "day": datetime.utcnow().strftime("%Y%m%d"),
-            "used": 0,
-            "left": 999999,
-        }
     day_key = datetime.now(timezone.utc).strftime("%Y%m%d")
 
-    if is_pro_override is True or (is_pro_override is None and user_id and is_pro(user_id)):
+    # The caller must provide an account-backed entitlement. Guest/device state
+    # is intentionally never enough to unlock PRO or an unlimited quota.
+    if is_pro_override is True:
         return {
             "isPro": True,
             "freeLimit": DAILY_FREE_LIMIT,
@@ -6993,7 +6954,7 @@ async def scan(
     account_identity_uid = _authenticated_account_identity(request)
     identity_uid = account_identity_uid or resolve_from_request(request, [("guest", uid)] if uid else [])
     client_host = str(request.client.host if request.client else "")
-    is_internal_test = client_host in {"127.0.0.1", "localhost", "::1"}
+    is_internal_test = ALLOW_LOCAL_SCAN_BYPASS and client_host in {"127.0.0.1", "localhost", "::1"}
 
     if is_internal_test:
         quota_info = {
@@ -7047,6 +7008,7 @@ async def scan(
         data["isPro"] = pro
         data["identityUserId"] = identity_uid
         data["quota"] = {
+            "isPro": pro,
             "freeLimit": quota_info.get("freeLimit", DAILY_FREE_LIMIT),
             "feature": quota_info.get("feature", "scan"),
             "day": quota_info.get("day"),
