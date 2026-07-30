@@ -749,8 +749,10 @@ function formatLevelLabel(level, lang) {
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || {};
   const structured = result?.structured || {};
-  const primary = structured.short || result.text || structured.details || raw?.ai_explanation || raw?.human_explanation || "";
-  return String(primary).trim().slice(0, 900);
+  const primary = structured.short || result.text || raw?.ai_explanation || raw?.human_explanation || structured.details || "";
+  const normalized = String(primary).replace(/\s+/g, " ").trim();
+  const firstSentence = normalized.match(/^.*?[.!?](?:\s|$)/)?.[0] || normalized;
+  return firstSentence.trim().slice(0, 320);
 }
 
 function normalizeScanReport(raw, currentLang) {
@@ -2566,6 +2568,5 @@ export default function Shield() {
     </LinearGradient>
   );
 }
-
 
 

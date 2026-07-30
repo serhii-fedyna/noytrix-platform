@@ -403,8 +403,10 @@ function formatLevelLabel(level, lang) {
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || {};
   const structured = result?.structured || {};
-  const primary = structured.short || result.text || structured.details || raw?.ai_explanation || raw?.human_explanation || "";
-  return String(primary).trim().slice(0, 900);
+  const primary = structured.short || result.text || raw?.ai_explanation || raw?.human_explanation || structured.details || "";
+  const normalized = String(primary).replace(/\s+/g, " ").trim();
+  const firstSentence = normalized.match(/^.*?[.!?](?:\s|$)/)?.[0] || normalized;
+  return firstSentence.trim().slice(0, 320);
 }
 
 function ProVerdictDetails({ result, tx, lang }) {
@@ -416,8 +418,8 @@ function ProVerdictDetails({ result, tx, lang }) {
     ["shieldPro.proVerdict.intent", "attacker_intent"],
     ["shieldPro.proVerdict.loss", "loss_scenario"],
   ].filter(([, key]) => String(structured?.[key] || "").trim());
-  const risks = Array.isArray(structured?.risks) ? structured.risks.filter(Boolean).slice(0, 4) : [];
-  const actions = Array.isArray(structured?.actions) ? structured.actions.filter(Boolean).slice(0, 4) : [];
+  const risks = Array.isArray(structured?.risks) ? structured.risks.filter(Boolean).slice(0, 3) : [];
+  const actions = Array.isArray(structured?.actions) ? structured.actions.filter(Boolean).slice(0, 3) : [];
 
   return (
     <View style={{ marginTop: 12 }}>

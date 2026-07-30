@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import time
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Any, Dict
 
 
 CACHE_DB_PATH = Path("data/ai_explanations_cache.sqlite3")
+EXPLANATION_FORMAT_VERSION = "concise-evidence-v2"
 
 
 def _cache_connect() -> sqlite3.Connection:
@@ -33,7 +35,7 @@ def _cache_connect() -> sqlite3.Connection:
 
 
 def _cache_key(context_json: str, lang: str, mode: str, model: str) -> str:
-    raw = f"{lang}|{mode}|{model}|{context_json}"
+    raw = f"{EXPLANATION_FORMAT_VERSION}|{lang}|{mode}|{model}|{context_json}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -393,16 +395,19 @@ async def generate_ai_security_explanation(
         mode = "detailed"
 
     mode_rule = (
-        "Use short mode: short must be one very clear sentence, details must be no more than 2 short sentences, risks/actions max 2 items each. "
+        "Use short mode for the Free result. Return only one factual sentence in short and details. "
+        "Keep every other field empty and both lists empty. Do not describe the investigation, sources, hidden behavior, or next steps here. "
         if mode == "short"
-        else "Use detailed mode: details should be 2 to 4 concise, fact-based sentences. Include only findings supported by the backend data. Risks/actions may contain up to 4 useful items each. "
+        else "Use detailed PRO mode. short must be one factual sentence. details must contain at most two short, non-repeating sentences about the strongest confirmed findings. "
+        "Only fill attack_scenario, hidden_danger, attacker_intent, and loss_scenario when the backend contains direct evidence for that field; otherwise return an empty string. "
+        "Return at most three risks and three actions. Each item must be a specific fact or action, not advice repeated in different words. "
     )
 
     user = (
         "Create a user-facing security explanation from this backend verdict JSON. "
         "The explanation must be clear for a normal crypto user. "
         "Fields: short = one sentence; details = fuller explanation; risks = concrete risks; actions = what user should do; confidence_note = uncertainty/limits; severity_label = user-friendly danger label; next_step_priority = the single most important next action; attack_scenario = likely attack flow; hidden_danger = what user may not see; attacker_intent = what attacker wants; loss_scenario = how user may lose funds/assets/access. "
-        "You MUST include ALL fields even if some are short. "
+        "Include every JSON key, but use an empty string or empty array when the backend data does not support a field. "
         "Example JSON shape: "
         "{"
         "\"short\":\"...\","
@@ -434,7 +439,7 @@ async def generate_ai_security_explanation(
         resp = await client.chat.completions.create(
             model=model,
             temperature=0.2,
-            max_tokens=900,
+            max_tokens=520 if mode == "detailed" else 180,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
@@ -461,7 +466,7 @@ async def generate_ai_security_explanation(
                 "confidence_note": fallback_note,
             }
 
-        structured = validate_ai_explanation_output(structured, ctx)
+        structured = validate_ai_explanation_output(structured, ctx, mode)
 
         result = {
             "available": True,
@@ -493,6 +498,7 @@ async def generate_ai_security_explanation(
 def validate_ai_explanation_output(
     structured: Dict[str, Any],
     context: Dict[str, Any],
+    mode: str = "detailed",
 ) -> Dict[str, Any]:
     structured = structured or {}
     context = context or {}
@@ -501,23 +507,35 @@ def validate_ai_explanation_output(
         (context.get("wallet_drain_simulation") or {}).get("estimated_loss_usd")
     )
 
-    def clean_list(value):
+    def concise_text(value, max_sentences: int, max_chars: int) -> str:
+        text = " ".join(str(value or "").split()).strip()
+        if not text:
+            return ""
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        compact = " ".join(sentences[:max_sentences]).strip()
+        return compact[:max_chars].rstrip()
+
+    def clean_list(value, max_items: int = 3, max_chars: int = 220):
         if not isinstance(value, list):
             return []
-        return [str(x).strip() for x in value if str(x or "").strip()][:5]
+        return [concise_text(x, 1, max_chars) for x in value if str(x or "").strip()][:max_items]
+
+    is_short = str(mode or "detailed").lower() == "short"
+    short_text = concise_text(structured.get("short"), 1, 320)
+    details = short_text if is_short else concise_text(structured.get("details"), 2, 700)
 
     cleaned = {
-        "short": str(structured.get("short") or "").strip()[:500],
-        "details": str(structured.get("details") or "").strip()[:2000],
-        "risks": clean_list(structured.get("risks")),
-        "actions": clean_list(structured.get("actions")),
-        "confidence_note": str(structured.get("confidence_note") or "").strip()[:500],
-        "severity_label": str(structured.get("severity_label") or "").strip()[:120],
-        "next_step_priority": str(structured.get("next_step_priority") or "").strip()[:300],
-        "attack_scenario": str(structured.get("attack_scenario") or "").strip()[:1200],
-        "hidden_danger": str(structured.get("hidden_danger") or "").strip()[:1200],
-        "attacker_intent": str(structured.get("attacker_intent") or "").strip()[:1200],
-        "loss_scenario": str(structured.get("loss_scenario") or "").strip()[:1200],
+        "short": short_text,
+        "details": details,
+        "risks": [] if is_short else clean_list(structured.get("risks")),
+        "actions": [] if is_short else clean_list(structured.get("actions")),
+        "confidence_note": "" if is_short else concise_text(structured.get("confidence_note"), 1, 240),
+        "severity_label": concise_text(structured.get("severity_label"), 1, 120),
+        "next_step_priority": "" if is_short else concise_text(structured.get("next_step_priority"), 1, 220),
+        "attack_scenario": "" if is_short else concise_text(structured.get("attack_scenario"), 1, 420),
+        "hidden_danger": "" if is_short else concise_text(structured.get("hidden_danger"), 1, 420),
+        "attacker_intent": "" if is_short else concise_text(structured.get("attacker_intent"), 1, 420),
+        "loss_scenario": "" if is_short else concise_text(structured.get("loss_scenario"), 1, 420),
     }
 
     combined = " ".join([
@@ -539,11 +557,6 @@ def validate_ai_explanation_output(
             (cleaned.get("confidence_note") + " " if cleaned.get("confidence_note") else "")
             + "Exact loss amount was not confirmed by backend data."
         ).strip()
-
-    cleaned.setdefault("attack_scenario", str(structured.get("attack_scenario") or "").strip()[:1200])
-    cleaned.setdefault("hidden_danger", str(structured.get("hidden_danger") or "").strip()[:1200])
-    cleaned.setdefault("attacker_intent", str(structured.get("attacker_intent") or "").strip()[:1200])
-    cleaned.setdefault("loss_scenario", str(structured.get("loss_scenario") or "").strip()[:1200])
 
     cleaned["_guardrails"] = {
         "applied": True,

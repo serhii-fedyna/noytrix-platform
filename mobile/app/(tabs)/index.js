@@ -352,8 +352,10 @@ function formatLevelLabel(level, lang) {
 function getAiVerdictText(raw) {
   const result = raw?.ai_explanation_result || null;
   const structured = result && typeof result === "object" ? result.structured || null : null;
-  const primary = structured?.short || result?.text || structured?.details || raw?.ai_explanation || "";
-  return String(primary).trim().slice(0, 900);
+  const primary = structured?.short || result?.text || raw?.ai_explanation || structured?.details || "";
+  const normalized = String(primary).replace(/\s+/g, " ").trim();
+  const firstSentence = normalized.match(/^.*?[.!?](?:\s|$)/)?.[0] || normalized;
+  return firstSentence.trim().slice(0, 320);
 }
 
 function formatSourceName(name, lang) {

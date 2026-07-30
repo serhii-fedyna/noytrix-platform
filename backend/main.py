@@ -2096,6 +2096,14 @@ def _scan_client_safe_response(data: dict) -> dict:
                 return value.strip()
         return ""
 
+    def public_verdict_text(value, max_chars=320):
+        """Keep the Free explanation to one readable conclusion, never a PRO report."""
+        text = " ".join(str(value or "").split()).strip()
+        if not text:
+            return ""
+        sentence = re.split(r"(?<=[.!?])\s+", text)[0].strip()
+        return sentence[:max_chars].rstrip()
+
     score = int(data.get("score") or 0)
     level = text_value(data.get("level"), data.get("verdict"), "safe").lower()
     kind = text_value(data.get("kind"), data.get("risk_type"), "text").lower()
@@ -2168,6 +2176,8 @@ def _scan_client_safe_response(data: dict) -> dict:
     if isinstance(ai_result, dict):
         structured = ai_result.get("structured") if isinstance(ai_result.get("structured"), dict) else {}
         short_text = text_value(structured.get("short"), ai_result.get("text"), structured.get("details"), data.get("ai_explanation"))
+        if not is_pro:
+            short_text = public_verdict_text(short_text)
         visible_structured = {
             "short": short_text,
             "details": short_text if not is_pro else text_value(structured.get("details")),
