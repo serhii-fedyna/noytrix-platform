@@ -20,6 +20,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { OneSignal, LogLevel } from "react-native-onesignal";
 
 import { useAuthStore } from "./lib/store.auth";
+import { hasAccountProAccess } from "./lib/proEntitlement";
 import { getAuthState } from "./lib/authApi";
 import { setAppAlertHandler } from "./lib/appAlert";
 import { initAnalytics } from "./lib/analytics";
@@ -76,29 +77,10 @@ async function readJsonState(key) {
   }
 }
 
-async function hasLocalPro() {
-  try {
-    const values = await AsyncStorage.multiGet([
-      "isPro",
-      "noytrix.isPro",
-      "pro",
-      "proActive",
-      "subscription.pro",
-      "iap.isPro",
-      "entitlement.pro",
-      "noytrix_pro_flag",
-    ]);
-    return values.some(([, value]) => {
-      const v = String(value || "").toLowerCase();
-      return v === "true" || v === "1" || v === "active" || v === "pro";
-    });
-  } catch {
-    return false;
-  }
-}
-
 function ProNudgeHost() {
   const pathname = usePathname();
+  const user = useAuthStore((store) => store.user);
+  const accountIsPro = hasAccountProAccess(user);
   const [visible, setVisible] = useState(false);
   const [state, setState] = useState(null);
 
@@ -107,7 +89,7 @@ function ProNudgeHost() {
     const timer = setTimeout(async () => {
       try {
         if (String(pathname || "").includes("/pro")) return;
-        if (await hasLocalPro()) return;
+        if (accountIsPro) return;
 
         const current = await readJsonState(PRO_NUDGE_STATE_KEY);
         const ts = Date.now();
@@ -141,7 +123,7 @@ function ProNudgeHost() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [pathname]);
+  }, [accountIsPro, pathname]);
 
   const closeLater = async () => {
     const ts = Date.now();

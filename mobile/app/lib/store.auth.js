@@ -11,8 +11,10 @@ import {
   resetConfirm as apiResetConfirm,
   clearAuth as apiClearAuth,
   me as apiMe,
+  accountProStatus as apiAccountProStatus,
 } from "./authApi";
 import { identifyTikTokUser, logEvent, logoutTikTokUser } from "./analytics";
+import { clearLegacyProDeviceFlags } from "./proEntitlement";
 
 function enhanceUser(user) {
   if (!user) return null;
@@ -32,6 +34,29 @@ function withTimeout(promise, timeoutMs, fallback) {
     Promise.resolve(promise),
     new Promise((resolve) => setTimeout(() => resolve(fallback), timeoutMs)),
   ]);
+}
+
+async function attachAccountProAccess(user, isAuth) {
+  if (!user) return null;
+
+  const fallback = { isPro: false, plan: "FREE", checkedAt: Date.now() };
+  if (!isAuth) return { ...user, proAccess: fallback };
+
+  try {
+    const status = await withTimeout(apiAccountProStatus(), 7000, null);
+    return {
+      ...user,
+      proAccess: {
+        isPro: status?.isPro === true || status?.active === true,
+        plan: String(status?.plan || "FREE").toUpperCase(),
+        expiresAt: status?.entitlement?.expiresAt || null,
+        source: status?.entitlement?.source || null,
+        checkedAt: Date.now(),
+      },
+    };
+  } catch {
+    return { ...user, proAccess: fallback };
+  }
 }
 
 export const useAuthStore = create((set, get) => ({
@@ -60,6 +85,9 @@ export const useAuthStore = create((set, get) => ({
           if (profile) user = enhanceUser(profile);
         } catch {}
       }
+
+      user = await attachAccountProAccess(user, isAuth);
+      await clearLegacyProDeviceFlags();
 
       set({
         user,
@@ -119,15 +147,23 @@ export const useAuthStore = create((set, get) => ({
 
   refreshMe: async () => {
     const profile = await apiMe();
-    const user = profile ? enhanceUser(profile) : null;
+    const user = await attachAccountProAccess(profile ? enhanceUser(profile) : null, true);
     if (user) set({ user, isAuth: true });
     return user;
+  },
+
+  refreshProAccess: async () => {
+    const current = get().user;
+    const user = await attachAccountProAccess(current, get().isAuth);
+    if (user) set({ user });
+    return user?.proAccess || { isPro: false, plan: "FREE" };
   },
 
   logout: async () => {
     await logoutTikTokUser();
     await apiClearAuth(); 
     await AsyncStorage.multiRemove([AVATAR_KEY]);
+    await clearLegacyProDeviceFlags();
     set({ user: null, isAuth: false, avatarUri: null });
   },
 

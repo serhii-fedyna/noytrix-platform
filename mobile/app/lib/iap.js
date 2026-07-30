@@ -12,6 +12,8 @@ import {
 import { logEvent } from "./analytics";
 import { getInstallUserId, identityHeaders, identifyUser } from "./identity";
 import { BACKEND } from "./backend";
+import { getAuthState } from "./authApi";
+import { clearLegacyProDeviceFlags } from "./proEntitlement";
 
 const PACKAGE_NAME = "com.noytrix.app";
 
@@ -59,39 +61,19 @@ export async function getRevenueCatAppUserId() {
 
 async function persistPro(active, meta = {}) {
   if (!active) return;
-  await AsyncStorage.setItem("isPro", "true");
-  await AsyncStorage.setItem("noytrix.isPro", "true");
-  await AsyncStorage.setItem("pro", "true");
-  await AsyncStorage.setItem("proActive", "true");
-  await AsyncStorage.setItem("subscription.pro", "true");
-  await AsyncStorage.setItem("iap.isPro", "true");
-  await AsyncStorage.setItem("entitlement.pro", "active");
-  await AsyncStorage.setItem("entitlement.id", "pro");
-  await AsyncStorage.setItem("entitlementId", "pro");
-  await AsyncStorage.setItem("noytrix_pro_flag", "1");
-  await AsyncStorage.setItem("iap.activePlan", String(meta?.planId || meta?.activePlan || ""));
+  await clearLegacyProDeviceFlags();
   await AsyncStorage.setItem(
-    "iap.lastGooglePlayVerify",
+    "iap.lastGooglePlayVerify.v2",
     JSON.stringify({ ...meta, active: true, updatedAt: Date.now() })
   );
 }
 
 async function clearPro(meta = {}) {
-  await AsyncStorage.multiSet([
-    ["isPro", "false"],
-    ["noytrix.isPro", "false"],
-    ["pro", "false"],
-    ["proActive", "false"],
-    ["subscription.pro", "false"],
-    ["iap.isPro", "false"],
-    ["iap.pro", "false"],
-    ["entitlement.pro", "inactive"],
-    ["entitlement.id", ""],
-    ["entitlementId", ""],
-    ["noytrix_pro_flag", "0"],
-    ["iap.activePlan", ""],
-    ["iap.lastGooglePlayVerify", JSON.stringify({ ...meta, active: false, updatedAt: Date.now() })],
-  ]);
+  await clearLegacyProDeviceFlags();
+  await AsyncStorage.setItem(
+    "iap.lastGooglePlayVerify.v2",
+    JSON.stringify({ ...meta, active: false, updatedAt: Date.now() })
+  );
 }
 
 function productIdOf(purchase) {
@@ -215,15 +197,20 @@ export function chooseSubscriptionOffer(product, planId) {
 }
 
 async function serverStatus() {
-  const userId = await getRevenueCatAppUserId();
-  const response = await fetch(`${BACKEND}/iap/guest/status?userId=${encodeURIComponent(userId)}`, {
-    headers: await identityHeaders({ "X-User-Id": userId }),
+  const state = await getAuthState();
+  if (!state?.access_token) return null;
+  const response = await fetch(`${BACKEND}/iap/account-status`, {
+    headers: {
+      ...(await identityHeaders()),
+      Authorization: `Bearer ${state.access_token}`,
+    },
   });
   return response.json().catch(() => null);
 }
 
 async function verifyPurchaseOnServer(purchase, forcedProductId = null, planId = "") {
-  const userId = await getRevenueCatAppUserId();
+  const state = await getAuthState();
+  const accessToken = state?.access_token || null;
   const productId = forcedProductId || productIdOf(purchase);
   const purchaseToken = purchaseTokenOf(purchase);
   const productType = PRODUCT_TYPES[productId] || "inapp";
@@ -231,16 +218,18 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null, planId =
   if (!productId || !purchaseToken) {
     throw new Error("Google Play purchase token is missing. Try restore purchase.");
   }
+  if (!accessToken) {
+    throw new Error("Please sign in before confirming a Google Play purchase.");
+  }
 
-  const response = await fetch(`${BACKEND}/iap/google/guest/verify`, {
+  const response = await fetch(`${BACKEND}/iap/google/verify`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       ...(await identityHeaders()),
-      "X-User-Id": userId,
+      Authorization: `Bearer ${accessToken}`,
     },
     body: JSON.stringify({
-      userId,
       packageName: PACKAGE_NAME,
       productType,
       productId,
@@ -262,8 +251,8 @@ async function verifyPurchaseOnServer(purchase, forcedProductId = null, planId =
     await identifyUser({
       purchaseToken,
       productId,
-      revenueCatAppUserId: userId,
-      installUserId: userId,
+      revenueCatAppUserId: await getRevenueCatAppUserId(),
+      installUserId: await getRevenueCatAppUserId(),
     }).catch(() => null);
   }
 

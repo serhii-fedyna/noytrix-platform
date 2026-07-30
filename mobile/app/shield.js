@@ -19,6 +19,7 @@ import { shareImagePremium } from "./lib/sharePremium";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
+import { hasAccountProAccess } from "./lib/proEntitlement";
 
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
@@ -1429,7 +1430,6 @@ export default function Shield() {
     };
   }, [isPro]);
 
-  const [proLocal, setProLocal] = useState(false);
   const [authAccess, setAuthAccess] = useState(null);
 
   const shareShotRef = useRef(null);
@@ -1464,101 +1464,7 @@ export default function Shield() {
     })();
   }, [user, isAuth]);
 
-  const hasPro = useMemo(() => {
-    const plan = (user?.plan || user?.subscription || user?.tier || user?.entitlement || "").toString().toLowerCase();
-    const u1 = user?.isPro === true || user?.pro === true || user?.premium === true;
-    const u2 = String(user?.status || "").toLowerCase() === "pro";
-    return plan.includes("pro") || u1 || u2;
-  }, [
-    user?.plan,
-    user?.subscription,
-    user?.tier,
-    user?.entitlement,
-    user?.isPro,
-    user?.pro,
-    user?.premium,
-    user?.status,
-  ]);
-
-  const isPro = hasPro || proLocal;
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const keysToCheck = [
-          "isPro",
-          "noytrix.isPro",
-          "pro",
-          "proActive",
-          "subscription.pro",
-          "iap.isPro",
-          "iap.pro",
-          "entitlement.pro",
-          "noytrix_pro_flag",
-        ];
-
-        let localPro = false;
-
-        for (const k of keysToCheck) {
-          const v = await AsyncStorage.getItem(k);
-          const s = String(v || "").toLowerCase();
-
-          if (s === "true" || s === "1" || s === "yes" || s === "active") {
-            localPro = true;
-            break;
-          }
-        }
-
-        if (!localPro) {
-          try {
-            const proof = await loadProProof();
-            const authHeader = proof?.accessToken || authAccess || null;
-            const bestUid = await getBestKnownUid(user || proof?.authUser, installUid, authHeader || "");
-
-            if (authHeader) {
-              const res = await safeFetchRaw(
-                `${BACKEND}/iap/status`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${authHeader}`,
-                    "Accept-Language": currentLang,
-                    "X-Lang": currentLang,
-                    "X-Language": currentLang,
-                    "X-User-Id": bestUid || "anonymous",
-                  },
-                },
-                12000
-              );
-
-              if (res.ok) {
-                const text = await res.text();
-
-                let j = null;
-                try {
-                  j = text ? JSON.parse(text) : null;
-                } catch {
-                  j = null;
-                }
-
-                const plan = String(j?.plan || "").toLowerCase();
-
-                if (plan === "pro") {
-                  localPro = true;
-                  try {
-                    await AsyncStorage.setItem("isPro", "true");
-                  } catch {}
-                }
-              }
-            }
-          } catch {}
-        }
-
-        setProLocal(!!localPro);
-      } catch {
-        setProLocal(false);
-      }
-    })();
-  }, [uid, authAccess, currentLang, user, installUid]);
+  const isPro = hasAccountProAccess(user);
 
   const normalizedReport = useMemo(() => normalizeScanReport(report, currentLang), [report, currentLang]);
 
@@ -2020,14 +1926,6 @@ export default function Shield() {
       router.push("/shield-pro");
       return;
     }
-
-    try {
-      const v = await AsyncStorage.getItem("isPro");
-      if (String(v || "").toLowerCase() === "true") {
-        router.push("/shield-pro");
-        return;
-      }
-    } catch {}
 
     router.push("/pro");
   };
@@ -2668,8 +2566,6 @@ export default function Shield() {
     </LinearGradient>
   );
 }
-
-
 
 
 

@@ -31,6 +31,7 @@ import { useAuthStore } from "../lib/store.auth";
 import { identityHeaders } from "../lib/identity";
 import { BACKEND } from "../lib/backend";
 import AiVerdictCard from "../components/AiVerdictCard";
+import { hasAccountProAccess } from "../lib/proEntitlement";
 import NoyBot from "../../components/NoyBot";
 
 const AUTH_KEY = "auth_state_v1";
@@ -714,7 +715,6 @@ export default function Home() {
   const [quotaMsg, setQuotaMsg] = useState("");
 
   const [showSamples, setShowSamples] = useState(false);
-  const [proLocal, setProLocal] = useState(false);
 
   const shareShotRef = useRef(null);
   const [sharingNow, setSharingNow] = useState(false);
@@ -792,34 +792,7 @@ export default function Home() {
     })();
   }, [user, installUid, isAuth]);
 
-  const hasPro = useMemo(() => {
-    const plan = (user?.plan || user?.subscription || user?.tier || user?.entitlement || "").toString().toLowerCase();
-    return plan.includes("pro") || user?.isPro === true || user?.pro === true || user?.premium === true || String(user?.status || "").toLowerCase() === "pro";
-  }, [user]);
-
-  const isPro = hasPro || proLocal;
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const keys = ["isPro", "noytrix.isPro", "pro", "proActive", "subscription.pro", "iap.isPro", "iap.pro", "entitlement.pro", "noytrix_pro_flag"];
-        let localPro = false;
-
-        for (const k of keys) {
-          const v = await AsyncStorage.getItem(k);
-          const s = String(v || "").toLowerCase();
-          if (s === "true" || s === "1" || s === "yes" || s === "active") {
-            localPro = true;
-            break;
-          }
-        }
-
-        setProLocal(!!localPro);
-      } catch {
-        setProLocal(false);
-      }
-    })();
-  }, [uid, authAccess, currentLang, user, installUid]);
+  const isPro = hasAccountProAccess(user);
 
   const normalizedReport = useMemo(() => normalizeScanReport(report, currentLang), [report, currentLang]);
   const verdictColor = levelColor(normalizedReport?.level);

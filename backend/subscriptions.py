@@ -506,6 +506,57 @@ def entitlement_status(values: Iterable[Any], entitlement: str = "pro") -> dict:
         conn.close()
 
 
+def entitlement_status_for_user(user_id: Any, entitlement: str = "pro") -> dict:
+    """Return an entitlement for one canonical account only.
+
+    The mobile account endpoint must never expand a device, guest, or email
+    identifier into another account. Identity resolution happens before this
+    function, then this lookup stays intentionally exact.
+    """
+    uid = str(user_id or "").strip()
+    ent = str(entitlement or "pro").strip().lower()
+    if not uid:
+        return {"active": False, "entitlement": ent, "expiresAt": None, "source": None, "provider": None, "userId": None}
+
+    now = datetime.now(timezone.utc)
+    conn = _connect()
+    try:
+        row = conn.execute(
+            """
+            SELECT user_id, entitlement, is_active, expires_at, source, provider, subscription_id, updated_at
+            FROM entitlements
+            WHERE entitlement=? AND user_id=?
+            ORDER BY is_active DESC, updated_at DESC
+            LIMIT 1
+            """,
+            (ent, uid),
+        ).fetchone()
+        if not row:
+            return {"active": False, "entitlement": ent, "expiresAt": None, "source": None, "provider": None, "userId": uid}
+
+        active = int(row["is_active"] or 0) == 1
+        expiry = _parse_iso(row["expires_at"])
+        if active and expiry and expiry <= now:
+            conn.execute(
+                "UPDATE entitlements SET is_active=0, source=?, updated_at=? WHERE user_id=? AND entitlement=?",
+                ("expired", _now_iso(), uid, ent),
+            )
+            conn.commit()
+            active = False
+
+        return {
+            "active": active,
+            "entitlement": ent,
+            "expiresAt": row["expires_at"],
+            "source": row["source"],
+            "provider": row["provider"],
+            "userId": row["user_id"],
+            "subscriptionId": row["subscription_id"],
+        }
+    finally:
+        conn.close()
+
+
 def has_active_entitlement(values: Iterable[Any], entitlement: str = "pro") -> bool:
     return bool(entitlement_status(values, entitlement).get("active"))
 

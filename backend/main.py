@@ -84,11 +84,14 @@ from scamshield.url_intel.fusion import build_url_intelligence
 from identity import resolve_from_request, resolve_user_id
 from subscriptions import (
     entitlement_status,
+    entitlement_status_for_user,
     grant_entitlement,
     provider_from_source,
     revoke_entitlement,
     user_flags,
 )
+from db import SessionLocal
+from auth.models import User as AuthUser
 try:
     from scamshield.intelligence.postgres_intelligence import (
         upsert_entity as pg_upsert_entity,
@@ -1643,6 +1646,33 @@ def _get_user_id(request: Request, user_id_q: Optional[str]) -> Optional[str]:
 
     return None
 
+
+def _authenticated_account_identity(request: Request) -> Optional[str]:
+    """Return the canonical identity for the signed-in account, never a device ID."""
+    auth = request.headers.get("authorization") or request.headers.get("Authorization")
+    if not auth or not auth.strip().lower().startswith("bearer "):
+        return None
+
+    try:
+        payload = jwt.decode(auth.strip()[7:].strip(), JWT_SECRET, algorithms=[JWT_ALG])
+        if payload.get("type") == "refresh":
+            return None
+        auth_user_id = int(payload.get("sub"))
+    except Exception:
+        return None
+
+    db = SessionLocal()
+    try:
+        user = db.query(AuthUser).filter(AuthUser.id == auth_user_id).first()
+        if not user or not str(user.email or "").strip():
+            return None
+        return resolve_user_id(
+            [("auth_user_id", str(user.id)), ("email", user.email)],
+            meta={"source": "scan_authenticated_account"},
+        )
+    finally:
+        db.close()
+
 app.include_router(create_iap_guest_router(
     _google_play_verify_purchase,
     _active_from_google_purchase,
@@ -1722,7 +1752,13 @@ def is_pro(user_id: Optional[str]) -> bool:
     except Exception:
         return False
 
-def enforce_free_quota(request: Request, feature: str, user_id: Optional[str], lang: str = "en") -> dict:
+def enforce_free_quota(
+    request: Request,
+    feature: str,
+    user_id: Optional[str],
+    lang: str = "en",
+    is_pro_override: Optional[bool] = None,
+) -> dict:
     if str(user_id or "").strip().lower() in {"web_demo", "website", "site_demo"}:
         return {
             "isPro": True,
@@ -1734,7 +1770,7 @@ def enforce_free_quota(request: Request, feature: str, user_id: Optional[str], l
         }
     day_key = datetime.now(timezone.utc).strftime("%Y%m%d")
 
-    if user_id and is_pro(user_id):
+    if is_pro_override is True or (is_pro_override is None and user_id and is_pro(user_id)):
         return {
             "isPro": True,
             "freeLimit": DAILY_FREE_LIMIT,
@@ -6944,7 +6980,8 @@ async def scan(
 
     L = get_lang(request, lang)
     uid = _get_user_id(request, userId)
-    identity_uid = resolve_from_request(request, [("guest", uid)] if uid else [])
+    account_identity_uid = _authenticated_account_identity(request)
+    identity_uid = account_identity_uid or resolve_from_request(request, [("guest", uid)] if uid else [])
     client_host = str(request.client.host if request.client else "")
     is_internal_test = client_host in {"127.0.0.1", "localhost", "::1"}
 
@@ -6959,7 +6996,19 @@ async def scan(
             "internal_bypass": True,
         }
     else:
-        quota_info = enforce_free_quota(request, feature="scan", user_id=uid, lang=L)
+        account_entitlement = (
+            entitlement_status_for_user(account_identity_uid, "pro")
+            if account_identity_uid
+            else None
+        )
+        quota_info = enforce_free_quota(
+            request,
+            feature="scan",
+            user_id=account_identity_uid or uid,
+            lang=L,
+            # Signed-in users must never inherit a guest/device entitlement.
+            is_pro_override=bool(account_entitlement.get("active")) if account_entitlement else None,
+        )
 
     pro = bool(quota_info.get("isPro", False))
 
@@ -6982,7 +7031,7 @@ async def scan(
         data = await security_analyze_core({
             "input": target,
             "lang": L,
-            "user_id": uid,
+            "user_id": account_identity_uid or uid,
             "is_pro": pro,
         })
         data["isPro"] = pro
@@ -7002,7 +7051,7 @@ async def scan(
             data["ai_explanation_result"] = await generate_ai_security_explanation(
                 data,
                 L,
-                "short",
+                "detailed" if pro else "short",
             )
             data["ai_explanation"] = (
                 (data.get("ai_explanation_result") or {}).get("text")

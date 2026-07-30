@@ -395,7 +395,7 @@ async def generate_ai_security_explanation(
     mode_rule = (
         "Use short mode: short must be one very clear sentence, details must be no more than 2 short sentences, risks/actions max 2 items each. "
         if mode == "short"
-        else "Use detailed mode: details should be 4 to 8 clear sentences, and risks/actions may contain up to 5 useful items each. "
+        else "Use detailed mode: details should be 2 to 4 concise, fact-based sentences. Include only findings supported by the backend data. Risks/actions may contain up to 4 useful items each. "
     )
 
     user = (

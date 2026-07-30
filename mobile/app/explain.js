@@ -31,6 +31,8 @@ import * as Sharing from "expo-sharing";
 import { logEvent } from "./lib/analytics";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
+import { useAuthStore } from "./lib/store.auth";
+import { hasAccountProAccess } from "./lib/proEntitlement";
 
 const PRO_SCREEN_ROUTE = "/explain-pro";
 const PRO_PAYWALL_ROUTE = "/pro";
@@ -452,39 +454,11 @@ function labelLiquidity(quoteVolUsd) {
   return "low";
 }
 
-async function getIsProActive() {
-  const keys = [
-    "pro.active",
-    "proActive",
-    "isPro",
-    "premium",
-    "subscriptionActive",
-    "iap.pro",
-    "noytrix.pro.active",
-    "user.isPro",
-    "noytrix_pro_flag",
-  ];
-
-  try {
-    for (const k of keys) {
-      const v = await AsyncStorage.getItem(k);
-      if (!v) continue;
-
-      const s = String(v).toLowerCase();
-      if (s === "true" || s === "1" || s === "active" || s === "yes") {
-        return true;
-      }
-    }
-  } catch {}
-
-  if (globalThis?.NOYTRIX_PRO === true) return true;
-
-  return false;
-}
-
 export default function Explain() {
   const { t } = useTranslation();
   const router = useRouter();
+  const user = useAuthStore((state) => state.user);
+  const accountIsPro = hasAccountProAccess(user);
 
   const [query, setQuery] = useState("BTC");
   const [interval, setInterval] = useState("1h");
@@ -530,14 +504,13 @@ export default function Explain() {
 
   useEffect(() => {
     (async () => {
-      const pro = await getIsProActive();
-      setIsPro(pro);
+      setIsPro(accountIsPro);
 
       const q = await loadQuota();
       setQuotaUsed(q.used);
-      setLimitReached(!pro && q.used >= FREE_DAILY_LIMIT);
+      setLimitReached(!accountIsPro && q.used >= FREE_DAILY_LIMIT);
     })();
-  }, []);
+  }, [accountIsPro]);
 
   const saveRecents = useCallback(async (arr) => {
     setRecents(arr);
@@ -845,14 +818,11 @@ export default function Explain() {
     return C.red;
   };
 
-  const openPro = useCallback(async () => {
+  const openPro = useCallback(() => {
     logEvent("pro_opened", { screen: "explain", source: "explain" });
 
-    const active = await getIsProActive();
-    setIsPro(active);
-
-    router.push(active ? PRO_SCREEN_ROUTE : PRO_PAYWALL_ROUTE);
-  }, [router]);
+    router.push(accountIsPro ? PRO_SCREEN_ROUTE : PRO_PAYWALL_ROUTE);
+  }, [accountIsPro, router]);
 
 
   const shareShotRef = useRef(null);

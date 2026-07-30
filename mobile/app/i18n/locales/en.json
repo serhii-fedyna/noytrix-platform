@@ -750,6 +750,25 @@
     "verdictBasis": {
       "title": "Why Noytrix reached this verdict"
     },
+    "proVerdict": {
+      "title": "Detailed result",
+      "attack": "Likely scenario",
+      "hidden": "What may be hidden",
+      "intent": "Likely intent",
+      "loss": "Possible outcome",
+      "risks": "Key risks",
+      "actions": "What to do now"
+    },
+    "verification": {
+      "button": "How the check works",
+      "title": "How Noytrix checks an object",
+      "intro": "Noytrix combines independent data checks before showing a result.",
+      "itemOne": "Checks the object against Noytrix threat intelligence and reputation data.",
+      "itemTwo": "For websites, analyzes the address, redirects, page behavior and signs of impersonation or wallet theft.",
+      "itemThree": "For wallets, tokens and contracts, reviews on-chain risk signals, permissions and transaction behavior when data is available.",
+      "itemFour": "Builds the final result from confirmed signals and explains it in plain language. Missing data is shown as uncertainty, not as safety.",
+      "note": "The check reduces risk but does not replace caution: never enter a seed phrase and review every signature separately."
+    },
     "subtitle": "Deep multi-API analysis + real source statuses + premium verdict engine.",
     "unlimited": "PRO • unlimited",
     "copied": "Copied to clipboard.",

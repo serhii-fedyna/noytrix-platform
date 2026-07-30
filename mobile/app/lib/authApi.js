@@ -9,6 +9,7 @@ const AUTH_KEY = "auth_state_v1";
 const API = {
   ...API_BASE,
   me: `${BACKEND}/auth/me`,
+  accountProStatus: `${BACKEND}/iap/account-status`,
 };
 
 // ================== helpers ==================
@@ -396,6 +397,16 @@ export async function me() {
 
 export async function authLogin(payload) {
   return login(payload);
+}
+
+export async function accountProStatus() {
+  const state = await getAuthState();
+  const token = state?.access_token || null;
+  if (!token) {
+    return { ok: true, active: false, isPro: false, plan: "FREE" };
+  }
+
+  return jsonFetch(API.accountProStatus, { method: "GET", token });
 }
 export async function authGoogleLogin(payload) {
   return loginGoogle(payload);

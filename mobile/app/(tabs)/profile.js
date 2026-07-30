@@ -26,6 +26,7 @@ import { getPushSubscriptionState, setPushNotificationsEnabled } from "../lib/no
 import { BACKEND } from "../lib/backend";
 import { normalizeLang } from "../i18n/lang";
 import { syncPushLanguageTag } from "../lib/pushLanguage";
+import { hasAccountProAccess } from "../lib/proEntitlement";
 
 const BG = { start: "#06080f", mid: "#0a1233", end: "#0b1c4f" };
 const UI = {
@@ -114,7 +115,6 @@ export default function ProfileScreen() {
   const [nickModalVisible, setNickModalVisible] = useState(false);
   const [nickDraft, setNickDraft] = useState("");
 
-  const [proLocal, setProLocal] = useState(false);
   const [notifEnabled, setNotifEnabled] = useState(false);
 
   const [profileData, setProfileData] = useState(null);
@@ -139,16 +139,6 @@ export default function ProfileScreen() {
     },
     [i18n]
   );
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const v1 = await AsyncStorage.getItem("noytrix_pro_flag");
-        const v2 = await AsyncStorage.getItem("isPro");
-        setProLocal(v1 === "1" || v2 === "true");
-      } catch {}
-    })();
-  }, []);
 
   useEffect(() => {
     (async () => {
@@ -239,21 +229,6 @@ export default function ProfileScreen() {
 
         setProfileData(data);
 
-        if (data?.proAccess?.isPro) {
-          await AsyncStorage.multiSet([
-            ["isPro", "true"],
-            ["noytrix.isPro", "true"],
-            ["pro", "true"],
-            ["proActive", "true"],
-            ["subscription.pro", "true"],
-            ["iap.isPro", "true"],
-            ["entitlement.pro", "active"],
-            ["entitlement.id", "pro"],
-            ["entitlementId", "pro"],
-            ["noytrix_pro_flag", "1"],
-          ]);
-          setProLocal(true);
-        }
       } catch (e) {
         console.log("profile fetch error:", e);
         setProfileData(null);
@@ -340,14 +315,7 @@ export default function ProfileScreen() {
     };
   }, [profileData, displayName, user]);
 
-  const isPro = useMemo(() => {
-    return (
-      !!profileData?.proAccess?.isPro ||
-      identity.plan === "pro" ||
-      String(user?.plan || "").toLowerCase() === "pro" ||
-      proLocal
-    );
-  }, [profileData, identity.plan, user, proLocal]);
+  const isPro = hasAccountProAccess(user);
 
   const trust = useMemo(() => {
     const api = profileData?.trust || {};

@@ -27,6 +27,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useTranslation } from "react-i18next";
 import { logEvent } from "../lib/analytics";
 import { showAppAlert } from "../lib/appAlert";
+import { useAuthStore } from "../lib/store.auth";
+import { clearLegacyProDeviceFlags } from "../lib/proEntitlement";
 
 const GRAD = { bgStart: "#06080f", bgMid: "#0a1233", bgEnd: "#0b1c4f" };
 const C = {
@@ -217,34 +219,15 @@ async function syncLocalProFlags(ent) {
   try {
     const hasPro = !!(ent?.proMonthly || ent?.pro6m || ent?.proYearly || ent?.proLifetime);
     if (hasPro) {
-      await AsyncStorage.setItem("isPro", "true");
-      await AsyncStorage.setItem("noytrix.isPro", "true");
-      await AsyncStorage.setItem("pro", "true");
-      await AsyncStorage.setItem("proActive", "true");
-      await AsyncStorage.setItem("subscription.pro", "true");
-      await AsyncStorage.setItem("noytrix_pro_flag", "1");
-      await AsyncStorage.setItem("entitlement.pro", "active");
-      await AsyncStorage.setItem("entitlement.id", "pro");
-      await AsyncStorage.setItem("entitlementId", "pro");
       const rawNudge = await AsyncStorage.getItem(PRO_NUDGE_STATE_KEY).catch(() => null);
       const currentNudge = rawNudge ? JSON.parse(rawNudge) : {};
       await AsyncStorage.setItem(
         PRO_NUDGE_STATE_KEY,
         JSON.stringify({ ...currentNudge, convertedAt: Date.now(), conversionSource: "purchase_or_restore" })
       );
-    } else {
-      await AsyncStorage.setItem("isPro", "false");
-      await AsyncStorage.setItem("noytrix.isPro", "false");
-      await AsyncStorage.setItem("pro", "false");
-      await AsyncStorage.setItem("proActive", "false");
-      await AsyncStorage.setItem("subscription.pro", "false");
-      await AsyncStorage.setItem("iap.isPro", "false");
-      await AsyncStorage.setItem("iap.pro", "false");
-      await AsyncStorage.setItem("entitlement.pro", "inactive");
-      await AsyncStorage.setItem("entitlement.id", "");
-      await AsyncStorage.setItem("entitlementId", "");
-      await AsyncStorage.setItem("noytrix_pro_flag", "0");
     }
+    await clearLegacyProDeviceFlags();
+    await useAuthStore.getState().refreshProAccess?.();
   } catch {}
 }
 

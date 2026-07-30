@@ -35,6 +35,8 @@ import * as Sharing from "expo-sharing";
 import { showAppAlert } from "./lib/appAlert";
 import { logEvent } from "./lib/analytics";
 import { BACKEND } from "./lib/backend";
+import { useAuthStore } from "./lib/store.auth";
+import { hasAccountProAccess } from "./lib/proEntitlement";
 
 const BINANCE = "https://api.binance.com";
 const CG = "https://api.coingecko.com/api/v3";
@@ -75,15 +77,6 @@ const STATS = {
 
 const HISTORY_LIMIT = 50;
 const FREE_LIMIT = 4;
-
-const PRO_KEYS = [
-  "pro.isPro",
-  "iap.isPro",
-  "user.isPro",
-  "isPro",
-  "pro.active",
-  "noytrix_pro_flag",
-];
 
 function normalizeLang(value) {
   const s = String(value || "en").toLowerCase();
@@ -692,24 +685,6 @@ async function incLocalQuota(uid, feature, freeLimit) {
   };
 }
 
-async function getIsPro() {
-  try {
-    for (const k of PRO_KEYS) {
-      const v = await AsyncStorage.getItem(k);
-      if (!v) continue;
-
-      const s = String(v).toLowerCase().trim();
-      if (s === "1" || s === "true" || s === "yes" || s === "pro" || s === "active") {
-        return true;
-      }
-    }
-
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 async function incShieldCount() {
   try {
     const raw = await AsyncStorage.getItem(STATS.shieldCount);
@@ -1256,6 +1231,8 @@ async function recordPreventedIfBad({ amountUsd, level }) {
 export default function ImmunityScreen() {
   const { t, i18n } = useTranslation();
   const router = useRouter();
+  const user = useAuthStore((state) => state.user);
+  const accountIsPro = hasAccountProAccess(user);
 
   const currentLang = normalizeLang(i18n?.language);
   const isRu = currentLang === "ru";
@@ -1322,13 +1299,10 @@ export default function ImmunityScreen() {
     loadBehavior();
     loadTopPairs();
 
-    (async () => {
-      const p = await getIsPro();
-      setIsProState(p);
-    })();
+    setIsProState(accountIsPro);
 
     logEvent("screen_immunity_open");
-  }, []);
+  }, [accountIsPro]);
 
   useEffect(() => {
     if (!uid) return;

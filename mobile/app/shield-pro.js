@@ -32,6 +32,7 @@ import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
+import { hasAccountProAccess } from "./lib/proEntitlement";
 
 
 const AUTH_KEY = "auth_state_v1";
@@ -157,12 +158,12 @@ const SecondaryButton = ({ title, onPress, disabled, leftIcon, style }) => (
 
 
 const SAMPLES = [
-  { h: "https://binance-airdrop-bonus.net", dRu: "\u0424\u0438\u0448\u0438\u043d\u0433 \u043f\u043e\u0434 Binance", dEn: "Phishing pretending to be Binance" },
-  { h: "https://metamask-support-login.com", dRu: "\u0424\u0435\u0439\u043a\u043e\u0432\u0430\u044f \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0430 MetaMask", dEn: "Fake MetaMask support" },
-  { h: "http://paypal.com.verify-account-security.com", dRu: "\u041f\u043e\u0434\u0434\u043e\u043c\u0435\u043d-\u043b\u043e\u0432\u0443\u0448\u043a\u0430 PayPal", dEn: "PayPal subdomain trap" },
-  { h: "0x1111111254EEB25477B68fB85Ed929F73A960582", dRu: "ETH-\u0430\u0434\u0440\u0435\u0441 (\u043f\u0440\u0438\u043c\u0435\u0440)", dEn: "EVM address / contract" },
-  { h: "BTC", dRu: "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0442\u0438\u043a\u0435\u0440\u0430", dEn: "Ticker check" },
-  { h: "PEPE", dRu: "\u0422\u043e\u043a\u0435\u043d + honeypot", dEn: "Token + honeypot" },
+  { h: "https://binance-airdrop-bonus.net", dRu: "\u0424\u0438\u0448\u0438\u043d\u0433 \u043f\u043e\u0434 Binance", dEn: "Phishing pretending to be Binance", dUk: "Фішинг під Binance" },
+  { h: "https://metamask-support-login.com", dRu: "\u0424\u0435\u0439\u043a\u043e\u0432\u0430\u044f \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0430 MetaMask", dEn: "Fake MetaMask support", dUk: "Підроблена підтримка MetaMask" },
+  { h: "http://paypal.com.verify-account-security.com", dRu: "\u041f\u043e\u0434\u0434\u043e\u043c\u0435\u043d-\u043b\u043e\u0432\u0443\u0448\u043a\u0430 PayPal", dEn: "PayPal subdomain trap", dUk: "Пастка у піддомені PayPal" },
+  { h: "0x1111111254EEB25477B68fB85Ed929F73A960582", dRu: "ETH-\u0430\u0434\u0440\u0435\u0441 (\u043f\u0440\u0438\u043c\u0435\u0440)", dEn: "EVM address / contract", dUk: "ETH-адреса (приклад)" },
+  { h: "BTC", dRu: "\u041f\u0440\u043e\u0432\u0435\u0440\u043a\u0430 \u0442\u0438\u043a\u0435\u0440\u0430", dEn: "Ticker check", dUk: "Перевірка тікера" },
+  { h: "PEPE", dRu: "\u0422\u043e\u043a\u0435\u043d + honeypot", dEn: "Token + honeypot", dUk: "Токен і honeypot" },
 ];
 
 
@@ -404,6 +405,57 @@ function getAiVerdictText(raw) {
   const structured = result?.structured || {};
   const primary = structured.short || result.text || structured.details || raw?.ai_explanation || raw?.human_explanation || "";
   return String(primary).trim().slice(0, 900);
+}
+
+function ProVerdictDetails({ result, tx, lang }) {
+  const structured = result?.structured || {};
+  const details = String(structured?.details || result?.text || "").trim();
+  const rows = [
+    ["shieldPro.proVerdict.attack", "attack_scenario"],
+    ["shieldPro.proVerdict.hidden", "hidden_danger"],
+    ["shieldPro.proVerdict.intent", "attacker_intent"],
+    ["shieldPro.proVerdict.loss", "loss_scenario"],
+  ].filter(([, key]) => String(structured?.[key] || "").trim());
+  const risks = Array.isArray(structured?.risks) ? structured.risks.filter(Boolean).slice(0, 4) : [];
+  const actions = Array.isArray(structured?.actions) ? structured.actions.filter(Boolean).slice(0, 4) : [];
+
+  return (
+    <View style={{ marginTop: 12 }}>
+      {!!details && (
+        <View style={{ padding: 14, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.045)", borderWidth: 1, borderColor: T.borderSoft }}>
+          <Text style={{ color: T.text, fontWeight: "900", fontSize: 16, marginBottom: 7 }}>
+            {tx("shieldPro.proVerdict.title", pickLang(lang, "Подробный вывод", "Detailed result", "Докладний висновок"))}
+          </Text>
+          <Text style={{ color: T.dim, lineHeight: 21 }}>{details}</Text>
+        </View>
+      )}
+
+      {rows.map(([titleKey, key]) => (
+        <View key={key} style={{ marginTop: 10, paddingHorizontal: 12, paddingVertical: 10, borderLeftWidth: 2, borderLeftColor: T.accent }}>
+          <Text style={{ color: T.text, fontWeight: "800", marginBottom: 3 }}>{tx(titleKey, key)}</Text>
+          <Text style={{ color: T.dim, lineHeight: 19 }}>{String(structured[key]).trim()}</Text>
+        </View>
+      ))}
+
+      {!!risks.length && (
+        <View style={{ marginTop: 12 }}>
+          <Text style={{ color: T.text, fontWeight: "900", marginBottom: 6 }}>
+            {tx("shieldPro.proVerdict.risks", pickLang(lang, "Риски", "Risks", "Ризики"))}
+          </Text>
+          {risks.map((item, index) => <Text key={`risk-${index}`} style={{ color: T.dim, lineHeight: 20 }}>• {String(item)}</Text>)}
+        </View>
+      )}
+
+      {!!actions.length && (
+        <View style={{ marginTop: 12 }}>
+          <Text style={{ color: T.text, fontWeight: "900", marginBottom: 6 }}>
+            {tx("shieldPro.proVerdict.actions", pickLang(lang, "Что сделать", "What to do", "Що зробити"))}
+          </Text>
+          {actions.map((item, index) => <Text key={`action-${index}`} style={{ color: T.dim, lineHeight: 20 }}>• {String(item)}</Text>)}
+        </View>
+      )}
+    </View>
+  );
 }
 
 function formatSourceVerdict(verdict, lang) {
@@ -1674,6 +1726,7 @@ export default function ShieldPro() {
   }, []);
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
+  const authReady = useAuthStore((s) => s.isReady);
   const access = useAuthStore((s) => s.access);
   const i18nHook = useI18n();
   const t0 = i18nHook?.t;
@@ -1718,111 +1771,20 @@ export default function ShieldPro() {
     })();
   }, [user, installUid, access]);
 
-  const [proLocal, setProLocal] = useState(false);
-  const [checkingPro, setCheckingPro] = useState(true);
-
-  const hasPro = useMemo(() => {
-    const plan = (user?.plan || user?.subscription || user?.tier || user?.entitlement || "").toString().toLowerCase();
-    const u1 = user?.isPro === true || user?.pro === true || user?.premium === true;
-    const u2 = String(user?.status || "").toLowerCase() === "pro";
-    return plan.includes("pro") || u1 || u2;
-  }, [
-    user?.plan,
-    user?.subscription,
-    user?.tier,
-    user?.entitlement,
-    user?.isPro,
-    user?.pro,
-    user?.premium,
-    user?.status,
-  ]);
-
-  const isPro = hasPro || proLocal;
+  const isPro = hasAccountProAccess(user);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const keysToCheck = [
-          "isPro",
-          "noytrix.isPro",
-          "pro",
-          "proActive",
-          "subscription.pro",
-          "iap.isPro",
-          "iap.pro",
-          "entitlement.pro",
-          "noytrix_pro_flag",
-        ];
-
-        let localPro = false;
-        for (const k of keysToCheck) {
-          const v = await AsyncStorage.getItem(k);
-          const s = String(v || "").toLowerCase();
-          if (s === "true" || s === "1" || s === "yes" || s === "active") {
-            localPro = true;
-            break;
-          }
-        }
-
-        if (!localPro) {
-          const proof = await loadProProof();
-          const authHeader = access || proof?.accessToken || null;
-
-          if (authHeader) {
-            const bestUid = await getBestKnownUid(user || proof?.authUser, installUid, authHeader);
-
-            const res = await fetchWithTimeout(
-              `${BACKEND}/iap/status`,
-              {
-                headers: buildHeaders({
-                  currentLang,
-                  uid: bestUid,
-                  access,
-                  proof,
-                }),
-              },
-              12000
-            );
-
-            if (res.ok) {
-              const text = await res.text();
-              let j = null;
-              try {
-                j = text ? JSON.parse(text) : null;
-              } catch {
-                j = null;
-              }
-              const plan = String(j?.plan || "").toLowerCase();
-              if (plan === "pro") {
-                localPro = true;
-                try {
-                  await AsyncStorage.setItem("isPro", "true");
-                } catch {}
-              }
-            }
-          }
-        }
-
-        setProLocal(!!localPro);
-      } catch {
-        setProLocal(false);
-      } finally {
-        setCheckingPro(false);
-      }
-    })();
-  }, [uid, access, currentLang, user, installUid]);
-
-  useEffect(() => {
-    if (checkingPro) return;
+    if (!authReady) return;
     if (isPro === false) {
       router.replace("/pro");
     }
-  }, [checkingPro, isPro, router]);
+  }, [authReady, isPro, router]);
 
   const [input, setInput] = useState("");
   const [out, setOut] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
+  const [showVerificationMethod, setShowVerificationMethod] = useState(false);
   const [backendError, setBackendError] = useState("");
 
   const [voteSending, setVoteSending] = useState(false);
@@ -2355,7 +2317,6 @@ ${uri}`,
     );
   };
 
-  if (checkingPro) return null;
   if (!isPro) return null;
 
   return (
@@ -2509,6 +2470,7 @@ ${uri}`,
                   title={tx("scan.aiVerdict.title", pickLang(currentLang, "AI-вердикт", "AI verdict", "AI-вердикт"))}
                   text={normalizedOut.aiHumanVerdict}
                 />
+                <ProVerdictDetails result={normalizedOut.aiExplanationResult} tx={tx} lang={currentLang} />
 
                 {!!normalizedOut.verdictBasis && (
                   <View
@@ -2565,6 +2527,12 @@ ${uri}`,
                   title={tx("shieldPro.actions.share", pickLang(currentLang, "", "Share"))}
                   onPress={onShare}
                   leftIcon={<Ionicons name="share-social-outline" size={16} color={T.dim} />}
+                  style={{ marginBottom: 10 }}
+                />
+                <SecondaryButton
+                  title={tx("shieldPro.verification.button", pickLang(currentLang, "Как выполняется проверка", "How the check works", "Як виконується перевірка"))}
+                  onPress={() => setShowVerificationMethod(true)}
+                  leftIcon={<Ionicons name="shield-checkmark-outline" size={16} color={T.dim} />}
                   style={{ marginBottom: 10 }}
                 />
               </View>
@@ -3081,11 +3049,41 @@ ${uri}`,
                   {s.h}
                 </Text>
                 <Text style={{ color: T.dim, marginTop: 6 }} numberOfLines={2}>
-                  {currentLang === "ru" ? s.dRu : s.dEn}
+                  {currentLang === "uk" ? s.dUk : currentLang === "ru" ? s.dRu : s.dEn}
                 </Text>
               </TouchableOpacity>
             ))}
           </LinearGradient>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showVerificationMethod} transparent animationType="fade" onRequestClose={() => setShowVerificationMethod(false)}>
+        <Pressable onPress={() => setShowVerificationMethod(false)} style={{ flex: 1, justifyContent: "center", padding: 22, backgroundColor: "rgba(0,0,0,0.56)" }}>
+          <Pressable onPress={() => {}}>
+            <LinearGradient colors={[GRAD.start, GRAD.mid, GRAD.end]} style={{ borderRadius: 22, padding: 20, borderWidth: 1, borderColor: "rgba(255,176,32,0.35)" }}>
+              <View style={{ alignItems: "center", marginBottom: 14 }}>
+                <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: "rgba(255,176,32,0.13)", alignItems: "center", justifyContent: "center" }}>
+                  <Ionicons name="shield-checkmark-outline" size={24} color={T.accent} />
+                </View>
+              </View>
+              <Text style={{ color: T.text, fontSize: 20, fontWeight: "900", textAlign: "center", marginBottom: 12 }}>
+                {tx("shieldPro.verification.title", pickLang(currentLang, "Как Noytrix проверяет объект", "How Noytrix checks an object", "Як Noytrix перевіряє об’єкт"))}
+              </Text>
+              <Text style={{ color: T.dim, lineHeight: 21 }}>
+                {tx("shieldPro.verification.intro", pickLang(currentLang, "Noytrix сопоставляет несколько независимых типов данных и показывает итог только после их проверки.", "Noytrix combines independent data checks before showing a result.", "Noytrix зіставляє кілька незалежних типів даних і показує результат лише після їх перевірки."))}
+              </Text>
+              {["shieldPro.verification.itemOne", "shieldPro.verification.itemTwo", "shieldPro.verification.itemThree", "shieldPro.verification.itemFour"].map((key) => (
+                <View key={key} style={{ flexDirection: "row", marginTop: 12 }}>
+                  <Ionicons name="checkmark-circle" size={18} color={T.good} style={{ marginRight: 9, marginTop: 1 }} />
+                  <Text style={{ color: T.text, flex: 1, lineHeight: 20 }}>{tx(key, "")}</Text>
+                </View>
+              ))}
+              <Text style={{ color: T.dim, fontSize: 12, lineHeight: 18, marginTop: 16 }}>
+                {tx("shieldPro.verification.note", pickLang(currentLang, "Проверка снижает риск, но не заменяет осторожность: не вводите seed-фразу и проверяйте каждую подпись отдельно.", "The check reduces risk but does not replace caution: never enter a seed phrase and review every signature separately.", "Перевірка знижує ризик, але не замінює обережність: не вводьте seed-фразу та перевіряйте кожен підпис окремо."))}
+              </Text>
+              <PrimaryButton title={tx("common.close", pickLang(currentLang, "Закрыть", "Close", "Закрити"))} onPress={() => setShowVerificationMethod(false)} style={{ marginTop: 18 }} />
+            </LinearGradient>
+          </Pressable>
         </Pressable>
       </Modal>
 

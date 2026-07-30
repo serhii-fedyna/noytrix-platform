@@ -12,7 +12,7 @@ from auth.deps import get_current_user
 from auth.models import User
 from iap_models import IAPPurchase
 from identity import resolve_user_id
-from subscriptions import entitlement_status, sync_google_play_purchase
+from subscriptions import entitlement_status_for_user, sync_google_play_purchase
 
 Base.metadata.create_all(bind=engine)
 
@@ -61,13 +61,17 @@ def _to_naive_utc(dt_aware: datetime | None) -> datetime | None:
         return None
     return dt_aware.astimezone(timezone.utc).replace(tzinfo=None)
 
-@router.get("/status")
-def iap_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def _account_entitlement(current: User) -> tuple[str, dict]:
     identity_user_id = resolve_user_id(
         [("auth_user_id", str(current.id)), ("email", current.email)],
-        meta={"source": "iap_status"},
+        meta={"source": "iap_account_status"},
     )
-    ent = entitlement_status([identity_user_id, current.email, str(current.id)], "pro")
+    return identity_user_id, entitlement_status_for_user(identity_user_id, "pro")
+
+
+@router.get("/account-status")
+def iap_account_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    identity_user_id, ent = _account_entitlement(current)
     active = bool(ent.get("active"))
     return {
         "ok": True,
@@ -77,6 +81,13 @@ def iap_status(current: User = Depends(get_current_user), db: Session = Depends(
         "identityUserId": identity_user_id,
         "entitlement": ent,
     }
+
+
+@router.get("/status")
+def iap_status(current: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    # Compatibility alias for signed-in clients. New mobile code uses the
+    # explicit account-status endpoint to avoid accidental guest fallbacks.
+    return iap_account_status(current=current, db=db)
 
 @router.post("/google/verify")
 def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -240,10 +251,6 @@ def sync_plans(current: User = Depends(get_current_user), db: Session = Depends(
     Manual sync endpoint for current user.
     You can call it after app starts, or on profile refresh.
     """
-    identity_user_id = resolve_user_id(
-        [("auth_user_id", str(current.id)), ("email", current.email)],
-        meta={"source": "iap_sync_plans"},
-    )
-    ent = entitlement_status([identity_user_id, current.email, str(current.id)], "pro")
+    identity_user_id, ent = _account_entitlement(current)
     active = bool(ent.get("active"))
     return {"ok": True, "plan": "PRO" if active else "FREE", "active": active, "identityUserId": identity_user_id, "entitlement": ent}
