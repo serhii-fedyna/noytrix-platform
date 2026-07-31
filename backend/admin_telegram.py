@@ -135,8 +135,22 @@ def _deliver_event(event_id: int) -> None:
         ).fetchone()
         if not row or row["status"] == "sent":
             return
-        conn.execute("UPDATE admin_telegram_events SET attempts=attempts+1 WHERE id=?", (event_id,))
+        stale_before = (datetime.now(timezone.utc) - timedelta(minutes=15)).replace(microsecond=0).isoformat()
+        claim = conn.execute(
+            """
+            UPDATE admin_telegram_events
+            SET status='sending', attempts=attempts+1
+            WHERE id=?
+              AND (
+                status IN ('queued', 'failed')
+                OR (status='sending' AND created_at <= ?)
+              )
+            """,
+            (event_id, stale_before),
+        )
         conn.commit()
+        if claim.rowcount != 1:
+            return
         message = str(row["message_text"] or "")
     finally:
         conn.close()
@@ -199,13 +213,15 @@ def deliver_pending_notifications(limit: int = 100) -> int:
         return 0
     conn = _connect()
     try:
+        stale_before = (datetime.now(timezone.utc) - timedelta(minutes=15)).replace(microsecond=0).isoformat()
         rows = conn.execute(
             """
             SELECT id FROM admin_telegram_events
             WHERE status IN ('queued', 'failed')
+               OR (status='sending' AND created_at <= ?)
             ORDER BY id ASC LIMIT ?
             """,
-            (max(1, min(int(limit), 500)),),
+            (stale_before, max(1, min(int(limit), 500))),
         ).fetchall()
     finally:
         conn.close()

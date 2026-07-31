@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+import threading
 import unittest
 from datetime import date
 from pathlib import Path
@@ -93,6 +94,41 @@ class AdminTelegramTests(unittest.TestCase):
         finally:
             conn.close()
         self.assertEqual(status, "sent")
+
+    @patch("admin_telegram.urlopen")
+    def test_concurrent_delivery_sends_one_telegram_message(self, mocked_open):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"ok": true, "result": {"message_id": 15}}'
+
+        started = threading.Event()
+        release = threading.Event()
+
+        def delayed_open(*_args, **_kwargs):
+            started.set()
+            release.wait(timeout=2)
+            return Response()
+
+        mocked_open.side_effect = delayed_open
+        os.environ["NOYTRIX_ADMIN_TELEGRAM_ENABLED"] = "1"
+        os.environ["NOYTRIX_ADMIN_TELEGRAM_TOKEN"] = "test-token"
+        os.environ["NOYTRIX_ADMIN_TELEGRAM_CHAT_ID"] = "123"
+        event_id = admin_telegram._store_event("send-once", "test", "message")
+        first = threading.Thread(target=admin_telegram._deliver_event, args=(event_id,))
+        second = threading.Thread(target=admin_telegram._deliver_event, args=(event_id,))
+        first.start()
+        self.assertTrue(started.wait(timeout=1))
+        second.start()
+        second.join(timeout=1)
+        release.set()
+        first.join(timeout=2)
+        mocked_open.assert_called_once()
 
 
 if __name__ == "__main__":
