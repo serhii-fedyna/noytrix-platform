@@ -13,6 +13,7 @@ import httpx
 
 from scamshield.intelligence.postgres_intelligence import connect, guess_entity_type, normalize_entity
 from scamshield.intelligence.scam_family import classify_scam_family
+from scamshield.scam_of_day import record_scam_of_day_signal
 
 
 COLLECTOR_VERSION = "1.0"
@@ -343,15 +344,32 @@ async def run_autonomous_collectors_once(limit_per_source: int | None = None) ->
         with conn.cursor() as cur:
             ensure_collector_schema(cur)
             for item in collected:
-                if upsert_raw_indicator(
+                was_imported = upsert_raw_indicator(
                     cur,
                     item["source_name"],
                     item["source_url"],
                     item["target"],
                     item["score"],
                     item["raw_record"],
-                ):
+                )
+                if was_imported:
                     imported += 1
+
+                # Keep an active Reddit threat visible in the current daily
+                # feed even when the raw-indicator record already existed.
+                # Push delivery remains owned by the Reddit monitor and its
+                # cooldown policy, so this never creates duplicate pushes.
+                if item.get("source_name") == "autonomous_reddit_rss" and int((item.get("score") or {}).get("score") or 0) >= 60:
+                    raw = item.get("raw_record") or {}
+                    record_scam_of_day_signal(
+                        item.get("target") or "",
+                        source="reddit",
+                        source_url=str(raw.get("link") or item.get("source_url") or ""),
+                        title=str(raw.get("title") or ""),
+                        summary=str(raw.get("summary") or ""),
+                        score=int((item.get("score") or {}).get("score") or 70),
+                        raw_record=raw,
+                    )
         conn.commit()
 
     return {

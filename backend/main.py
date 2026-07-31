@@ -135,6 +135,7 @@ from routes.telegram import create_telegram_router
 from routes.runtime import create_runtime_router
 from routes.community import create_community_router
 from routes.immunity import create_immunity_router
+from scamshield.scam_of_day import create_scam_of_day_router, record_scam_of_day_signal
 from push_service import NoytrixPushService, PUSH_LANGS
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
@@ -7200,6 +7201,40 @@ app.include_router(create_community_router(
     _community_top_items,
 ))
 
+
+async def _analyze_scam_of_day_signal(target: str, language: str, user_id: str) -> dict:
+    """Build the same full PRO investigation without consuming a scan quota."""
+    data = await security_analyze_core({
+        "input": target,
+        "lang": language,
+        "user_id": user_id,
+        "is_pro": True,
+    })
+    data["isPro"] = True
+    data = attach_legacy_fields(data, language)
+    data = _attach_ux_risk_blocks(data, language)
+    try:
+        data["ai_explanation_context"] = build_ai_explanation_context(data)
+        data["ai_explanation_result"] = await generate_ai_security_explanation(data, language, "detailed")
+        data["ai_explanation"] = (data.get("ai_explanation_result") or {}).get("text") or data.get("ai_explanation") or ""
+    except Exception as exc:
+        data["ai_explanation_result"] = {
+            "available": False,
+            "reason": str(exc)[:300],
+            "language": language,
+            "mode": "detailed",
+            "text": "",
+        }
+    return _scan_client_safe_response(data)
+
+
+app.include_router(create_scam_of_day_router(
+    get_lang,
+    require_app_key,
+    _get_user_id,
+    _analyze_scam_of_day_signal,
+))
+
 app.include_router(create_immunity_router(
     get_lang,
     require_app_key,
@@ -7473,6 +7508,15 @@ async def _check_reddit_scam_alerts_once(dry_run: bool = True):
 
                 kind_for_db = "url" if str(target).lower().startswith(("http://", "https://")) else (_detect_input_kind(target).get("kind") or "unknown")
                 _save_reddit_scam_to_community(target, kind_for_db, post_link, title)
+                scam_signal_id = record_scam_of_day_signal(
+                    target,
+                    source="reddit",
+                    source_url=post_link,
+                    title=title,
+                    summary=summary,
+                    score=int(ctx.get("score") or 70),
+                    raw_record={"title": title, "summary": summary, "link": post_link, "feed": feed},
+                )
 
                 push_data = {
                     "type": "reddit_scam_alert",
@@ -7483,7 +7527,8 @@ async def _check_reddit_scam_alerts_once(dry_run: bool = True):
                     "reddit_post": post_link,
                     "score": ctx.get("score"),
                     "alert_type": alert_type,
-                    "open_url": f"noytrix://shield?input={quote(target, safe='')}&source=reddit",
+                    "scamSignalId": scam_signal_id or "",
+                    "open_url": f"noytrix://shield?input={quote(target, safe='')}&source=reddit&scamSignalId={quote(scam_signal_id or '', safe='')}",
                 }
 
                 await broadcast_localized_push(messages_push, push_data, category="security")

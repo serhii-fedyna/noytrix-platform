@@ -1657,5 +1657,25 @@
     "bestValue": "Best value",
     "joinValueText": "Less than one bad crypto mistake",
     "joinCtaBuy": "Get full protection"
+  },
+  "scamOfDay": {
+    "title": "Scam of the day",
+    "savedTitle": "Saved scam signals",
+    "empty": "No new high-risk crypto scam signal has been added today.",
+    "savedEmpty": "Save a signal to keep its full AI investigation here.",
+    "refresh": "Refresh scam signals",
+    "retry": "Try again",
+    "fullTitle": "Full scam investigation",
+    "aiVerdict": "Noytrix AI verdict",
+    "risks": "Key risks",
+    "actions": "What to do now",
+    "sourceNote": "Noytrix checks this signal against its security engine before showing the investigation.",
+    "share": "Share scam signal",
+    "shareText": "Noytrix warning: {{target}} was marked {{risk}}. Check before you connect, approve, sign or send.",
+    "errors": {
+      "load": "Scam signals are temporarily unavailable. Please try again.",
+      "analysis": "The full AI investigation is temporarily unavailable. Please try again shortly.",
+      "action": "Your action could not be saved. Please try again."
+    }
   }
 }

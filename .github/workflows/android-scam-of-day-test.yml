@@ -1,0 +1,135 @@
+name: Android Scam of the Day Test Release
+
+on:
+  push:
+    branches:
+      - codex/scam-of-the-day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noytrix-scam-of-day-internal-test
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Mobile checks
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --include=dev
+
+      - name: Run JavaScript tests when present
+        run: npm test --if-present
+
+      - name: Check translations are complete
+        run: npm run check:locales
+
+      - name: Validate Expo configuration
+        run: npx expo config --json > /tmp/noytrix-expo-config.json
+
+      - name: Bundle Android JavaScript
+        run: npx expo export --platform android --output-dir .ci-export --no-bytecode
+
+  build-and-upload:
+    name: Build signed AAB and upload to Google Play Internal Testing
+    needs: test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    env:
+      GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON_B64 }}
+      ANDROID_UPLOAD_KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+      ANDROID_UPLOAD_STORE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_STORE_PASSWORD }}
+      ANDROID_UPLOAD_KEY_ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+      ANDROID_UPLOAD_KEY_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci --include=dev
+
+      - name: Restore Google services configuration
+        shell: bash
+        run: |
+          test -n "$GOOGLE_SERVICES_JSON_B64"
+          printf '%s' "$GOOGLE_SERVICES_JSON_B64" | base64 --decode > mobile/google-services.json
+          cp mobile/google-services.json mobile/android/app/google-services.json
+          test -s mobile/android/app/google-services.json
+
+      - name: Restore production signing keystore
+        shell: bash
+        run: |
+          test -n "$ANDROID_UPLOAD_KEYSTORE_B64"
+          test -n "$ANDROID_UPLOAD_STORE_PASSWORD"
+          test -n "$ANDROID_UPLOAD_KEY_ALIAS"
+          test -n "$ANDROID_UPLOAD_KEY_PASSWORD"
+          printf '%s' "$ANDROID_UPLOAD_KEYSTORE_B64" | base64 --decode > mobile/android/app/release-upload.jks
+          test -s mobile/android/app/release-upload.jks
+
+      - name: Verify release configuration
+        working-directory: mobile
+        run: |
+          node -e "const a=require('./app.json'); const g=require('fs').readFileSync('android/app/build.gradle','utf8'); const v=String(a.expo.android.versionCode); if(!g.includes('versionCode '+v)) throw new Error('app.json and native versionCode differ'); console.log('Building Android versionCode '+v);"
+          npx expo config --json > /tmp/noytrix-release-config.json
+
+      - name: Build signed Android App Bundle
+        working-directory: mobile/android
+        shell: bash
+        env:
+          ANDROID_UPLOAD_STORE_FILE: release-upload.jks
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:bundleRelease --no-daemon --stacktrace
+          mkdir -p app/artifacts
+          cp app/build/outputs/bundle/release/app-release.aab app/artifacts/noytrix-scam-of-day-test.aab
+          test -s app/artifacts/noytrix-scam-of-day-test.aab
+
+      - name: Upload AAB as CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: noytrix-scam-of-day-test-aab-${{ github.run_number }}
+          path: mobile/android/app/artifacts/noytrix-scam-of-day-test.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to Google Play Internal Testing
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.noytrix.app
+          releaseFiles: mobile/android/app/artifacts/noytrix-scam-of-day-test.aab
+          tracks: internal
+          status: completed

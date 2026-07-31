@@ -27,6 +27,7 @@ import { BACKEND } from "../lib/backend";
 import { normalizeLang } from "../i18n/lang";
 import { syncPushLanguageTag } from "../lib/pushLanguage";
 import { hasAccountProAccess } from "../lib/proEntitlement";
+import ScamOfDay from "../components/ScamOfDay";
 
 const BG = { start: "#06080f", mid: "#0a1233", end: "#0b1c4f" };
 const UI = {
@@ -829,6 +830,13 @@ export default function ProfileScreen() {
                     })}
                   </View>
                 )}
+              </Section>
+
+              <Section
+                title={t("scamOfDay.savedTitle")}
+                icon="bookmark-outline"
+              >
+                <ScamOfDay mode="saved" embedded />
               </Section>
 
               <Section

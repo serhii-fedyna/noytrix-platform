@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, Pressable, ActivityIndicator, Share, Platform, InteractionManager } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import ViewShot from "react-native-view-shot";
 import * as Clipboard from "expo-clipboard";
@@ -19,6 +19,7 @@ import { shareImagePremium } from "./lib/sharePremium";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
+import ScamOfDay from "./components/ScamOfDay";
 import { hasAccountProAccess } from "./lib/proEntitlement";
 import { FREE_DAILY_LIMIT, normalizeFreeQuota } from "./lib/quota";
 import { useScanQuotaStore } from "./lib/store.scanQuota";
@@ -1343,6 +1344,7 @@ export default function Shield() {
   }, [t0]);
 
   const router = useRouter();
+  const routeParams = useLocalSearchParams();
   const user = useAuthStore((s) => s.user);
   const isAuth = useAuthStore((s) => s.isAuth);
 
@@ -1998,6 +2000,8 @@ export default function Shield() {
             />
           </View>
         </BlurCard>
+
+        <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />
 
         {!!backendError && (
           <BlurCard style={{ borderColor: "rgba(255,107,107,0.35)" }}>

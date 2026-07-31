@@ -35,6 +35,7 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 
 const ONESIGNAL_APP_ID = "844ce644-cdb6-4d24-b07e-4e1f117e247d";
 const NOTIFICATIONS_PREF_KEY = "profile.notifications";
+const PENDING_SCAM_SIGNAL_KEY = "noytrix.pendingScamSignal";
 const PRO_NUDGE_STATE_KEY = "noytrix.proNudge.v1";
 const PRO_NUDGE_MIN_DELAY_MS = 10 * 60 * 1000;
 const PRO_NUDGE_REPEAT_MS = 3 * 24 * 60 * 60 * 1000;
@@ -529,19 +530,26 @@ export default function RootLayout() {
               const data = event?.notification?.additionalData || {};
               const input = data?.input || data?.url || "";
               const screen = data?.screen || "shield";
+              const scamSignalId = String(data?.scamSignalId || data?.scam_signal_id || "").trim();
 
-              if (input) {
+              if (input || scamSignalId) {
                 console.log("[PUSH NAV] open scan:", input);
 
                 try {
-                  await AsyncStorage.setItem("shield.prefill", String(input));
+                  if (input) await AsyncStorage.setItem("shield.prefill", String(input));
+                  await AsyncStorage.setItem(PENDING_SCAM_SIGNAL_KEY, JSON.stringify({
+                    input: String(input || ""),
+                    screen,
+                    source: data?.source || "push",
+                    scamSignalId,
+                  }));
                 } catch (e) {
                   console.log("[PUSH NAV] prefill save error:", e);
                 }
 
                 router.push({
                   pathname: screen === "shield_pro" || screen === "shield-pro" ? "/shield-pro" : "/shield",
-                  params: { input: String(input), source: data?.source || "push" },
+                  params: { input: String(input || ""), source: data?.source || "push", scamSignalId },
                 });
               }
             } catch (e) {
@@ -633,6 +641,31 @@ export default function RootLayout() {
 
     initOneSignal();
   }, [isReady]);
+
+  useEffect(() => {
+    if (!isAuth || !hasToken || !bioChecked) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(PENDING_SCAM_SIGNAL_KEY);
+        if (!raw || cancelled) return;
+        const pending = JSON.parse(raw);
+        await AsyncStorage.removeItem(PENDING_SCAM_SIGNAL_KEY);
+        if (cancelled || (!pending?.input && !pending?.scamSignalId)) return;
+        router.push({
+          pathname: pending?.screen === "shield_pro" || pending?.screen === "shield-pro" ? "/shield-pro" : "/shield",
+          params: {
+            input: String(pending?.input || ""),
+            source: pending?.source || "push",
+            scamSignalId: String(pending?.scamSignalId || ""),
+          },
+        });
+      } catch (e) {
+        console.log("[PUSH NAV] pending signal restore error:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [bioChecked, hasToken, isAuth]);
 
   useEffect(() => {
     if (!isReady) return;

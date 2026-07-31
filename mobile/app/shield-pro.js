@@ -22,7 +22,7 @@ import * as Linking from "expo-linking";
 import * as Sharing from "expo-sharing";
 import ViewShot from "react-native-view-shot";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useLocalSearchParams } from "expo-router";
 import Constants from "expo-constants";
 
 import { useAuthStore } from "./lib/store.auth";
@@ -32,6 +32,7 @@ import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
+import ScamOfDay from "./components/ScamOfDay";
 import { hasAccountProAccess } from "./lib/proEntitlement";
 
 
@@ -1738,6 +1739,7 @@ export default function ShieldPro() {
     logEvent("shield_pro_screen_open", { screen: "shield_pro" });
   }, []);
   const router = useRouter();
+  const routeParams = useLocalSearchParams();
   const user = useAuthStore((s) => s.user);
   const authReady = useAuthStore((s) => s.isReady);
   const access = useAuthStore((s) => s.access);
@@ -2429,6 +2431,8 @@ ${uri}`,
             />
           </View>
         </BlurCard>
+
+        <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />
 
         {!!backendError && (
           <BlurCard style={{ borderColor: "rgba(255,107,107,0.35)" }}>
