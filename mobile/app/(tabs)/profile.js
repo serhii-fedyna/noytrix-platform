@@ -305,15 +305,20 @@ export default function ProfileScreen() {
 
   const identity = useMemo(() => {
     const api = profileData?.identity || {};
+    const rawRank = String(api?.rank || "explorer").trim().toLowerCase();
+    const localizedRank =
+      rawRank === "explorer"
+        ? t("profile.identity.ranks.explorer", { defaultValue: "Explorer" })
+        : api?.rank || t("profile.identity.ranks.explorer", { defaultValue: "Explorer" });
     return {
       displayName: api?.displayName || displayName,
       email: api?.email || user?.email || EMPTY_VALUE,
       memberSince: formatMemberSince(api?.memberSince),
       level: safeNum(api?.level, 1),
-      rank: api?.rank || "Explorer",
+      rank: localizedRank,
       plan: String(api?.plan || user?.plan || "").toLowerCase(),
     };
-  }, [profileData, displayName, user]);
+  }, [profileData, displayName, user, t]);
 
   const isPro = hasAccountProAccess(user);
 

@@ -756,35 +756,6 @@ export default function CalendarScreen() {
             )}
           </BlurCard>
 
-          <BlurCard intensity={22}>
-            <Text style={s.helpTitle}>
-              {t("calendar.howTitle", { defaultValue: "How to use" })}
-            </Text>
-
-            <Text style={s.helpText}>
-              {t("calendar.howP1", {
-                defaultValue: "Use the calendar to track important crypto events.",
-              })}
-            </Text>
-
-            <Text style={s.helpText}>
-              {t("calendar.howP2", {
-                defaultValue: "TBA means the exact event time is not confirmed yet.",
-              })}
-            </Text>
-
-            <Text style={s.helpText}>
-              {t("calendar.howP3", {
-                defaultValue: "Timed events are shown in your local timezone.",
-              })}
-            </Text>
-
-            <Text style={s.helpText}>
-              {t("calendar.howP4", {
-                defaultValue: "Always verify event details before trading decisions.",
-              })}
-            </Text>
-          </BlurCard>
         </ScrollView>
       </LinearGradient>
     </View>

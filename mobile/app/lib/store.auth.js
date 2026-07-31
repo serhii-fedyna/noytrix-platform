@@ -15,6 +15,7 @@ import {
 } from "./authApi";
 import { identifyTikTokUser, logEvent, logoutTikTokUser } from "./analytics";
 import { clearLegacyProDeviceFlags } from "./proEntitlement";
+import { useScanQuotaStore } from "./store.scanQuota";
 
 function enhanceUser(user) {
   if (!user) return null;
@@ -49,8 +50,11 @@ async function attachAccountProAccess(user, isAuth) {
       proAccess: {
         isPro: status?.isPro === true || status?.active === true,
         plan: String(status?.plan || "FREE").toUpperCase(),
-        expiresAt: status?.entitlement?.expiresAt || null,
-        source: status?.entitlement?.source || null,
+        startedAt: status?.entitlement?.startedAt || status?.startedAt || null,
+        expiresAt: status?.entitlement?.expiresAt || status?.expiresAt || status?.expiryUtc || null,
+        autoRenew: Boolean(status?.entitlement?.autoRenew ?? status?.autoRenew ?? false),
+        source: status?.entitlement?.source || status?.source || null,
+        status: status?.entitlement?.status || status?.status || null,
         checkedAt: Date.now(),
       },
     };
@@ -106,6 +110,7 @@ export const useAuthStore = create((set, get) => ({
 
   setAuth: async (user, tokens) => {
     const enhanced = enhanceUser(user);
+    useScanQuotaStore.getState().reset();
     set({ user: enhanced, isAuth: !!tokens || !!enhanced });
   },
 
@@ -164,6 +169,7 @@ export const useAuthStore = create((set, get) => ({
     await apiClearAuth(); 
     await AsyncStorage.multiRemove([AVATAR_KEY]);
     await clearLegacyProDeviceFlags();
+    useScanQuotaStore.getState().reset();
     set({ user: null, isAuth: false, avatarUri: null });
   },
 

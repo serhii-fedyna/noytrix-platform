@@ -17,6 +17,10 @@ const locales = Object.fromEntries(["en", "ru", "uk"].map((name) => [name, flatt
 const referenceKeys = Object.keys(locales.en).sort();
 const errors = [];
 
+function templateVariables(value) {
+  return [...String(value || "").matchAll(/{{\s*([^{}\s]+)\s*}}/g)].map((match) => match[1]).sort();
+}
+
 for (const [name, entries] of Object.entries(locales)) {
   const keys = Object.keys(entries).sort();
   const missing = referenceKeys.filter((key) => !(key in entries));
@@ -28,6 +32,11 @@ for (const [name, entries] of Object.entries(locales)) {
   if (missing.length) errors.push(`${name}: missing ${missing.join(", ")}`);
   if (extra.length) errors.push(`${name}: extra ${extra.join(", ")}`);
   if (empty.length) errors.push(`${name}: empty ${empty.join(", ")}`);
+  for (const key of referenceKeys) {
+    const expected = templateVariables(locales.en[key]).join(",");
+    const actual = templateVariables(entries[key]).join(",");
+    if (expected !== actual) errors.push(`${name}: interpolation mismatch in ${key}`);
+  }
 }
 
 // These are high-confidence Russian-only words that have previously leaked

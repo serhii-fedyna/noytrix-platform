@@ -1797,6 +1797,60 @@ def enforce_free_quota(
     finally:
         con.close()
 
+
+def get_free_quota_status(
+    request: Request,
+    feature: str,
+    user_id: Optional[str],
+    is_pro_override: Optional[bool] = None,
+) -> dict:
+    """Return the canonical daily quota without consuming a check."""
+    now = datetime.now(timezone.utc)
+    day_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    day_end = day_start + timedelta(days=1)
+    day_key = day_start.strftime("%Y%m%d")
+
+    if is_pro_override is True:
+        return {
+            "isPro": True,
+            "freeLimit": DAILY_FREE_LIMIT,
+            "feature": feature,
+            "day": day_key,
+            "used": 0,
+            "left": None,
+            "resetAtUtc": None,
+        }
+
+    limits = {
+        "scan": DAILY_FREE_LIMIT,
+        "immunity_analyze": DAILY_FREE_LIMIT,
+        "news_explain": DAILY_FREE_LIMIT,
+    }
+    limit = int(limits.get(feature, DAILY_FREE_LIMIT))
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    bucket = (str(user_id).strip() if user_id and str(user_id).strip() else f"ip:{ip}")
+
+    con = sqlite3.connect(QUOTA_DB_PATH)
+    try:
+        used = int(con.execute(
+            "SELECT COUNT(1) FROM quota_events WHERE bucket=? AND feature=? AND ts_utc>=? AND ts_utc<?",
+            (bucket, feature, day_start.isoformat(), day_end.isoformat()),
+        ).fetchone()[0])
+    finally:
+        con.close()
+
+    used = min(limit, used)
+    return {
+        "isPro": False,
+        "freeLimit": limit,
+        "feature": feature,
+        "day": day_key,
+        "used": used,
+        "left": max(0, limit - used),
+        "resetAtUtc": day_end.isoformat(),
+        "limitReached": used >= limit,
+    }
+
 # =========================================================
 # PROFILE DB + HELPERS
 # =========================================================
@@ -6938,6 +6992,32 @@ app.include_router(create_runtime_router(
 # =========================================================
 # /scan
 # =========================================================
+@app.get("/quota/status")
+async def quota_status(
+    request: Request,
+    feature: str = Query("scan"),
+    userId: str | None = None,
+):
+    """Expose the same persisted FREE counter used by /scan without mutation."""
+    allowed_features = {"scan", "immunity_analyze", "news_explain"}
+    if feature not in allowed_features:
+        raise HTTPException(status_code=400, detail="Unsupported quota feature")
+
+    uid = _get_user_id(request, userId)
+    account_identity_uid = _authenticated_account_identity(request)
+    entitlement = (
+        entitlement_status_for_user(account_identity_uid, "pro")
+        if account_identity_uid
+        else None
+    )
+    return get_free_quota_status(
+        request,
+        feature=feature,
+        user_id=account_identity_uid or uid,
+        is_pro_override=bool(entitlement.get("active")) if entitlement else None,
+    )
+
+
 @app.api_route("/scan", methods=["GET","POST"])
 async def scan(
     request: Request,

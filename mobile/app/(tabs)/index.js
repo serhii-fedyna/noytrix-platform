@@ -15,7 +15,7 @@ import {
   InteractionManager,
 } from "react-native";
 import { Ionicons, FontAwesome5 } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import ViewShot from "react-native-view-shot";
@@ -32,7 +32,7 @@ import { identityHeaders } from "../lib/identity";
 import { BACKEND } from "../lib/backend";
 import AiVerdictCard from "../components/AiVerdictCard";
 import { hasAccountProAccess } from "../lib/proEntitlement";
-import { normalizeFreeQuota } from "../lib/quota";
+import { useScanQuotaStore } from "../lib/store.scanQuota";
 import NoyBot from "../../components/NoyBot";
 
 const AUTH_KEY = "auth_state_v1";
@@ -712,8 +712,9 @@ export default function Home() {
   const [resolvedUid, setResolvedUid] = useState("");
   const [authAccess, setAuthAccess] = useState(null);
 
-  const [quota, setQuota] = useState({ used: 0, limit: 4, left: 4, dayKey: "" });
-  const [quotaBlocked, setQuotaBlocked] = useState(false);
+  const quota = useScanQuotaStore((s) => s.quota);
+  const applyServerQuota = useScanQuotaStore((s) => s.applyServerQuota);
+  const refreshQuota = useScanQuotaStore((s) => s.refresh);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const [quotaMsg, setQuotaMsg] = useState("");
 
@@ -795,7 +796,23 @@ export default function Home() {
     })();
   }, [user, installUid, isAuth]);
 
-  const isPro = hasAccountProAccess(user);
+  const serverSaysPro = useScanQuotaStore((state) => state.serverSaysPro);
+  const isPro = serverSaysPro || hasAccountProAccess(user);
+  const quotaBlocked = !isPro && Number(quota?.used || 0) >= Number(quota?.limit || 4);
+
+  const refreshCanonicalQuota = useCallback(async () => {
+    const proof = await loadProProof();
+    const accessToken = proof?.accessToken || authAccess || "";
+    const effectiveUser = user || proof?.authUser || null;
+    const effectiveUid = await getBestKnownUid(effectiveUser, installUid, accessToken);
+    await refreshQuota({ userId: effectiveUid || "anonymous", accessToken, lang: currentLang });
+  }, [authAccess, currentLang, installUid, refreshQuota, user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshCanonicalQuota().catch(() => {});
+    }, [refreshCanonicalQuota])
+  );
 
   const normalizedReport = useMemo(() => normalizeScanReport(report, currentLang), [report, currentLang]);
   const verdictColor = levelColor(normalizedReport?.level);
@@ -826,12 +843,6 @@ export default function Home() {
     const accessToken = proof?.accessToken || authAccess || null;
     const effectiveUser = user || proof?.authUser || null;
     const effectiveUid = await getBestKnownUid(effectiveUser, installUid, accessToken || "");
-
-    if (!isPro && quotaBlocked) {
-      setQuotaMsg(pickLang(currentLang, "FREE лимит на сегодня уже использован. PRO убирает лимиты.", "FREE daily limit reached. PRO removes limits.", "FREE ліміт на сьогодні вже використано. PRO прибирає ліміти."));
-      setShowQuotaModal(false);
-      return;
-    }
 
     logEvent("scan_submitted", { screen: "home", source: "home_hero", lang: currentLang, kind: detectKind(value), has_input: true });
 
@@ -872,7 +883,7 @@ export default function Home() {
         const qRaw = detail?.quota || backend?.quota || null;
 
         if (qRaw) {
-          setQuota(normalizeFreeQuota(qRaw));
+          applyServerQuota(qRaw);
         }
 
         setQuotaMsg(
@@ -880,7 +891,6 @@ export default function Home() {
             pickLang(currentLang, "FREE лимит 4 проверки в день достигнут. PRO убирает лимиты.", "FREE limit of 4 checks per day reached. PRO removes limits.", "FREE ліміт 4 перевірки на день досягнуто. PRO прибирає ліміти.")
         );
         setShowQuotaModal(false);
-        setQuotaBlocked(true);
         return;
       }
 
@@ -890,16 +900,8 @@ export default function Home() {
       setReport(final);
 
       const quotaFromServer = backend?.quota || final?.quota || null;
-      if (isPro) {
-        setQuota({ used: 0, limit: 4, left: 4, dayKey: "" });
-        setQuotaBlocked(false);
-        setShowQuotaModal(false);
-      } else if (quotaFromServer) {
-        const q = normalizeFreeQuota(quotaFromServer);
-        setQuota(q);
-        setQuotaBlocked(q.left <= 0 || q.used >= q.limit);
-        setShowQuotaModal(false);
-      }
+      if (quotaFromServer) applyServerQuota(quotaFromServer);
+      setShowQuotaModal(false);
 
       await appendHistory(effectiveUid || "anonymous", {
         id: Date.now(),
@@ -936,7 +938,7 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }, [input, authAccess, user, installUid, isPro, quotaBlocked, currentLang]);
+  }, [input, authAccess, user, installUid, currentLang, applyServerQuota]);
 
 
   const shareMessage = useMemo(() => {
@@ -1155,7 +1157,7 @@ export default function Home() {
               <View style={{ flex: 1 }}>
                 <PrimaryButton
                   onPress={onCheck}
-                  disabled={loading || quotaBlocked}
+                  disabled={loading}
                   title={loading ? TT("home.new.checking", "Checking…", "Проверка…", "Перевірка...") : TT("home.new.check", "Check now", "Проверить", "Перевірити")}
                   leftIcon={loading ? <ActivityIndicator color={C.accentText} /> : <Ionicons name="shield-checkmark" size={18} color={C.accentText} />}
                 />

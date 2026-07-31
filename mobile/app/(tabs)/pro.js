@@ -57,6 +57,11 @@ function isUserPurchaseCancel(err) {
   );
 }
 
+function isAlreadyOwnedPurchase(err) {
+  const text = String(err?.code || err?.message || err || "").toLowerCase();
+  return text.includes("already_owned") || text.includes("item already owned") || text.includes("already have");
+}
+
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
@@ -74,7 +79,7 @@ const PRO_NUDGE_STATE_KEY = "noytrix.proNudge.v1";
 
 const PAYWALL_COPY = {
   en: {
-    heroTitle: "Protect yourself before you connect, approve, sign or send",
+    heroTitle: "Protect yourself before connecting, approving, signing or sending",
     heroSubtitle:
       "Noytrix checks links, wallets, tokens, contracts and signatures before you act. PRO gives deeper checks, clearer AI explanations and fewer blind decisions.",
     freeTitle: "What you already checked for free",
@@ -90,7 +95,7 @@ const PAYWALL_COPY = {
     proText:
       "PRO is built for people who touch crypto regularly and want a second pair of eyes before money leaves a wallet.",
     proPointOne: "More checks for links, wallets, tokens, contracts and suspicious setups.",
-    proPointTwo: "Deeper risk analysis before Connect, Approve, Sign or Send.",
+    proPointTwo: "Deeper risk analysis before connecting, approving, signing or sending.",
     proPointThree: "A simple AI explanation in human language: what is risky and what to do next.",
     proPointFour: "Google Play purchase restore if you change phone or reinstall the app.",
     whyWorthTitle: "One bad click can cost more than a year of PRO",
@@ -98,7 +103,7 @@ const PAYWALL_COPY = {
       "Noytrix does not promise profit. It helps you avoid blind actions when a fake link, token, wallet or signature could put funds at risk.",
     noProfitPromise: "This is not financial advice and not a profit promise. It is a risk check before you decide.",
     tariffsTitle: "Choose your protection",
-    tariffsLead: "Choose how long Noytrix should protect you before Connect, Approve, Sign or Send.",
+    tariffsLead: "Choose how long Noytrix should protect you before connecting, approving, signing or sending.",
     tariffsNote:
       "Free checks are limited. PRO keeps deeper checks, AI explanations and purchase recovery available.",
     planMTitle: "1 month",
@@ -115,7 +120,7 @@ const PAYWALL_COPY = {
     joinCtaBuy: "Get full protection",
   },
   ru: {
-    heroTitle: "Защити себя до Connect, Approve, Sign или Send",
+    heroTitle: "Защити себя перед подключением, подтверждением, подписанием или отправкой",
     heroSubtitle:
       "Noytrix проверяет ссылки, кошельки, токены, контракты и подписи до действия. PRO даёт более глубокие проверки, понятные AI-объяснения и меньше слепых решений.",
     freeTitle: "Что ты уже проверил бесплатно",
@@ -131,7 +136,7 @@ const PAYWALL_COPY = {
     proText:
       "PRO создан для тех, кто регулярно работает с криптой и хочет вторую проверку до того, как деньги уйдут из кошелька.",
     proPointOne: "Больше проверок ссылок, кошельков, токенов, контрактов и подозрительных схем.",
-    proPointTwo: "Глубже анализ риска перед Connect, Approve, Sign или Send.",
+    proPointTwo: "Более глубокий анализ риска перед подключением, подтверждением, подписанием или отправкой.",
     proPointThree: "Простое AI-объяснение человеческим языком: что опасно и что делать дальше.",
     proPointFour: "Восстановление покупки через Google Play, если сменил телефон или переустановил приложение.",
     whyWorthTitle: "Один плохой клик может стоить дороже года PRO",
@@ -139,7 +144,7 @@ const PAYWALL_COPY = {
       "Noytrix не обещает прибыль. Он помогает не действовать вслепую, когда фейковая ссылка, токен, кошелёк или подпись могут поставить средства под риск.",
     noProfitPromise: "Это не финансовый совет и не обещание прибыли. Это проверка риска перед твоим решением.",
     tariffsTitle: "Выбери защиту",
-    tariffsLead: "Выбери, как долго Noytrix будет защищать тебя перед Connect, Approve, Sign или Send.",
+    tariffsLead: "Выбери, как долго Noytrix будет защищать тебя перед подключением, подтверждением, подписанием или отправкой.",
     tariffsNote:
       "Бесплатные проверки ограничены. PRO открывает глубокие проверки, AI-объяснения и восстановление покупки.",
     planMTitle: "1 месяц",
@@ -156,7 +161,7 @@ const PAYWALL_COPY = {
     joinCtaBuy: "Открыть полную защиту",
   },
   uk: {
-    heroTitle: "Захисти себе до підключення, дозволу, підпису чи надсилання",
+    heroTitle: "Захисти себе перед підключенням, підтвердженням, підписом або надсиланням",
     heroSubtitle:
       "Noytrix перевіряє посилання, гаманці, токени, контракти й підписи до дії. PRO дає глибші перевірки, зрозумілі AI-пояснення і менше сліпих рішень.",
     freeTitle: "Що ти вже перевірив безкоштовно",
@@ -375,6 +380,19 @@ export default function ProScreen() {
       logEvent("purchase_error", { screen: "pro", plan: planId, price_label: priceFor(planId), err: String(err?.message || err || "error") });
       if (isUserPurchaseCancel(err)) {
         logEvent("purchase_cancelled", { screen: "pro", plan: planId, price_label: priceFor(planId) });
+        return;
+      }
+      if (isAlreadyOwnedPurchase(err)) {
+        const restored = await restorePurchases();
+        setEnt(restored);
+        await syncLocalProFlags(restored);
+        const active = !!(restored?.proMonthly || restored?.pro6m || restored?.proYearly || restored?.proLifetime);
+        showAppAlert(
+          t("pro.restoreTitle", "Restore"),
+          active
+            ? t("pro.restoreSuccess", "Purchases restored.")
+            : t("pro.restoreEmpty", "No active Google Play purchase was found for this account.")
+        );
         return;
       }
       showAppAlert(t("pro.alerts.errorTitle"), err?.message || t("pro.alerts.errorFallback"));

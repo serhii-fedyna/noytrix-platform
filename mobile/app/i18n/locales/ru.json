@@ -167,7 +167,7 @@
       "button": "Управлять PRO"
     },
     "sections": {
-      "trust": "Trust Score",
+      "trust": "Уровень доверия",
       "activity": "Активность",
       "trading": "Торговая статистика",
       "achievements": "Достижения",
@@ -180,18 +180,21 @@
       "memberSince": "С нами с",
       "rankLabel": "Ранг",
       "trustLabel": "Доверие",
-      "activityLabel": "Активность"
+      "activityLabel": "Активность",
+      "ranks": {
+        "explorer": "Исследователь"
+      }
     },
     "pro": {
       "features": {
         "scamshield": "ScamShield PRO",
         "explain": "Explain PRO",
         "deepScan": "Глубокий скан",
-        "market": "Market intelligence"
+        "market": "Рыночная аналитика"
       }
     },
     "trust": {
-      "label": "Trust Score",
+      "label": "Уровень доверия",
       "subtitle": "Рассчитывается на основе проверок, безопасной активности, сигналов сообщества и использования ключевых модулей продукта.",
       "scans": "Проверки",
       "safe": "Безопасно",
@@ -428,8 +431,7 @@
       "title": "Лимит FREE",
       "text": "FREE → 4 анализа в день\nPRO → без ограничений",
       "ok": "ОК",
-      "goPro": "В PRO",
-      "freeLeft": "FREE • {{used}}/{{limit}} • осталось {{left}}"
+      "goPro": "В PRO"
     },
     "copy": {
       "copied": "Скопировано",
@@ -520,7 +522,7 @@
       "title": "Нет данных с сервера"
     },
     "quota": {
-      "pillFree": "FREE • {{used}}/{{limit}} сегодня • {{left}} осталось",
+      "pillFree": "FREE • {{used}}/{{limit}} проверок",
       "pillPro": "PRO • без лимитов",
       "title": "Лимит FREE исчерпан",
       "exceeded": "Дневной лимит FREE исчерпан. В PRO — без ограничений.",

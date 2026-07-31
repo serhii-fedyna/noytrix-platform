@@ -180,7 +180,10 @@
       "memberSince": "З нами з",
       "rankLabel": "Ранг",
       "trustLabel": "Довіра",
-      "activityLabel": "Активність"
+      "activityLabel": "Активність",
+      "ranks": {
+        "explorer": "Дослідник"
+      }
     },
     "pro": {
       "features": {
@@ -428,8 +431,7 @@
       "title": "Ліміт FREE",
       "text": "FREE → 4 аналізи на день\nPRO → без обмежень",
       "ok": "ОК",
-      "goPro": "В PRO",
-      "freeLeft": "FREE • {{used}}/{{limit}} • залишилось {{left}}"
+      "goPro": "В PRO"
     },
     "copy": {
       "copied": "Скопійовано",
@@ -520,7 +522,7 @@
       "title": "Немає даних сервера"
     },
     "quota": {
-      "pillFree": "БЕЗКОШТОВНО • {{used}}/{{limit}} сьогодні • залишилось {{left}}",
+      "pillFree": "БЕЗКОШТОВНО • {{used}}/{{limit}} перевірок",
       "pillPro": "PRO • без лімітів",
       "title": "Ліміт безкоштовних перевірок вичерпано",
       "exceeded": "Денний ліміт безкоштовних перевірок вичерпано. У PRO перевірки без обмежень.",

@@ -20,7 +20,8 @@ import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
 import { hasAccountProAccess } from "./lib/proEntitlement";
-import { normalizeFreeQuota } from "./lib/quota";
+import { FREE_DAILY_LIMIT, normalizeFreeQuota } from "./lib/quota";
+import { useScanQuotaStore } from "./lib/store.scanQuota";
 
 const AUTH_KEY = "auth_state_v1";
 const INSTALL_UID_KEY = "noytrix.installUserId";
@@ -916,34 +917,6 @@ const SAMPLES = [
 
 const HK = (uid) => `profile.${uid}:history`;
 
-const SHIELD_FREE_DAILY_LIMIT = 4;
-const SHIELD_QUOTA_KEY = "shield.quota.v1";
-
-function shieldTodayKey() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-async function loadShieldQuotaLocal() {
-  try {
-    const raw = await AsyncStorage.getItem(SHIELD_QUOTA_KEY);
-    const today = shieldTodayKey();
-    if (!raw) return { day: today, used: 0 };
-    const j = JSON.parse(raw);
-    if (!j?.day || j.day !== today) return { day: today, used: 0 };
-    return { day: today, used: Math.max(0, Number(j.used || 0)) };
-  } catch {
-    return { day: shieldTodayKey(), used: 0 };
-  }
-}
-
-async function saveShieldQuotaLocal(q) {
-  try {
-    await AsyncStorage.setItem(SHIELD_QUOTA_KEY, JSON.stringify(q));
-  } catch {}
-}
-
-
 async function appendHistory(uid, event) {
   if (!uid) return;
 
@@ -1410,39 +1383,11 @@ export default function Shield() {
   const [backendError, setBackendError] = useState("");
   const [submittingVote, setSubmittingVote] = useState(false);
 
-  const [quota, setQuota] = useState({ used: 0, limit: 4, left: 4, dayKey: "" });
-  const [quotaBlocked, setQuotaBlocked] = useState(false);
+  const quota = useScanQuotaStore((s) => s.quota);
+  const applyServerQuota = useScanQuotaStore((s) => s.applyServerQuota);
+  const refreshQuota = useScanQuotaStore((s) => s.refresh);
   const [showQuotaModal, setShowQuotaModal] = useState(false);
   const [quotaMsg, setQuotaMsg] = useState("");
-
-  // shield_quota_init_display
-  useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      if (isPro) {
-        if (!alive) return;
-        setQuota({ used: 0, limit: SHIELD_FREE_DAILY_LIMIT, left: SHIELD_FREE_DAILY_LIMIT, dayKey: shieldTodayKey() });
-        setQuotaBlocked(false);
-        return;
-      }
-
-      const q = await loadShieldQuotaLocal();
-      if (!alive) return;
-
-      setQuota({
-        used: q.used,
-        limit: SHIELD_FREE_DAILY_LIMIT,
-        left: Math.max(0, SHIELD_FREE_DAILY_LIMIT - q.used),
-        dayKey: q.day,
-      });
-      setQuotaBlocked(q.used >= SHIELD_FREE_DAILY_LIMIT);
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [isPro]);
 
   const [authAccess, setAuthAccess] = useState(null);
 
@@ -1454,6 +1399,7 @@ export default function Shield() {
       let alive = true;
 
       (async () => {
+        refreshCanonicalQuota().catch(() => {});
         try {
           const prefill = await AsyncStorage.getItem(SHIELD_PREFILL_KEY);
           if (!alive) return;
@@ -1468,7 +1414,7 @@ export default function Shield() {
       return () => {
         alive = false;
       };
-    }, [])
+    }, [refreshCanonicalQuota])
   );
 
   useEffect(() => {
@@ -1478,7 +1424,17 @@ export default function Shield() {
     })();
   }, [user, isAuth]);
 
-  const isPro = hasAccountProAccess(user);
+  const serverSaysPro = useScanQuotaStore((state) => state.serverSaysPro);
+  const isPro = serverSaysPro || hasAccountProAccess(user);
+  const quotaBlocked = !isPro && Number(quota?.used || 0) >= Number(quota?.limit || 4);
+
+  const refreshCanonicalQuota = useCallback(async () => {
+    const proof = await loadProProof();
+    const accessToken = proof?.accessToken || authAccess || "";
+    const effectiveUser = user || proof?.authUser || null;
+    const effectiveUid = await getBestKnownUid(effectiveUser, installUid, accessToken);
+    await refreshQuota({ userId: effectiveUid || "anonymous", accessToken, lang: currentLang });
+  }, [authAccess, currentLang, installUid, refreshQuota, user]);
 
   const normalizedReport = useMemo(() => normalizeScanReport(report, currentLang), [report, currentLang]);
 
@@ -1506,33 +1462,13 @@ export default function Shield() {
 
   const quotaPillText = useMemo(() => {
     if (isPro) return tx("shield.quota.pillPro", pickLang(currentLang, "PRO • безлимит", "PRO • unlimited", "PRO • безліміт"));
-    const normalized = normalizeFreeQuota(quota, SHIELD_FREE_DAILY_LIMIT);
+    const normalized = normalizeFreeQuota(quota, FREE_DAILY_LIMIT);
     return tx(
       "shield.quota.pillFree",
       pickLang(currentLang, `FREE • ${normalized.used}/${normalized.limit} проверок`, `FREE • ${normalized.used}/${normalized.limit} checks`, `FREE • ${normalized.used}/${normalized.limit} перевірок`),
-      { used: normalized.used, limit: normalized.limit, left: normalized.left }
+      { used: normalized.used, limit: normalized.limit }
     );
   }, [isPro, quota, currentLang, tx]);
-
-  const freeInfoText = useMemo(() => {
-    return tx(
-      "shield.freeInfo",
-      pickLang(
-        currentLang,
-        "FREE показывает главный вердикт, ключевые сигналы, основные источники и мнение сообщества.",
-        "FREE shows the main verdict, key signals, main sources, and community opinion."
-      )
-    );
-  }, [tx, currentLang]);
-
-  const proTeaserItems = useMemo(
-    () => [
-      tx("shield.proTeaser.items.0", pickLang(currentLang, "Больше деталей по источникам", "Deeper source details")),
-      tx("shield.proTeaser.items.1", pickLang(currentLang, "Полный data-heavy интерфейс", "Full data-heavy interface")),
-      tx("shield.proTeaser.items.2", pickLang(currentLang, "Безлимитные проверки", "Unlimited scans")),
-    ],
-    [tx, currentLang]
-  );
 
   const shareMessage = useMemo(() => {
     if (!normalizedReport) return "";
@@ -1586,32 +1522,6 @@ export default function Shield() {
     const effectiveUid = await getBestKnownUid(effectiveUser, installUid, accessToken || "");
     const stableUserId = String(effectiveUid || uid || installUid || "anonymous").trim() || "anonymous";
 
-    // shield_quota_precheck
-    if (!isPro) {
-      const q = await loadShieldQuotaLocal();
-
-      setQuota({
-        used: q.used,
-        limit: SHIELD_FREE_DAILY_LIMIT,
-        left: Math.max(0, SHIELD_FREE_DAILY_LIMIT - q.used),
-        dayKey: q.day,
-      });
-
-      if (q.used >= SHIELD_FREE_DAILY_LIMIT) {
-        setQuotaBlocked(true);
-        setQuotaMsg(
-          tx(
-            "shield.quota.exceeded",
-            pickLang(currentLang, "FREE лимит 4 проверки в день достигнут. PRO убирает лимиты.", "FREE limit of 4 checks per day reached. PRO removes limits.")
-          )
-        );
-        setShowQuotaModal(false);
-        return;
-      }
-
-      setQuotaBlocked(false);
-    }
-
     logEvent("scan_submitted", { screen: "shield", lang: currentLang, has_input: true, kind: detectKind(value) });
 
     setLoading(true);
@@ -1647,17 +1557,11 @@ export default function Shield() {
 
       const serverQuota = backend?.quota || null;
 
-      if (serverQuota && !isPro) {
-        const normalized = normalizeFreeQuota(serverQuota, SHIELD_FREE_DAILY_LIMIT);
-
-        setQuota(normalized);
-
-        setQuotaBlocked(normalized.left <= 0 || normalized.used >= normalized.limit);
-      }
+      if (serverQuota) applyServerQuota(serverQuota);
 
       if (res.status === 429) {
         const msg =
-          backend?.detail ||
+          backend?.detail?.message || backend?.detail ||
           tx(
             "shield.quota.exceeded",
             pickLang(currentLang, "FREE лимит 4 проверки в день достигнут. PRO убирает лимиты.", "FREE limit of 4 checks per day reached. PRO removes limits.")
@@ -1665,7 +1569,6 @@ export default function Shield() {
 
         setQuotaMsg(String(msg));
         setShowQuotaModal(false);
-        setQuotaBlocked(true);
         return;
       }
 
@@ -1676,34 +1579,8 @@ export default function Shield() {
       const final = normalizeScanReport(backend, currentLang);
       setReport(final);
 
-      if (isPro) {
-        setQuota({ used: 0, limit: SHIELD_FREE_DAILY_LIMIT, left: SHIELD_FREE_DAILY_LIMIT, dayKey: shieldTodayKey() });
-        setQuotaBlocked(false);
-        setShowQuotaModal(false);
-      } else if (serverQuota) {
-        const normalized = normalizeFreeQuota(serverQuota, SHIELD_FREE_DAILY_LIMIT);
-
-        setQuota({ ...normalized, dayKey: normalized.dayKey || shieldTodayKey() });
-
-        setQuotaBlocked(normalized.left <= 0 || normalized.used >= normalized.limit);
-      } else {
-        const q = await loadShieldQuotaLocal();
-        const next = {
-          day: q.day,
-          used: Math.min(SHIELD_FREE_DAILY_LIMIT, q.used + 1),
-        };
-
-        await saveShieldQuotaLocal(next);
-
-        setQuota({
-          used: next.used,
-          limit: SHIELD_FREE_DAILY_LIMIT,
-          left: Math.max(0, SHIELD_FREE_DAILY_LIMIT - next.used),
-          dayKey: next.day,
-        });
-
-        setQuotaBlocked(next.used >= SHIELD_FREE_DAILY_LIMIT);
-      }
+      if (serverQuota) applyServerQuota(serverQuota);
+      setShowQuotaModal(false);
 
       const title =
         final?.kind === "url" || final?.kind === "domain"
@@ -2086,7 +1963,7 @@ export default function Shield() {
             <View style={{ flex: 1 }}>
               <PrimaryButton
                 onPress={onCheck}
-                disabled={loading || quotaBlocked}
+                disabled={loading}
                 title={loading ? tx("shield.buttons.checking", "Checking…") : tx("shield.buttons.check", pickLang(currentLang, "Проверить", "Check"))}
                 leftIcon={loading ? <ActivityIndicator color={T.accentText} /> : <Ionicons name="shield-checkmark" size={18} color={T.accentText} />}
               />
@@ -2209,49 +2086,6 @@ export default function Shield() {
               </View>
             </BlurCard>
 
-            {false && (
-              <>
-            <UxRiskBlock report={normalizedReport} currentLang={currentLang} tx={tx} />
-
-            <BlurCard>
-              <Text style={{ color: T.text, fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
-                {tx("shield.summary.title", pickLang(currentLang, "Главные сигналы", "Top signals"))}
-              </Text>
-
-              {topEvidence.length ? (
-                topEvidence.map((ev, i) => <TopSignalRow key={`top-ev-${i}`} item={ev} currentLang={currentLang} />)
-              ) : (
-                <Text style={{ color: T.dim }}>
-                  {tx("shield.summary.empty", pickLang(currentLang, "Критических сигналов не найдено.", "No critical signals were found."))}
-                </Text>
-              )}
-            </BlurCard>
-
-            <BackendIntelCard report={normalizedReport} currentLang={currentLang} tx={tx} />
-
-            <BlurCard>
-              <Text style={{ color: T.text, fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
-                {tx("shield.sources.title", pickLang(currentLang, "Источники проверки", "Verification sources"))}
-              </Text>
-
-              {((compactSources || []).length > 0 && normalizedReport?.kind !== "transaction") ? (
-                compactSources.map((src, idx) => (
-                  <CompactSourceRow key={`${src?.name || "src"}-${idx}`} item={src} currentLang={currentLang} />
-                ))
-              ) : (
-                <Text style={{ color: T.dim }}>
-                  {(normalizedReport?.permissions_summary?.can_spend === true)
-                    ? (currentLang === "ru"
-                        ? "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a: \u0430\u043d\u0430\u043b\u0438\u0437 \u0442\u0440\u0430\u043d\u0437\u0430\u043a\u0446\u0438\u0438 (EVM decoder)"
-                        : "Source: transaction analysis (EVM decoder)")
-                    : tx("shield.sources.empty", pickLang(currentLang, "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a\u0438 \u0434\u043b\u044f \u044d\u0442\u043e\u0439 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u043f\u043e\u043a\u0430 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b.", "No sources are available for this check yet."))}
-                </Text>
-              )}
-            </BlurCard>
-
-              </>
-            )}
-
             <BlurCard>
               <Text style={{ color: T.text, fontWeight: "900", fontSize: 16, marginBottom: 10 }}>
                 {tx("shield.community.title", pickLang(currentLang, "Вердикт сообщества", "Community verdict"))}
@@ -2317,161 +2151,6 @@ export default function Shield() {
               </View>
             </BlurCard>
           </>
-        )}
-        {false && (
-        <>
-        <BlurCard style={{ borderColor: "rgba(255,176,32,0.28)" }}>
-          <Text style={{ color: T.text, fontWeight: "900", fontSize: 18, marginBottom: 8 }}>
-            {tx("shield.proBlock.title", pickLang(currentLang, "Почему PRO важен", "Why PRO matters"))}
-          </Text>
-
-          <Text style={{ color: T.dim, lineHeight: 20, marginBottom: 12 }}>
-            {tx(
-              "shield.proBlock.subtitle",
-              pickLang(
-                currentLang,
-                "FREE даёт быстрый полезный вердикт. PRO открывает больше глубины, больше деталей и работает без лимитов.",
-                "FREE gives a fast useful verdict. PRO unlocks more depth, more details, and works without limits."
-              )
-            )}
-          </Text>
-
-          {proTeaserItems.map((item, i) => (
-            <Text key={`pro-teaser-${i}`} style={{ color: T.text, marginBottom: 8, lineHeight: 18 }}>
-              - {item}
-            </Text>
-          ))}
-
-          <View style={{ marginTop: 8 }}>
-            <PrimaryButton
-              onPress={openPro}
-              title={
-                isPro
-                  ? tx("shield.proBlock.buttonPro", pickLang(currentLang, "Перейти в PRO", "Go to PRO"))
-                  : tx("shield.proBlock.buttonBuy", pickLang(currentLang, "Открыть PRO", "Open PRO"))
-              }
-              leftIcon={<Ionicons name={isPro ? "arrow-forward" : "flash"} size={18} color={T.accentText} />}
-            />
-          </View>
-        </BlurCard>
-
-        <BlurCard>
-          <Text style={{ color: T.text, fontWeight: "900", marginBottom: 8, fontSize: 18 }}>
-            {tx("shield.compare.title", "FREE vs PRO")}
-          </Text>
-
-          <Text style={{ color: T.dim, marginBottom: 10, lineHeight: 18 }}>
-            {tx(
-              "shield.compare.subtitle",
-              pickLang(currentLang, "Сравнение FREE и PRO возможностей.", "Compare what’s in FREE vs what unlocks in PRO.")
-            )}
-          </Text>
-
-          <View
-            style={{
-              borderWidth: 1,
-              borderColor: T.border,
-              borderRadius: 18,
-              padding: 12,
-              backgroundColor: "rgba(255,255,255,0.02)",
-            }}
-          >
-            <View
-              style={{
-                flexDirection: "row",
-                paddingVertical: 6,
-                borderBottomWidth: 1,
-                borderBottomColor: "rgba(255,255,255,0.06)",
-                marginBottom: 4,
-              }}
-            >
-              <Text style={{ flex: 2, color: T.dim, fontWeight: "900", fontSize: 12 }}>
-                {tx("shield.compare.header.feature", pickLang(currentLang, "Функция", "Feature"))}
-              </Text>
-              <Text style={{ flex: 1, color: T.dim, fontWeight: "900", fontSize: 12, textAlign: "center" }}>
-                {tx("shield.compare.header.free", "FREE")}
-              </Text>
-              <Text style={{ flex: 1, color: T.dim, fontWeight: "900", fontSize: 12, textAlign: "center" }}>
-                {tx("shield.compare.header.pro", "PRO")}
-              </Text>
-            </View>
-
-            {[
-              {
-                k: "fastVerdict",
-                name: tx("shield.compare.rows.fastVerdict", pickLang(currentLang, "Быстрый вердикт", "Fast verdict")),
-                free: true,
-                pro: true,
-              },
-              {
-                k: "mainSignals",
-                name: tx("shield.compare.rows.mainSignals", pickLang(currentLang, "Главные риск-сигналы", "Top risk signals")),
-                free: true,
-                pro: true,
-              },
-              {
-                k: "communityVote",
-                name: tx("shield.compare.rows.communityVote", pickLang(currentLang, "SAFE / SCAM голосование", "SAFE / SCAM voting")),
-                free: true,
-                pro: true,
-              },
-              {
-                k: "deepDetails",
-                name: tx("shield.compare.rows.deepDetails", pickLang(currentLang, "Глубокие детали данных", "Deep data details")),
-                free: false,
-                pro: true,
-              },
-              {
-                k: "dataHeavyUI",
-                name: tx("shield.compare.rows.dataHeavyUI", pickLang(currentLang, "Расширенный data-heavy интерфейс", "Extended data-heavy interface")),
-                free: false,
-                pro: true,
-              },
-              {
-                k: "unlimited",
-                name: tx("shield.compare.rows.unlimited", pickLang(currentLang, "Безлимитные проверки", "Unlimited scans")),
-                free: false,
-                pro: true,
-              },
-            ].map((row) => (
-              <View
-                key={row.k}
-                style={{
-                  flexDirection: "row",
-                  paddingVertical: 10,
-                  borderTopWidth: 1,
-                  borderTopColor: "rgba(255,255,255,0.04)",
-                }}
-              >
-                <Text style={{ flex: 2, color: T.text, fontSize: 13, lineHeight: 18 }}>{row.name}</Text>
-                <Text style={{ flex: 1, textAlign: "center", fontSize: 14, fontWeight: "900", color: row.free ? T.good : T.bad }}>
-                  {row.free ? "✅" : "❌"}
-                </Text>
-                <Text style={{ flex: 1, textAlign: "center", fontSize: 14, fontWeight: "900", color: row.pro ? T.good : T.bad }}>
-                  {row.pro ? "✅" : "❌"}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </BlurCard>
-
-        <BlurCard>
-          <Text style={{ color: T.text, fontWeight: "900", marginBottom: 8, fontSize: 18 }}>
-            {tx("shield.howItWorks.title", pickLang(currentLang, "Как это работает", "How it works"))}
-          </Text>
-
-          <Text style={{ color: T.dim, lineHeight: 20 }}>
-            {tx(
-              "shield.howItWorks.text",
-              pickLang(
-                currentLang,
-                "1) Вставь URL / домен / адрес / контракт / тикер / текст.\n2) FREE показывает главный вердикт, ключевые сигналы и основные статусы источников.\n3) Backend возвращает локализованный вердикт, статус и evidence под выбранный язык.\n4) Вердикт сообщества и SAFE / SCAM голосование работают на этой странице.",
-                "1) Paste a URL / domain / address / contract / ticker / text.\n2) FREE shows the main verdict, key signals, and main source statuses.\n3) The backend returns localized verdict/status/evidence for the selected language.\n4) Community verdict and SAFE / SCAM voting also work on this page."
-              )
-            )}
-          </Text>
-        </BlurCard>
-        </>
         )}
       </ScrollView>
 

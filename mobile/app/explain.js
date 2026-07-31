@@ -1087,12 +1087,6 @@ export default function Explain() {
               </BlurView>
             </View>
 
-            <View style={[cardChrome(18), { marginTop: 12 }]}>
-              <BlurView intensity={24} tint="dark" style={{ padding: 16 }}>
-                <Text style={s.cardTitle}>{safeT(t, "explain.howTitle", "")}</Text>
-                <Text style={s.cardText}>{howText}</Text>
-              </BlurView>
-            </View>
             {!!error && (
               <View style={[cardChrome(16), { marginTop: 12 }]}>
                 <BlurView intensity={24} tint="dark" style={{ padding: 14 }}>
@@ -1396,17 +1390,6 @@ export default function Explain() {
                   </TouchableOpacity>
                 </View>
 
-                <View style={{ marginTop: 14 }}>
-                  <Text style={s.compareBlockTitle}>
-                    {safeT(t, "explain.compareTitle", "")}
-                  </Text>
-
-                  <Text style={s.compareBlockSubtitle}>
-                    {safeT(t, "explain.compareHint", "PRO")}
-                  </Text>
-
-                  <CompareTable t={t} />
-                </View>
               </BlurView>
             </View>
 
@@ -1528,76 +1511,6 @@ function MiniSparkline({ candles }) {
           />
         );
       })}
-    </View>
-  );
-}
-
-function CompareTable({ t }) {
-  const headFeature = safeT(t, "explain.compareFeature", "Feature");
-  const headFree = safeT(t, "explain.compareFree", "FREE");
-  const headPro = safeT(t, "explain.comparePro", "PRO");
-
-  const rows = [
-    {
-      label: safeT(t, "explain.compareF1", "Market snapshot (trend/risk/momentum)"),
-      free: true,
-      pro: true,
-    },
-    {
-      label: safeT(t, "explain.compareF2", "Indicators (EMA/RSI/ATR) + swing levels"),
-      free: true,
-      pro: true,
-    },
-    {
-      label: safeT(t, "explain.compareF3", "Favorites + recents"),
-      free: true,
-      pro: true,
-    },
-    {
-      label: safeT(t, "explain.compareF4", "Entry zone + stop + targets (scenarios)"),
-      free: false,
-      pro: true,
-    },
-    {
-      label: safeT(t, "explain.compareF5", "Checklist (risk/news/liquidity) for discipline"),
-      free: false,
-      pro: true,
-    },
-    {
-      label: safeT(t, "explain.compareF6", "History of PRO sessions"),
-      free: false,
-      pro: true,
-    },
-    {
-      label: safeT(t, "explain.compareF7", "Compare tickers inside PRO"),
-      free: false,
-      pro: true,
-    },
-  ];
-
-  return (
-    <View style={s.compareBlockOuter}>
-      <View style={s.compareTableCardClone}>
-        <View style={s.compareHeadClone}>
-          <Text style={s.compareHeadFeatureClone}>{headFeature}</Text>
-          <Text style={s.compareHeadCellClone}>{headFree}</Text>
-          <Text style={s.compareHeadCellClone}>{headPro}</Text>
-        </View>
-
-        {rows.map((row) => (
-          <View key={row.label} style={s.compareRowClone}>
-            <Text style={s.compareLabelClone}>{row.label}</Text>
-
-            <Text style={[s.compareValueClone, { color: row.free ? C.green : C.red }]}>
-              {row.free ? "✓" : "✕"}
-            </Text>
-
-            <Text style={[s.compareValueClone, { color: row.pro ? C.green : C.red }]}>
-              {row.pro ? "✓" : "✕"}
-            </Text>
-          </View>
-        ))}
-      </View>
     </View>
   );
 }

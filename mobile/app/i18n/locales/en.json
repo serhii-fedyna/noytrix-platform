@@ -180,7 +180,10 @@
       "memberSince": "Member since",
       "rankLabel": "Rank",
       "trustLabel": "Trust",
-      "activityLabel": "Activity"
+      "activityLabel": "Activity",
+      "ranks": {
+        "explorer": "Explorer"
+      }
     },
     "pro": {
       "features": {
@@ -463,8 +466,7 @@
       "title": "FREE limit",
       "text": "FREE → 4 analyses per day (UTC)\nThe 5th is blocked\nPRO → unlimited",
       "ok": "OK",
-      "goPro": "Go PRO",
-      "freeLeft": "FREE • {{used}}/{{limit}} • {{left}} left"
+      "goPro": "Go PRO"
     },
     "copy": {
       "copied": "Copied",
@@ -520,7 +522,7 @@
       "title": "No server data"
     },
     "quota": {
-      "pillFree": "FREE • {{used}}/{{limit}} today • {{left}} left",
+      "pillFree": "FREE • {{used}}/{{limit}} checks",
       "pillPro": "PRO • unlimited",
       "title": "FREE limit reached",
       "exceeded": "Daily FREE limit reached. Upgrade to PRO for unlimited.",

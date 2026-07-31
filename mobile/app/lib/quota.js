@@ -12,7 +12,9 @@ export function normalizeFreeQuota(raw = {}, fallbackLimit = FREE_DAILY_LIMIT) {
   const requestedLimit = asWholeNumber(raw?.freeLimit ?? raw?.limit, allowedLimit);
   const limit = requestedLimit > 0 && requestedLimit <= allowedLimit ? requestedLimit : allowedLimit;
   const used = Math.min(limit, asWholeNumber(raw?.used, 0));
-  const left = Math.min(limit, asWholeNumber(raw?.left, Math.max(0, limit - used)));
+  // `used` is authoritative. Deriving the remainder prevents stale or legacy
+  // values such as 999999 from ever appearing on a FREE account.
+  const left = Math.max(0, limit - used);
 
   return {
     used,

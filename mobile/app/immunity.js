@@ -2050,27 +2050,6 @@ ${uri}`,
           </View>
         </BlurCard>
 
-        {false && (
-          <>
-        <InfoCard
-          title={isRu ? "Зачем нужен Immunity" : "Why Immunity exists"}
-          text={
-            isRu
-              ? "Immunity оценивает логику входа, риск, горизонт и рынок. Он помогает не входить на эмоциях."
-              : "Immunity evaluates your entry logic, risk, horizon, behavior and market context. It helps avoid FOMO and discipline mistakes."
-          }
-        />
-
-        <InfoCard
-          title={isRu ? "Как использовать" : "How to use"}
-          text={
-            isRu
-              ? "1) Найди пару. 2) Открой монету. 3) Проверь факты. 4) Запусти Risk Engine."
-              : "1) Search and open a pair. 2) Check facts. 3) Run Risk Engine. 4) Follow the concrete plan."
-          }
-        />
-          </>
-        )}
       </ScrollView>
 
       <Modal visible={coinOpen} animationType="slide" transparent>

@@ -27,7 +27,9 @@ i18n.use(initReactI18next).init({
   resources,
 
   lng: initialLanguage,
-  fallbackLng: "en",
+  // Never switch a Ukrainian or Russian screen into English because a key is
+  // missing. Locale parity is checked in CI instead.
+  fallbackLng: false,
   supportedLngs: ["en", "ru", "uk"],
 
   ignoreJSONStructure: true,
@@ -40,15 +42,14 @@ i18n.use(initReactI18next).init({
   interpolation: { escapeValue: false },
 
   
-  saveMissing: true,
+  saveMissing: false,
   missingKeyHandler: (lngs, ns, key) => {
     const lng = Array.isArray(lngs) ? lngs[0] : lngs;
-    
-    console.log(`[i18n-missing] ${lng}:${ns}:${key}`);
+    if (typeof __DEV__ !== "undefined" && __DEV__) console.warn(`[i18n-missing] ${lng}:${ns}:${key}`);
   },
 
   
-  parseMissingKeyHandler: (key) => key,
+  parseMissingKeyHandler: () => "",
 });
 
 export default i18n;
