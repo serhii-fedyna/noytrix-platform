@@ -7,6 +7,7 @@ from typing import Any, Iterable, Optional
 
 from identity import find_user_ids, resolve_user_id
 from product_analytics import record_product_event_safe
+from admin_telegram import notify_subscription_event
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -791,8 +792,10 @@ def sync_google_play_purchase(
             subscription_id=sub_id if active else (int(fallback_active["id"]) if fallback_active else sub_id),
         )
     status_norm = str(status or "").lower()
-    event_id = f"google_play:{purchase_token}:{order_id or 'no_order'}:{status_norm or 'unknown'}"
-    if purchase_event_exists(provider, event_id) is None:
+    cancel_marker = str(data.get("cancelReason") if data.get("cancelReason") is not None else "none")
+    event_id = f"google_play:{purchase_token}:{order_id or 'no_order'}:{status_norm or 'unknown'}:{cancel_marker}"
+    is_new_purchase_event = purchase_event_exists(provider, event_id) is None
+    if is_new_purchase_event:
         record_purchase_event(
             user_id=user_id,
             provider=provider,
@@ -805,6 +808,15 @@ def sync_google_play_purchase(
             original_transaction_id=original,
             environment=environment,
             raw=data,
+        )
+        notify_subscription_event(
+            event_key=event_id,
+            user_id=user_id,
+            provider=provider,
+            event_type="CANCELLATION" if cancel_marker != "none" else "GOOGLE_PLAY_VERIFY",
+            status=status,
+            product_id=product_id,
+            expires_at=expires_at,
         )
     analytics_event = (
         "purchase_completed"
@@ -1017,6 +1029,15 @@ def process_revenuecat_webhook(payload: dict) -> dict:
             "environment": environment,
         },
     })
+    notify_subscription_event(
+        event_key=event_id,
+        user_id=user_id,
+        provider="revenuecat",
+        event_type=event_type,
+        status=status,
+        product_id=product_id,
+        expires_at=expires_at,
+    )
     return {
         "ok": True,
         "duplicate": False,

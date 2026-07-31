@@ -82,6 +82,8 @@ from scamshield.url_intel.visual_phishing import analyze_visual_phishing
 from scamshield.url_intel.advanced_intel import analyze_advanced_url_intel
 from scamshield.url_intel.fusion import build_url_intelligence
 from identity import resolve_from_request, resolve_user_id
+from product_analytics import record_product_event_safe
+from admin_telegram import daily_scan_summary_loop, notify_critical_error
 from subscriptions import (
     entitlement_status,
     entitlement_status_for_user,
@@ -7080,6 +7082,7 @@ async def scan(
             },
         )
 
+    scan_started_at = time.perf_counter()
     try:
         data = await security_analyze_core({
             "input": target,
@@ -7140,6 +7143,21 @@ async def scan(
         except Exception as e:
             print("[profile] scan track error:", e)
 
+        record_product_event_safe({
+            "event_id": f"backend_scan:{time.time_ns()}",
+            "user_id": identity_uid or uid,
+            "platform": "backend",
+            "event_name": "scan_completed",
+            "source": "backend_scan",
+            "properties": {
+                "kind": data.get("kind"),
+                "level": data.get("level"),
+                "score": data.get("score"),
+                "is_pro": pro,
+                "response_time_ms": round((time.perf_counter() - scan_started_at) * 1000),
+            },
+        })
+
         # === NEW: UX blocks for frontend / extension ===
         data["what_can_happen"] = data.get("what_can_happen") or "This interaction may be risky."
         data["worst_case"] = data.get("worst_case") or "You could lose funds if the interaction is malicious."
@@ -7156,6 +7174,17 @@ async def scan(
         raise
     except Exception as e:
         print("[scan] fatal error:", e)
+        record_product_event_safe({
+            "event_id": f"backend_scan_failed:{time.time_ns()}",
+            "user_id": identity_uid or uid,
+            "platform": "backend",
+            "event_name": "scan_failed",
+            "source": "backend_scan",
+            "properties": {
+                "response_time_ms": round((time.perf_counter() - scan_started_at) * 1000),
+                "kind": "unknown",
+            },
+        })
         raise HTTPException(status_code=500, detail=tr(L, "scan_failed"))
 
 app.include_router(create_community_router(
@@ -8117,6 +8146,7 @@ async def startup_event():
         asyncio.create_task(calendar_reminders_loop())
         asyncio.create_task(safety_tip_loop())
         asyncio.create_task(reddit_scam_monitor_loop())
+        asyncio.create_task(daily_scan_summary_loop())
         if str(os.getenv("NOYTRIX_THREAT_COLLECTORS", "1")).strip().lower() not in {"0", "false", "no", "off"}:
             asyncio.create_task(autonomous_collector_loop())
         init_threat_memory()
@@ -8138,9 +8168,16 @@ async def startup_event():
 async def catch_exceptions_middleware(request: Request, call_next):
     try:
         response = await call_next(request)
+        if response.status_code >= 500:
+            notify_critical_error(
+                path=request.url.path,
+                status_code=response.status_code,
+                error="Server returned an internal error response",
+            )
         return response
     except Exception as e:
         print("[FATAL ERROR]", str(e))
+        notify_critical_error(path=request.url.path, status_code=500, error=e)
         return JSONResponse(
             status_code=500,
             content={

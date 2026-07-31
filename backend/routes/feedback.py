@@ -3,10 +3,12 @@ import json
 import os
 import pathlib
 import smtplib
+import uuid
 from email.message import EmailMessage
 from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException
+from admin_telegram import notify_feedback
 
 
 router = APIRouter()
@@ -98,5 +100,15 @@ async def api_app_feedback(payload: dict = Body(...)):
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as file:
         file.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    notify_feedback(
+        event_key=str(payload.get("eventId") or payload.get("event_id") or uuid.uuid4()),
+        flow=flow,
+        user_id=row["userId"] or row["installUserId"],
+        nps=row["nps"],
+        most_useful=row["mostUseful"],
+        problem=row["problem"],
+        requested_feature=row["requestedFeature"],
+    )
 
     return {"ok": True, "saved": True}

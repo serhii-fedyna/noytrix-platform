@@ -2,6 +2,7 @@
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone, timedelta
+import hashlib
 import os, json, requests
 
 from google.oauth2 import service_account
@@ -19,6 +20,7 @@ from subscriptions import (
     subscription_summary,
     sync_google_play_purchase,
 )
+from admin_telegram import notify_subscription_event
 
 Base.metadata.create_all(bind=engine)
 
@@ -153,7 +155,18 @@ def google_verify(payload: GoogleVerifyIn, current: User = Depends(get_current_u
             detail="This Google Play purchase is already linked to another Noytrix account. Sign in to the account used for the purchase.",
         )
 
-    data = _call_android_publisher(ptype, package_name, product_id, token)
+    try:
+        data = _call_android_publisher(ptype, package_name, product_id, token)
+    except HTTPException as exc:
+        notify_subscription_event(
+            event_key="google_play_verify_error:" + hashlib.sha256(token.encode("utf-8")).hexdigest()[:18],
+            user_id=identity_user_id,
+            provider="google_play",
+            event_type="BILLING_ISSUE",
+            status="verify_error",
+            product_id=product_id,
+        )
+        raise exc
 
     # ===== extract safety fields =====
     order_id = data.get("orderId")

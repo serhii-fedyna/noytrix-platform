@@ -14,6 +14,7 @@ from auth.schemas import (
 from auth.security import hash_password, verify_password, make_access_token, make_refresh_token
 from auth.emailer import send_code_email
 from identity import resolve_user_id
+from admin_telegram import notify_registration
 
 Base.metadata.create_all(bind=engine)
 
@@ -141,7 +142,13 @@ def register_legacy(request: Request, payload: dict = Body(...), db: Session = D
     db.add(user)
     db.commit()
     db.refresh(user)
-    _sync_identity(request, user=user, source="register_legacy")
+    identity_user_id = _sync_identity(request, user=user, source="register_legacy")
+    notify_registration(
+        user_id=identity_user_id,
+        email=user.email,
+        total_users=db.query(User).count(),
+        source="email",
+    )
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)
@@ -217,6 +224,7 @@ def register_verify(request: Request, body: RegisterVerifyReq, db: Session = Dep
         raise HTTPException(status_code=400, detail="Неверный код.")
 
     user = db.query(User).filter(User.email == email).first()
+    created = user is None
     if not user:
         user = User(email=email, email_verified=True, provider="local")
         db.add(user)
@@ -225,7 +233,14 @@ def register_verify(request: Request, body: RegisterVerifyReq, db: Session = Dep
     else:
         user.email_verified = True
         db.commit()
-    _sync_identity(request, user=user, source="register_verify")
+    identity_user_id = _sync_identity(request, user=user, source="register_verify")
+    if created:
+        notify_registration(
+            user_id=identity_user_id,
+            email=user.email,
+            total_users=db.query(User).count(),
+            source="email",
+        )
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)
@@ -387,6 +402,7 @@ def google_login(request: Request, body: GoogleAuthReq, db: Session = Depends(ge
         raise HTTPException(status_code=400, detail="Email не получен от Google")
 
     user = db.query(User).filter(User.email == email).first()
+    created = user is None
     if not user:
         user = User(
             email=email,
@@ -404,7 +420,14 @@ def google_login(request: Request, body: GoogleAuthReq, db: Session = Depends(ge
         if not user.email_verified:
             user.email_verified = True
         db.commit()
-    _sync_identity(request, user=user, google_sub=p.get("sub"), source="google_login")
+    identity_user_id = _sync_identity(request, user=user, google_sub=p.get("sub"), source="google_login")
+    if created:
+        notify_registration(
+            user_id=identity_user_id,
+            email=user.email,
+            total_users=db.query(User).count(),
+            source="Google",
+        )
 
     access = make_access_token(user.id)
     refresh, exp = make_refresh_token(user.id)

@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import admin_telegram
 import subscriptions
 
 
@@ -10,11 +11,15 @@ class SubscriptionGuardTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.previous_path = subscriptions.SUBSCRIPTIONS_DB_PATH
+        self.previous_alerts_path = admin_telegram.ADMIN_ALERTS_DB_PATH
         subscriptions.SUBSCRIPTIONS_DB_PATH = Path(self.temp.name) / "subscriptions.sqlite3"
+        admin_telegram.ADMIN_ALERTS_DB_PATH = Path(self.temp.name) / "admin_telegram.sqlite3"
         subscriptions.init_subscriptions_db()
+        admin_telegram.init_admin_telegram_db()
 
     def tearDown(self):
         subscriptions.SUBSCRIPTIONS_DB_PATH = self.previous_path
+        admin_telegram.ADMIN_ALERTS_DB_PATH = self.previous_alerts_path
         self.temp.cleanup()
 
     def test_store_token_cannot_move_between_accounts(self):
@@ -54,6 +59,35 @@ class SubscriptionGuardTests(unittest.TestCase):
         finally:
             conn.close()
         self.assertEqual(1, count)
+
+    def test_google_cancellation_creates_a_separate_audit_event(self):
+        base_payload = {"orderId": "GPA.cancel", "purchaseTimeMillis": "1710000000000"}
+        subscriptions.sync_google_play_purchase(
+            user_id="account-a",
+            product_type="subs",
+            product_id="pro_access",
+            purchase_token="token-cancel",
+            data=base_payload,
+            active=True,
+            status="active",
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
+        subscriptions.sync_google_play_purchase(
+            user_id="account-a",
+            product_type="subs",
+            product_id="pro_access",
+            purchase_token="token-cancel",
+            data={**base_payload, "cancelReason": 0},
+            active=True,
+            status="active",
+            expires_at="2099-01-01T00:00:00+00:00",
+        )
+        conn = sqlite3.connect(subscriptions.SUBSCRIPTIONS_DB_PATH)
+        try:
+            count = conn.execute("SELECT COUNT(1) FROM purchase_events WHERE purchase_token='token-cancel'").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(2, count)
 
     def test_non_pro_product_does_not_grant_pro(self):
         subscriptions.sync_google_play_purchase(
