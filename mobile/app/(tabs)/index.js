@@ -364,12 +364,12 @@ function formatSourceName(name, lang) {
     virustotal: "VirusTotal",
     google_safe_browsing: "Google Safe Browsing",
     urlscan: "urlscan",
-    page_fetch: pickLang(lang, "Анализ страницы", "Page analysis"),
+    page_fetch: pickLang(lang, "Анализ страницы", "Page analysis", "Аналіз сторінки"),
     etherscan: "Etherscan",
     bscscan: "BscScan",
     dexscreener: "DexScreener",
     coingecko: "CoinGecko",
-    text_heuristics: pickLang(lang, "Анализ текста", "Text analysis"),
+    text_heuristics: pickLang(lang, "Анализ текста", "Text analysis", "Аналіз тексту"),
     honeypot: "Honeypot",
   };
   return map[name] || safeText(name);
@@ -393,38 +393,38 @@ function sourceStatusBg(status) {
 
 function formatSourceStatusText(status, item, lang) {
   const s = String(status || "").toLowerCase();
-  if (s === "clean") return pickLang(lang, "Чисто", "Clean");
-  if (s === "malicious") return pickLang(lang, "Опасно", "Malicious");
-  if (s === "no_data") return pickLang(lang, "Нет данных", "No data");
-  if (s === "timeout") return pickLang(lang, "Таймаут", "Timeout");
-  if (s === "quota") return pickLang(lang, "Лимит", "Limit");
-  if (s === "invalid_key") return pickLang(lang, "Нет ключа", "No key");
-  if (s === "error") return pickLang(lang, "Ошибка", "Error");
+  if (s === "clean") return pickLang(lang, "Чисто", "Clean", "Чисто");
+  if (s === "malicious") return pickLang(lang, "Опасно", "Malicious", "Небезпечно");
+  if (s === "no_data") return pickLang(lang, "Нет данных", "No data", "Немає даних");
+  if (s === "timeout") return pickLang(lang, "Таймаут", "Timeout", "Час очікування минув");
+  if (s === "quota") return pickLang(lang, "Лимит", "Limit", "Ліміт");
+  if (s === "invalid_key") return pickLang(lang, "Нет ключа", "No key", "Немає ключа");
+  if (s === "error") return pickLang(lang, "Ошибка", "Error", "Помилка");
 
   const rawStatusText = String(item?.status_text || "").trim();
   if (rawStatusText && rawStatusText.length < 40) return rawStatusText;
-  return pickLang(lang, "Недоступно", "Unavailable");
+  return pickLang(lang, "Недоступно", "Unavailable", "Недоступно");
 }
 
 function prettyTitleFromCode(code, lang) {
   const map = {
-    vt_detection: pickLang(lang, "Внешний источник нашёл угрозу", "External threat flags"),
-    gsb_match: pickLang(lang, "Google подтвердил угрозу", "Google confirmed a threat"),
-    seed_phrase_request: pickLang(lang, "Запрос seed phrase", "Seed phrase request"),
-    private_key_request: pickLang(lang, "Запрос private key", "Private key request"),
-    wallet_connect_prompt: pickLang(lang, "Запрос подключения кошелька", "Wallet connect prompt"),
-    claim_prompt: pickLang(lang, "Агрессивный claim prompt", "Aggressive claim prompt"),
-    airdrop_language: pickLang(lang, "Подозрительный airdrop текст", "Suspicious airdrop wording"),
-    verify_wallet_prompt: pickLang(lang, "Запрос верификации кошелька", "Wallet verification request"),
-    fake_support_language: pickLang(lang, "Похоже на fake support", "Fake support signs"),
-    wallet_import_prompt: pickLang(lang, "Запрос импорта кошелька", "Wallet import prompt"),
-    wallet_drainer_hint: pickLang(lang, "Признаки drainer", "Drainer warning signs"),
-    brand_spoofing: pickLang(lang, "Риск подделки бренда", "Brand spoofing risk"),
-    brand_impersonation: pickLang(lang, "Имитация бренда", "Brand impersonation"),
-    redirect_to_different_host: pickLang(lang, "Редирект на другой домен", "Redirect to different domain"),
-    honeypot_detected: pickLang(lang, "Высокий sell-risk", "High sell-risk detected"),
-    ticker_found: pickLang(lang, "Тикер найден", "Ticker found"),
-    page_loaded: pickLang(lang, "Страница загружена", "Page loaded"),
+    vt_detection: pickLang(lang, "Внешний источник нашёл угрозу", "External threat flags", "Зовнішнє джерело виявило загрозу"),
+    gsb_match: pickLang(lang, "Google подтвердил угрозу", "Google confirmed a threat", "Google підтвердив загрозу"),
+    seed_phrase_request: pickLang(lang, "Запрос секретной фразы", "Seed phrase request", "Запит секретної фрази"),
+    private_key_request: pickLang(lang, "Запрос приватного ключа", "Private key request", "Запит приватного ключа"),
+    wallet_connect_prompt: pickLang(lang, "Запрос подключения кошелька", "Wallet connect prompt", "Запит на підключення гаманця"),
+    claim_prompt: pickLang(lang, "Агрессивный призыв получить награду", "Aggressive claim prompt", "Агресивний запит на отримання"),
+    airdrop_language: pickLang(lang, "Подозрительный текст об аирдропе", "Suspicious airdrop wording", "Підозрілий текст про аірдроп"),
+    verify_wallet_prompt: pickLang(lang, "Запрос верификации кошелька", "Wallet verification request", "Запит на верифікацію гаманця"),
+    fake_support_language: pickLang(lang, "Похоже на фальшивую поддержку", "Fake support signs", "Ознаки фальшивої підтримки"),
+    wallet_import_prompt: pickLang(lang, "Запрос импорта кошелька", "Wallet import prompt", "Запит на імпорт гаманця"),
+    wallet_drainer_hint: pickLang(lang, "Признаки кражи средств", "Drainer warning signs", "Ознаки крадія коштів"),
+    brand_spoofing: pickLang(lang, "Риск подделки бренда", "Brand spoofing risk", "Ризик підробки бренду"),
+    brand_impersonation: pickLang(lang, "Имитация бренда", "Brand impersonation", "Імітація бренду"),
+    redirect_to_different_host: pickLang(lang, "Редирект на другой домен", "Redirect to different domain", "Перенаправлення на інший домен"),
+    honeypot_detected: pickLang(lang, "Высокий sell-risk", "High sell-risk detected", "Високий ризик неможливості продажу"),
+    ticker_found: pickLang(lang, "Тикер найден", "Ticker found", "Тикер знайдено"),
+    page_loaded: pickLang(lang, "Страница загружена", "Page loaded", "Сторінку завантажено"),
   };
 
   if (map[code]) return map[code];
@@ -433,26 +433,26 @@ function prettyTitleFromCode(code, lang) {
     .replace(/_/g, " ")
     .replace(/\b\w/g, (m) => m.toUpperCase());
 
-  return pretty || pickLang(lang, "Сигнал", "Signal");
+  return pretty || pickLang(lang, "Сигнал", "Signal", "Сигнал");
 }
 
 function prettyEvidenceText(item, lang) {
   const code = String(item?.code || "").trim();
 
   const map = {
-    seed_phrase_request: pickLang(lang, "Объект запрашивает seed phrase. Это сильный признак скама.", "The object asks for a seed phrase. This is a strong scam signal."),
-    private_key_request: pickLang(lang, "Объект запрашивает private key. Это критический риск.", "The object asks for a private key. This is a critical risk."),
-    wallet_connect_prompt: pickLang(lang, "Есть активный призыв подключить кошелёк. Будь осторожен.", "There is a strong wallet connection prompt. Be careful."),
-    brand_spoofing: pickLang(lang, "Домен похож на известный бренд, но не совпадает с официальным адресом.", "The domain looks like a known brand but does not match the official address."),
-    vt_detection: pickLang(lang, "Один из внешних движков отметил объект как опасный.", "One of the external engines flagged this object as dangerous."),
-    gsb_match: pickLang(lang, "Google Safe Browsing подтвердил угрозу.", "Google Safe Browsing confirmed a threat."),
-    page_loaded: pickLang(lang, "Страница была загружена и проверена по содержанию.", "The page was loaded and analyzed by content."),
-    honeypot_detected: pickLang(lang, "Есть признаки, что продажа может быть ограничена.", "There are signs that selling may be restricted."),
+    seed_phrase_request: pickLang(lang, "Объект запрашивает секретную фразу. Это сильный признак скама.", "The object asks for a seed phrase. This is a strong scam signal.", "Об'єкт запитує секретну фразу. Це сильна ознака шахрайства."),
+    private_key_request: pickLang(lang, "Объект запрашивает приватный ключ. Это критический риск.", "The object asks for a private key. This is a critical risk.", "Об'єкт запитує приватний ключ. Це критичний ризик."),
+    wallet_connect_prompt: pickLang(lang, "Есть активный призыв подключить кошелёк. Будь осторожен.", "There is a strong wallet connection prompt. Be careful.", "Є активний заклик підключити гаманець. Будьте обережні."),
+    brand_spoofing: pickLang(lang, "Домен похож на известный бренд, но не совпадает с официальным адресом.", "The domain looks like a known brand but does not match the official address.", "Домен схожий на відомий бренд, але не збігається з офіційною адресою."),
+    vt_detection: pickLang(lang, "Один из внешних движков отметил объект как опасный.", "One of the external engines flagged this object as dangerous.", "Один зі зовнішніх механізмів позначив об'єкт як небезпечний."),
+    gsb_match: pickLang(lang, "Google Safe Browsing подтвердил угрозу.", "Google Safe Browsing confirmed a threat.", "Google Safe Browsing підтвердив загрозу."),
+    page_loaded: pickLang(lang, "Страница была загружена и проверена по содержанию.", "The page was loaded and analyzed by content.", "Сторінку завантажено та перевірено за вмістом."),
+    honeypot_detected: pickLang(lang, "Есть признаки, что продажа может быть ограничена.", "There are signs that selling may be restricted.", "Є ознаки, що продаж може бути обмежений."),
   };
 
   if (map[code]) return map[code];
   if (item?.text && typeof item.text === "string" && item.text.trim()) return item.text;
-  return pickLang(lang, "Детали доступны в полном разборе.", "More details are available in the full report.");
+  return pickLang(lang, "Детали доступны в полном разборе.", "More details are available in the full report.", "Деталі доступні у повному звіті.");
 }
 
 function normalizeScanReport(raw, currentLang) {
@@ -494,22 +494,22 @@ function explainBackendMessage(raw, lang) {
   const s = String(raw || "").toLowerCase();
 
   if (s.includes("429") || s.includes("quota") || s.includes("limit")) {
-    return pickLang(lang, "FREE лимит на сегодня уже использован. PRO убирает лимиты.", "Your free daily checks are already used. PRO removes limits.");
+    return pickLang(lang, "FREE лимит на сегодня уже использован. PRO убирает лимиты.", "Your free daily checks are already used. PRO removes limits.", "Безкоштовний ліміт на сьогодні вже використано. PRO прибирає ліміти.");
   }
   if (s.includes("403") || s.includes("forbidden") || s.includes("app key")) {
-    return pickLang(lang, "Проверка временно недоступна из-за ограничения доступа.", "The check is currently unavailable because of access restrictions.");
+    return pickLang(lang, "Проверка временно недоступна из-за ограничения доступа.", "The check is currently unavailable because of access restrictions.", "Перевірка тимчасово недоступна через обмеження доступу.");
   }
   if (s.includes("network request failed") || s.includes("failed to fetch") || s.includes("fetch")) {
-    return pickLang(lang, "Не удалось подключиться к серверу. Проверь интернет.", "Could not reach the server. Check your connection.");
+    return pickLang(lang, "Не удалось подключиться к серверу. Проверь интернет.", "Could not reach the server. Check your connection.", "Не вдалося підключитися до сервера. Перевірте інтернет-з'єднання.");
   }
   if (s.includes("timeout") || s.includes("aborted")) {
-    return pickLang(lang, "Сервер слишком долго отвечает. Попробуй ещё раз.", "The server took too long to respond. Try again.");
+    return pickLang(lang, "Сервер слишком долго отвечает. Попробуй ещё раз.", "The server took too long to respond. Try again.", "Сервер надто довго відповідає. Спробуйте ще раз.");
   }
   if (s.includes("invalid json")) {
-    return pickLang(lang, "Сервер вернул неполный ответ. Запусти проверку ещё раз.", "The server returned an incomplete response. Try again.");
+    return pickLang(lang, "Сервер вернул неполный ответ. Запусти проверку ещё раз.", "The server returned an incomplete response. Try again.", "Сервер повернув неповну відповідь. Запустіть перевірку ще раз.");
   }
 
-  return pickLang(lang, "Проверку не удалось завершить. Попробуй ещё раз.", "The check could not be completed. Try again.");
+  return pickLang(lang, "Проверку не удалось завершить. Попробуй ещё раз.", "The check could not be completed. Try again.", "Не вдалося завершити перевірку. Спробуйте ще раз.");
 }
 
 const SAMPLES = [
@@ -1085,7 +1085,7 @@ export default function Home() {
                   NOYTRIX
                 </Text>
                 <Text style={{ color: C.dim, fontWeight: "800", fontSize: 14, marginTop: 5, textAlign: "left" }} numberOfLines={1}>
-                  {TT("home.new.subtitle", "Crypto protection before you click", "Крипто-защита до клика")}
+                  {TT("home.new.subtitle", "Crypto protection before you click", "Крипто-защита до клика", "Криптозахист до натискання")}
                 </Text>
               </View>
 
@@ -1279,7 +1279,7 @@ export default function Home() {
               {[
                 { icon: "link-outline", en: "Phishing links and fake domains", ru: "Фишинговые ссылки и фейковые домены", uk: "Фішингові посилання та фейкові домени" },
                 { icon: "wallet-outline", en: "Wallets, contracts and Web3 risks", ru: "Кошельки, контракты и Web3-риски", uk: "Гаманці, контракти та Web3-ризики" },
-                { icon: "warning-outline", en: "Seed phrase, drainer and fake support signals", ru: "Seed phrase, drainer и fake support сигналы", uk: "Seed phrase, drainer і сигнали fake support" },
+                { icon: "warning-outline", en: "Seed phrase, drainer and fake support signals", ru: "Запрос секретной фразы, признаки кражи средств и фейковой поддержки", uk: "Запити секретної фрази, ознаки крадіжки коштів і фальшивої підтримки" },
               ].map((x, i) => (
                 <View key={`benefit-${i}`} style={{ flexDirection: "row", alignItems: "center", borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, padding: 12, backgroundColor: "rgba(255,255,255,0.03)", marginBottom: 10 }}>
                   <Ionicons name={x.icon} size={19} color={C.accent} style={{ marginRight: 10 }} />
@@ -1378,15 +1378,15 @@ export default function Home() {
             <Text style={{ color: C.dim, fontSize: 12, textAlign: "center", lineHeight: 18 }}>
               © 2025 Noytrix •{" "}
               <Text onPress={() => Linking.openURL("https://noytrix.com/privacy")} style={{ textDecorationLine: "underline", color: C.text, fontWeight: "800" }}>
-                {TT("home.footer.privacy", "Privacy Policy", "Политика конфиденциальности")}
+                {TT("home.footer.privacy", "Privacy Policy", "Политика конфиденциальности", "Політика конфіденційності")}
               </Text>{" "}
               •{" "}
               <Text onPress={() => Linking.openURL("https://noytrix.com/terms")} style={{ textDecorationLine: "underline", color: C.text, fontWeight: "800" }}>
-                {TT("home.footer.terms", "Terms of Use", "Условия использования")}
+                {TT("home.footer.terms", "Terms of Use", "Условия использования", "Умови використання")}
               </Text>{" "}
               •{" "}
               <Text onPress={() => Linking.openURL("https://noytrix.com/disclaimer")} style={{ textDecorationLine: "underline", color: C.text, fontWeight: "800" }}>
-                {TT("home.footer.disclaimer", "Disclaimer", "Отказ от ответственности")}
+                {TT("home.footer.disclaimer", "Disclaimer", "Отказ от ответственности", "Відмова від відповідальності")}
               </Text>
             </Text>
           </View>
@@ -1406,18 +1406,18 @@ export default function Home() {
           <Pressable onPress={() => setShowQuotaModal(false)} style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.45)" }}>
             <LinearGradient colors={[GRAD.start, GRAD.mid, GRAD.end]} style={{ borderRadius: 22, padding: 16, borderWidth: 1, borderColor: "rgba(255,176,32,0.35)" }}>
               <Text style={{ color: C.text, fontWeight: "900", marginBottom: 10, fontSize: 19, textAlign: "center" }}>
-                {TT("home.new.limitTitle", "FREE LIMIT REACHED", "FREE ЛИМИТ ДОСТИГНУТ")}
+                {TT("home.new.limitTitle", "FREE LIMIT REACHED", "FREE ЛИМИТ ДОСТИГНУТ", "FREE ЛІМІТ ВИЧЕРПАНО")}
               </Text>
               <Text style={{ color: C.dim, lineHeight: 20, marginBottom: 14, textAlign: "center" }}>
-                {quotaMsg || TT("home.new.limitText", "FREE daily limit reached. PRO removes limits.", "FREE лимит на сегодня использован. PRO убирает лимиты.")}
+                {quotaMsg || TT("home.new.limitText", "FREE daily limit reached. PRO removes limits.", "FREE лимит на сегодня использован. PRO убирает лимиты.", "Безкоштовний ліміт на сьогодні використано. PRO прибирає ліміти.")}
               </Text>
               <View style={{ flexDirection: "row" }}>
                 <View style={{ flex: 1 }}>
-                  <PrimaryButton title={TT("home.new.limitPro", "OPEN PRO", "ОТКРЫТЬ PRO")} onPress={() => { setShowQuotaModal(false); router.push("/pro"); }} />
+                  <PrimaryButton title={TT("home.new.limitPro", "OPEN PRO", "ОТКРЫТЬ PRO", "ВІДКРИТИ PRO")} onPress={() => { setShowQuotaModal(false); router.push("/pro"); }} />
                 </View>
                 <View style={{ width: 10 }} />
                 <View style={{ flex: 1 }}>
-                  <SecondaryButton title={TT("home.new.limitOk", "OK", "ОК")} onPress={() => setShowQuotaModal(false)} />
+                  <SecondaryButton title={TT("home.new.limitOk", "OK", "ОК", "ГАРАЗД")} onPress={() => setShowQuotaModal(false)} />
                 </View>
               </View>
             </LinearGradient>
@@ -1429,7 +1429,7 @@ export default function Home() {
         <Pressable onPress={() => setShowSamples(false)} style={{ flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.45)" }}>
           <LinearGradient colors={[GRAD.start, GRAD.mid, GRAD.end]} style={{ borderRadius: 22, padding: 16, borderWidth: 1, borderColor: C.border }}>
             <Text style={{ color: C.text, fontWeight: "900", marginBottom: 12, fontSize: 17, textAlign: "center" }}>
-              {TT("home.new.samplesTitle", "SAMPLES", "ПРИМЕРЫ")}
+              {TT("home.new.samplesTitle", "SAMPLES", "ПРИМЕРЫ", "ПРИКЛАДИ")}
             </Text>
 
             {SAMPLES.map((s, i) => (

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTranslation } from "react-i18next";
+import ViewShot from "react-native-view-shot";
 
 import { BACKEND } from "../lib/backend";
 import { getAuthState } from "../lib/authApi";
@@ -41,6 +42,12 @@ function riskColor(level) {
   return String(level || "").toLowerCase() === "critical" ? UI.danger : UI.accent;
 }
 
+function riskLabel(level, t) {
+  const value = String(level || "risk").toLowerCase();
+  const key = ["critical", "danger", "suspicious", "medium", "safe"].includes(value) ? value : "risk";
+  return t(`scamOfDay.levels.${key}`);
+}
+
 function dateLocale(language) {
   return language === "uk" ? "uk-UA" : language === "ru" ? "ru-RU" : "en-US";
 }
@@ -54,7 +61,9 @@ export default function ScamOfDay({ mode = "today", signalId = "", embedded = fa
   const [selected, setSelected] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [sharingItem, setSharingItem] = useState(null);
   const openedSignal = useRef("");
+  const shareCardRef = useRef(null);
 
   const identity = useCallback(async () => {
     const state = await getAuthState().catch(() => null);
@@ -152,11 +161,19 @@ export default function ScamOfDay({ mode = "today", signalId = "", embedded = fa
 
   const share = useCallback(
     async (item) => {
-      await shareImagePremium({
-        title: "Noytrix",
-        dialogTitle: t("scamOfDay.share"),
-        message: t("scamOfDay.shareText", { target: item?.target || "Noytrix", risk: item?.risk_level || "risk" }),
-      });
+      if (!item) return;
+      setSharingItem(item);
+      try {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        await shareImagePremium({
+          title: "Noytrix",
+          dialogTitle: t("scamOfDay.share"),
+          message: t("scamOfDay.shareText", { target: item.target || "Noytrix", risk: riskLabel(item.risk_level, t) }),
+          capture: () => shareCardRef.current?.capture?.(),
+        });
+      } finally {
+        setSharingItem(null);
+      }
     },
     [t]
   );
@@ -214,7 +231,7 @@ export default function ScamOfDay({ mode = "today", signalId = "", embedded = fa
                   <Text style={{ color: UI.accent, marginTop: 5, fontWeight: "800" }} numberOfLines={2}>{item.target}</Text>
                 </View>
                 <View style={{ borderRadius: 999, borderWidth: 1, borderColor: riskColor(item.risk_level), paddingHorizontal: 9, paddingVertical: 5 }}>
-                  <Text style={{ color: riskColor(item.risk_level), fontWeight: "900", fontSize: 12 }}>{String(item.risk_level || "risk").toUpperCase()}</Text>
+                  <Text style={{ color: riskColor(item.risk_level), fontWeight: "900", fontSize: 12 }}>{riskLabel(item.risk_level, t).toUpperCase()}</Text>
                 </View>
               </View>
               <Text style={{ color: UI.dim, lineHeight: 20, marginTop: 9 }}>{item.summary}</Text>
@@ -257,6 +274,33 @@ export default function ScamOfDay({ mode = "today", signalId = "", embedded = fa
           </View>
         </View>
       </Modal>
+
+      {sharingItem && (
+        <View pointerEvents="none" style={{ position: "absolute", left: -10000, top: -10000 }}>
+          <ViewShot ref={shareCardRef} options={{ format: "png", quality: 1, result: "tmpfile" }}>
+            <View style={{ width: 900, minHeight: 1120, padding: 54, backgroundColor: "#07102D", borderWidth: 3, borderColor: riskColor(sharingItem.risk_level) }}>
+              <Text style={{ color: UI.accent, fontSize: 40, fontWeight: "900", letterSpacing: 1 }}>NOYTRIX</Text>
+              <View style={{ height: 1, backgroundColor: "rgba(233,238,255,0.18)", marginVertical: 28 }} />
+              <Text style={{ color: UI.dim, fontSize: 22, fontWeight: "800", letterSpacing: 1 }}>{t("scamOfDay.shareCardKicker").toUpperCase()}</Text>
+              <Text style={{ color: riskColor(sharingItem.risk_level), fontSize: 54, lineHeight: 61, fontWeight: "900", marginTop: 12 }}>
+                {riskLabel(sharingItem.risk_level, t).toUpperCase()}
+              </Text>
+              <Text style={{ color: UI.text, fontSize: 34, lineHeight: 43, fontWeight: "900", marginTop: 24 }} numberOfLines={3}>
+                {sharingItem.target || sharingItem.title || "Noytrix"}
+              </Text>
+              <View style={{ height: 14, borderRadius: 99, backgroundColor: riskColor(sharingItem.risk_level), marginTop: 28 }} />
+              <View style={{ marginTop: 34, padding: 28, borderRadius: 18, borderWidth: 1, borderColor: "rgba(233,238,255,0.18)", backgroundColor: "rgba(255,255,255,0.05)" }}>
+                <Text style={{ color: UI.dim, fontSize: 20, fontWeight: "800", marginBottom: 13 }}>{t("scamOfDay.shareCardSummary")}</Text>
+                <Text style={{ color: UI.text, fontSize: 27, lineHeight: 37 }}>{sharingItem.summary}</Text>
+              </View>
+              <Text style={{ color: UI.dim, fontSize: 19, lineHeight: 28, marginTop: 36 }}>{t("scamOfDay.shareCardFooter")}</Text>
+              <Text style={{ color: "rgba(233,238,255,0.58)", fontSize: 17, marginTop: 34 }}>
+                {sharingItem.detected_at ? new Date(sharingItem.detected_at).toLocaleDateString(dateLocale(language)) : ""}  |  Noytrix ScamShield
+              </Text>
+            </View>
+          </ViewShot>
+        </View>
+      )}
     </View>
   );
 }

@@ -1672,6 +1672,17 @@
     "sourceNote": "Noytrix checks this signal against its security engine before showing the investigation.",
     "share": "Share scam signal",
     "shareText": "Noytrix warning: {{target}} was marked {{risk}}. Check before you connect, approve, sign or send.",
+    "shareCardKicker": "Scam warning",
+    "shareCardSummary": "What Noytrix found",
+    "shareCardFooter": "Check the target before you connect a wallet, approve a transaction, sign or send funds.",
+    "levels": {
+      "critical": "Critical risk",
+      "danger": "Danger",
+      "suspicious": "Suspicious",
+      "medium": "Medium risk",
+      "safe": "Low risk",
+      "risk": "Risk warning"
+    },
     "errors": {
       "load": "Scam signals are temporarily unavailable. Please try again.",
       "analysis": "The full AI investigation is temporarily unavailable. Please try again shortly.",
