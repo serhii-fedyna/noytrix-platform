@@ -369,6 +369,73 @@ def _count_recent_critical_errors(start_utc: datetime, end_utc: datetime) -> int
         conn.close()
 
 
+def _event_identity(row: sqlite3.Row, *, prefer_anonymous: bool = False) -> str:
+    """Return one stable identity for a metric without counting repeats."""
+    values = (
+        (row["anonymous_id"], row["user_id"])
+        if prefer_anonymous
+        else (row["user_id"], row["anonymous_id"])
+    )
+    for value in values:
+        identity = str(value or "").strip()
+        if identity:
+            return identity
+    return ""
+
+
+def _payment_funnel_for_day(start_utc: datetime, end_utc: datetime) -> dict[str, int]:
+    metrics = {
+        "paywall_viewed": 0,
+        "purchase_started": 0,
+        "purchase_completed": 0,
+        "purchase_cancelled": 0,
+        "purchase_failed": 0,
+    }
+    analytics_path = product_analytics.ANALYTICS_DB_PATH
+    if not analytics_path.exists():
+        return metrics
+
+    users = {name: set() for name in metrics}
+    conn = sqlite3.connect(analytics_path, timeout=20)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """
+            SELECT event_name, user_id, anonymous_id
+            FROM product_events
+            WHERE event_name IN ('paywall_viewed', 'purchase_started', 'purchase_completed',
+                                 'purchase_cancelled', 'purchase_failed')
+              AND event_time>=? AND event_time<?
+            """,
+            (start_utc.isoformat(), end_utc.isoformat()),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    for row in rows:
+        identity = _event_identity(row)
+        if identity:
+            users[row["event_name"]].add(identity)
+    return {name: len(items) for name, items in users.items()}
+
+
+def _total_unique_installs() -> int:
+    """Count each known installation once, preferring its anonymous install ID."""
+    analytics_path = product_analytics.ANALYTICS_DB_PATH
+    if not analytics_path.exists():
+        return 0
+
+    conn = sqlite3.connect(analytics_path, timeout=20)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            "SELECT user_id, anonymous_id FROM product_events WHERE event_name='app_first_open'"
+        ).fetchall()
+    finally:
+        conn.close()
+    return len({identity for row in rows if (identity := _event_identity(row, prefer_anonymous=True))})
+
+
 def build_daily_scan_summary(report_day: date | None = None) -> tuple[str, dict[str, Any]]:
     tz = _timezone()
     local_day = report_day or datetime.now(tz).date()
@@ -412,6 +479,8 @@ def build_daily_scan_summary(report_day: date | None = None) -> tuple[str, dict[
 
     total = completed + failed
     error_count = _count_recent_critical_errors(start_utc, end_utc)
+    payment_funnel = _payment_funnel_for_day(start_utc, end_utc)
+    total_unique_installs = _total_unique_installs()
     message = (
         f"📊 Noytrix — сводка за {local_day.strftime('%d.%m.%Y')}\n\n"
         f"Всего сканов: {total}\n"
@@ -426,10 +495,21 @@ def build_daily_scan_summary(report_day: date | None = None) -> tuple[str, dict[
         f"🚨 Опасных объектов найдено: {dangerous}\n"
         f"⚠️ Критических ошибок сервера: {error_count}"
     )
+    message += (
+        f"\n\n💳 PRO за этот день (уникальные пользователи)\n"
+        f"Открыли экран PRO: {payment_funnel['paywall_viewed']}\n"
+        f"Начали оплату: {payment_funnel['purchase_started']}\n"
+        f"Успешно купили: {payment_funnel['purchase_completed']}\n"
+        f"Отменили оплату: {payment_funnel['purchase_cancelled']}\n"
+        f"Ошибка оплаты: {payment_funnel['purchase_failed']}\n\n"
+        f"📱 Уникальных установок за всё время: {total_unique_installs}"
+    )
     return message, {
         "day": local_day.isoformat(), "total": total, "completed": completed,
         "failed": failed, "dangerous": dangerous, "unique_users": len(unique_users),
         "counts": counts, "critical_errors": error_count,
+        "payment_funnel": payment_funnel,
+        "total_unique_installs": total_unique_installs,
     }
 
 

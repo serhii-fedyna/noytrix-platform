@@ -79,6 +79,39 @@ class AdminTelegramTests(unittest.TestCase):
         self.assertEqual(summary["counts"]["wallets"], 1)
         self.assertEqual(summary["counts"]["tokens"], 0)
 
+    def test_daily_summary_includes_unique_payment_funnel_and_total_installs(self):
+        day = date(2026, 7, 31)
+        events = (
+            ("install-one", "app_first_open", "user-1", "device-1"),
+            ("install-repeat", "app_first_open", "user-1", "device-1"),
+            ("install-two", "app_first_open", "user-2", "device-2"),
+            ("paywall-one", "paywall_viewed", "user-1", "device-1"),
+            ("start-one", "purchase_started", "user-1", "device-1"),
+            ("start-repeat", "purchase_started", "user-1", "device-1"),
+            ("completed-one", "purchase_completed", "user-1", "device-1"),
+            ("cancelled-one", "purchase_cancelled", "user-2", "device-2"),
+            ("failed-one", "purchase_failed", "user-3", "device-3"),
+        )
+        for event_id, event_name, user_id, anonymous_id in events:
+            product_analytics.record_product_event({
+                "event_id": event_id,
+                "event_name": event_name,
+                "event_time": f"{day.isoformat()}T12:00:00+00:00",
+                "user_id": user_id,
+                "anonymous_id": anonymous_id,
+            })
+
+        message, summary = admin_telegram.build_daily_scan_summary(day)
+        self.assertEqual(summary["total_unique_installs"], 2)
+        self.assertEqual(summary["payment_funnel"], {
+            "paywall_viewed": 1,
+            "purchase_started": 1,
+            "purchase_completed": 1,
+            "purchase_cancelled": 1,
+            "purchase_failed": 1,
+        })
+        self.assertIn("Уникальных установок за всё время: 2", message)
+
     @patch("admin_telegram.urlopen")
     def test_delivery_uses_telegram_only_when_enabled(self, mocked_open):
         mocked_open.return_value.__enter__.return_value.read.return_value = b'{"ok": true, "result": {"message_id": 12}}'
