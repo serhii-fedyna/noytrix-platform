@@ -1,0 +1,123 @@
+from __future__ import annotations
+
+import json
+import re
+from html.parser import HTMLParser
+from pathlib import Path
+from typing import Any
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:  # Keep the discovery worker usable in minimal deployments.
+    BeautifulSoup = None
+
+
+BUSINESS_LOCAL_PARTS = {"hello", "contact", "partnerships", "partner", "business", "sales", "bd", "support", "info", "team"}
+EMAIL_RE = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}(?![\w.-])", re.I)
+
+
+class _MinimalHtmlCollector(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.title = ""
+        self.description = ""
+        self.text_parts: list[str] = []
+        self.links: list[tuple[str, str]] = []
+        self._in_title = False
+        self._link_href: str | None = None
+        self._link_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key.lower(): value or "" for key, value in attrs}
+        if tag.lower() == "title":
+            self._in_title = True
+        elif tag.lower() == "meta" and values.get("name", "").lower() == "description":
+            self.description = values.get("content", "")
+        elif tag.lower() == "meta" and values.get("property", "").lower() == "og:description" and not self.description:
+            self.description = values.get("content", "")
+        elif tag.lower() == "a" and values.get("href"):
+            self._link_href = values["href"]
+            self._link_text = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self._in_title = False
+        elif tag.lower() == "a" and self._link_href:
+            self.links.append((self._link_href, " ".join(self._link_text)))
+            self._link_href = None
+            self._link_text = []
+
+    def handle_data(self, data: str) -> None:
+        self.text_parts.append(data)
+        if self._in_title:
+            self.title += data
+        if self._link_href:
+            self._link_text.append(data)
+
+
+def load_sources(path: Path) -> list[dict[str, Any]]:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, list):
+        raise ValueError("brain sources must be a list")
+    result = []
+    for item in raw:
+        url = str(item.get("url") or "").strip()
+        if not url.startswith("https://"):
+            continue
+        result.append({
+            "source_key": str(item.get("source_key") or urlparse(url).netloc).lower(),
+            "name": str(item.get("name") or urlparse(url).netloc),
+            "url": url,
+            "category": str(item.get("category") or "web3"),
+            "source_type": str(item.get("source_type") or "website"),
+        })
+    return result
+
+
+def _clean(value: str, limit: int) -> str:
+    return " ".join(str(value or "").split())[:limit]
+
+
+def fetch_public_source(url: str, timeout: int = 12) -> dict[str, Any]:
+    request = Request(url, headers={"User-Agent": "NoytrixBrain/0.1 (+https://noytrix.com)"})
+    with urlopen(request, timeout=timeout) as response:
+        body = response.read(700_000)
+        final_url = str(response.geturl() or url)
+        content_type = str(response.headers.get("Content-Type") or "")
+    if "html" not in content_type.lower() and b"<html" not in body[:400].lower():
+        raise ValueError("source did not return HTML")
+    html = body.decode("utf-8", errors="ignore")
+    if BeautifulSoup is not None:
+        soup = BeautifulSoup(html, "html.parser")
+        title = _clean((soup.title.string if soup.title else "") or "", 240)
+        desc_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", attrs={"property": "og:description"})
+        description = _clean(desc_tag.get("content", "") if desc_tag else "", 800)
+        text = _clean(soup.get_text(" ", strip=True), 8000)
+        raw_links = [(str(node.get("href") or "").strip(), _clean(node.get_text(" ", strip=True), 100).lower()) for node in soup.select("a[href]")]
+    else:
+        collector = _MinimalHtmlCollector()
+        collector.feed(html)
+        title = _clean(collector.title, 240)
+        description = _clean(collector.description, 800)
+        text = _clean(" ".join(collector.text_parts), 8000)
+        raw_links = [(href.strip(), _clean(label, 100).lower()) for href, label in collector.links]
+    emails = sorted({item.lower() for item in EMAIL_RE.findall(text) if item.split("@", 1)[0].lower() in BUSINESS_LOCAL_PARTS})
+    links = []
+    for href, label in raw_links:
+        if href.startswith("mailto:"):
+            email = href.split(":", 1)[1].split("?", 1)[0].strip().lower()
+            if email and email.split("@", 1)[0] in BUSINESS_LOCAL_PARTS:
+                emails.append(email)
+        elif href.startswith("http") and any(word in label or word in href.lower() for word in ("partner", "contact", "api", "developer", "docs")):
+            links.append(href[:1000])
+    return {
+        "url": final_url,
+        "domain": urlparse(final_url).netloc.lower().removeprefix("www."),
+        "title": title,
+        "description": description,
+        "text": text,
+        "emails": sorted(set(emails)),
+        "relevant_links": sorted(set(links))[:16],
+    }

@@ -1,0 +1,10 @@
+[
+  {"source_key":"metamask","name":"MetaMask","url":"https://metamask.io/","category":"wallet"},
+  {"source_key":"phantom","name":"Phantom","url":"https://phantom.com/","category":"wallet"},
+  {"source_key":"safe","name":"Safe","url":"https://safe.global/","category":"wallet_infrastructure"},
+  {"source_key":"ledger","name":"Ledger","url":"https://www.ledger.com/","category":"wallet_security"},
+  {"source_key":"zerion","name":"Zerion","url":"https://zerion.io/","category":"wallet"},
+  {"source_key":"certik","name":"CertiK","url":"https://www.certik.com/","category":"security"},
+  {"source_key":"elliptic","name":"Elliptic","url":"https://www.elliptic.co/","category":"blockchain_analytics"},
+  {"source_key":"trm","name":"TRM Labs","url":"https://www.trmlabs.com/","category":"blockchain_analytics"}
+]

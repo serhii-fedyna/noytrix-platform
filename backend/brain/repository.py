@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from typing import Any
+
+from .db import connect, now_iso
+
+
+def _json(value: Any) -> str:
+    return json.dumps(value or {}, ensure_ascii=False, separators=(",", ":"))
+
+
+def sync_sources(items: list[dict[str, Any]]) -> None:
+    conn = connect()
+    try:
+        for item in items:
+            conn.execute(
+                """
+                INSERT INTO brain_sources(source_key,name,url,category,source_type,enabled,terms_checked_at,created_at)
+                VALUES(?,?,?,?,?,1,?,?)
+                ON CONFLICT(source_key) DO UPDATE SET
+                  name=excluded.name,url=excluded.url,category=excluded.category
+                """,
+                (item["source_key"], item["name"], item["url"], item["category"], item.get("source_type", "website"), now_iso(), now_iso()),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def active_sources(limit: int) -> list[dict[str, Any]]:
+    conn = connect()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM brain_sources WHERE enabled=1 ORDER BY COALESCE(last_run_at,'') ASC, id ASC LIMIT ?", (limit,)
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def create_run(pipeline: str) -> int:
+    conn = connect()
+    try:
+        cur = conn.execute(
+            "INSERT INTO brain_runs(pipeline,started_at,status) VALUES(?,?,?)", (pipeline, now_iso(), "running")
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def finish_run(run_id: int, *, status: str, sources_checked: int, prospects_seen: int, prospects_qualified: int, drafts_created: int, details: dict[str, Any], error: str | None = None) -> None:
+    conn = connect()
+    try:
+        conn.execute(
+            """UPDATE brain_runs SET finished_at=?,status=?,sources_checked=?,prospects_seen=?,prospects_qualified=?,drafts_created=?,details_json=?,error_text=? WHERE id=?""",
+            (now_iso(), status, sources_checked, prospects_seen, prospects_qualified, drafts_created, _json(details), (error or "")[:800], run_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def mark_source_run(source_id: int) -> None:
+    conn = connect()
+    try:
+        conn.execute("UPDATE brain_sources SET last_run_at=? WHERE id=?", (now_iso(), source_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def upsert_prospect(*, pipeline: str, name: str, domain: str, website_url: str, category: str, summary: str) -> int:
+    conn = connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO brain_prospects(pipeline,name,primary_domain,website_url,category,status,summary,first_seen_at,last_seen_at)
+            VALUES(?,?,?,?,?,'researching',?,?,?)
+            ON CONFLICT(pipeline,primary_domain) DO UPDATE SET
+              name=excluded.name,website_url=excluded.website_url,category=excluded.category,
+              summary=excluded.summary,last_seen_at=excluded.last_seen_at
+            """,
+            (pipeline, name[:180], domain[:255], website_url[:1000], category[:100], summary[:4000], now_iso(), now_iso()),
+        )
+        row = conn.execute("SELECT id FROM brain_prospects WHERE pipeline=? AND primary_domain=?", (pipeline, domain)).fetchone()
+        conn.commit()
+        return int(row["id"])
+    finally:
+        conn.close()
+
+
+def add_evidence(prospect_id: int, *, source_url: str, claim_type: str, excerpt: str, confidence: float = 0.7) -> int | None:
+    clean = " ".join(str(excerpt or "").split())[:1800]
+    if not clean:
+        return None
+    digest = hashlib.sha256(f"{prospect_id}|{source_url}|{claim_type}|{clean}".encode("utf-8")).hexdigest()
+    conn = connect()
+    try:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO brain_evidence(prospect_id,source_url,claim_type,excerpt,captured_at,confidence,evidence_hash)
+               VALUES(?,?,?,?,?,?,?)""",
+            (prospect_id, source_url[:1000], claim_type[:80], clean, now_iso(), max(0, min(1, confidence)), digest),
+        )
+        conn.commit()
+        return int(cur.lastrowid) if cur.rowcount else None
+    finally:
+        conn.close()
+
+
+def add_contact(prospect_id: int, *, email: str, source_url: str, role: str = "business_contact") -> int | None:
+    normalized = email.strip().lower()[:320]
+    if not normalized or is_suppressed(normalized):
+        return None
+    conn = connect()
+    try:
+        conn.execute(
+            """INSERT INTO brain_contacts(prospect_id,email,role,source_url,contact_basis,status,created_at)
+               VALUES(?,?,?,?,?,'available',?)
+               ON CONFLICT(email) DO UPDATE SET prospect_id=excluded.prospect_id,source_url=excluded.source_url,status='available'""",
+            (prospect_id, normalized, role, source_url[:1000], "public_business_contact", now_iso()),
+        )
+        row = conn.execute("SELECT id FROM brain_contacts WHERE email=?", (normalized,)).fetchone()
+        conn.commit()
+        return int(row["id"])
+    finally:
+        conn.close()
+
+
+def is_suppressed(value: str) -> bool:
+    conn = connect()
+    try:
+        return bool(conn.execute("SELECT 1 FROM brain_suppressions WHERE value=? LIMIT 1", (value.strip().lower(),)).fetchone())
+    finally:
+        conn.close()
+
+
+def upsert_opportunity(prospect_id: int, scores: dict[str, Any]) -> int:
+    conn = connect()
+    try:
+        conn.execute(
+            """
+            INSERT INTO brain_opportunities(prospect_id,fit_score,revenue_score,technical_score,timing_score,contact_score,risk_penalty,overall_score,decision,rationale_json,updated_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            ON CONFLICT(prospect_id) DO UPDATE SET
+              fit_score=excluded.fit_score,revenue_score=excluded.revenue_score,technical_score=excluded.technical_score,
+              timing_score=excluded.timing_score,contact_score=excluded.contact_score,risk_penalty=excluded.risk_penalty,
+              overall_score=excluded.overall_score,decision=excluded.decision,rationale_json=excluded.rationale_json,updated_at=excluded.updated_at
+            """,
+            (prospect_id, scores["fit_score"], scores["revenue_score"], scores["technical_score"], scores["timing_score"], scores["contact_score"], scores["risk_penalty"], scores["overall_score"], scores["decision"], _json(scores["rationale"]), now_iso()),
+        )
+        row = conn.execute("SELECT id FROM brain_opportunities WHERE prospect_id=?", (prospect_id,)).fetchone()
+        conn.execute("UPDATE brain_prospects SET status=? WHERE id=?", (scores["decision"], prospect_id))
+        conn.commit()
+        return int(row["id"])
+    finally:
+        conn.close()
+
+
+def evidence_for_prospect(prospect_id: int, limit: int = 12) -> list[dict[str, Any]]:
+    conn = connect()
+    try:
+        return [dict(row) for row in conn.execute(
+            "SELECT * FROM brain_evidence WHERE prospect_id=? ORDER BY confidence DESC, id ASC LIMIT ?", (prospect_id, limit)
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def first_contact(prospect_id: int) -> dict[str, Any] | None:
+    conn = connect()
+    try:
+        row = conn.execute(
+            "SELECT * FROM brain_contacts WHERE prospect_id=? AND status='available' ORDER BY id ASC LIMIT 1", (prospect_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def create_draft(*, opportunity_id: int, contact_id: int, subject: str, body: str, evidence_ids: list[int], model: str | None) -> int | None:
+    conn = connect()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM brain_drafts WHERE opportunity_id=? AND contact_id=? AND status IN ('pending_review','approved','sent') LIMIT 1",
+            (opportunity_id, contact_id),
+        ).fetchone()
+        if existing:
+            return None
+        cur = conn.execute(
+            """INSERT INTO brain_drafts(opportunity_id,contact_id,subject,body,evidence_ids_json,status,model,created_at)
+               VALUES(?,?,?,?,?,'pending_review',?,?)""",
+            (opportunity_id, contact_id, subject[:220], body[:8000], _json(evidence_ids), model or "", now_iso()),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def prospect_snapshot(limit: int = 50) -> list[dict[str, Any]]:
+    conn = connect()
+    try:
+        return [dict(row) for row in conn.execute(
+            """
+            SELECT p.*, o.overall_score, o.decision, o.rationale_json,
+                   (SELECT COUNT(1) FROM brain_evidence e WHERE e.prospect_id=p.id) AS evidence_count,
+                   (SELECT COUNT(1) FROM brain_contacts c WHERE c.prospect_id=p.id) AS contact_count,
+                   (SELECT COUNT(1) FROM brain_drafts d JOIN brain_opportunities od ON od.id=d.opportunity_id WHERE od.prospect_id=p.id) AS draft_count
+            FROM brain_prospects p LEFT JOIN brain_opportunities o ON o.prospect_id=p.id
+            ORDER BY COALESCE(o.overall_score,0) DESC, p.last_seen_at DESC LIMIT ?
+            """, (max(1, min(limit, 200)),)
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def run_snapshot(limit: int = 20) -> list[dict[str, Any]]:
+    conn = connect()
+    try:
+        return [dict(row) for row in conn.execute("SELECT * FROM brain_runs ORDER BY id DESC LIMIT ?", (limit,)).fetchall()]
+    finally:
+        conn.close()

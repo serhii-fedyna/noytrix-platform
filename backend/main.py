@@ -137,6 +137,8 @@ from routes.community import create_community_router
 from routes.immunity import create_immunity_router
 from scamshield.scam_of_day import create_scam_of_day_router, record_scam_of_day_signal
 from push_service import NoytrixPushService, PUSH_LANGS
+from brain.router import router as brain_router
+from brain.scheduler import brain_scheduler_loop
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -221,6 +223,7 @@ app.include_router(company_dashboard_router)
 app.include_router(platform_router)
 app.include_router(feedback_router)
 app.include_router(system_router)
+app.include_router(brain_router)
 
 # =========================================================
 # I18N
@@ -8192,6 +8195,7 @@ async def startup_event():
         asyncio.create_task(safety_tip_loop())
         asyncio.create_task(reddit_scam_monitor_loop())
         asyncio.create_task(daily_scan_summary_loop())
+        asyncio.create_task(brain_scheduler_loop())
         if str(os.getenv("NOYTRIX_THREAT_COLLECTORS", "1")).strip().lower() not in {"0", "false", "no", "off"}:
             asyncio.create_task(autonomous_collector_loop())
         init_threat_memory()
