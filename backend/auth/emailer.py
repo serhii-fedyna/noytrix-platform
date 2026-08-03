@@ -1,5 +1,6 @@
 import os
 import smtplib
+from email.utils import make_msgid
 from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
@@ -33,6 +34,11 @@ def _smtp_config() -> dict:
         "password": smtp_pass,
         "from": mail_from,
     }
+
+
+def outbound_sender_address() -> str:
+    """Expose only the configured From address, never SMTP credentials."""
+    return str(_smtp_config()["from"])
 
 
 def _email_html(code: str, purpose: str) -> str:
@@ -109,7 +115,7 @@ def send_code_email(to_email: str, code: str, purpose: str = "register") -> None
         server.sendmail(cfg["from"], [to_email], msg.as_string())
 
 
-def send_business_email(to_email: str, subject: str, body: str) -> None:
+def send_business_email(to_email: str, subject: str, body: str, *, draft_id: int | None = None) -> str:
     """Send an approved B2B email through the existing server-only SMTP account."""
     cfg = _smtp_config()
     if not cfg["host"] or not cfg["user"] or not cfg["password"]:
@@ -122,7 +128,12 @@ def send_business_email(to_email: str, subject: str, body: str) -> None:
     msg["From"] = f"Noytrix <{cfg['from']}>"
     msg["To"] = recipient
     msg["Reply-To"] = cfg["from"]
+    message_id = make_msgid(idstring=f"noytrix-brain-{int(draft_id or 0)}", domain="noytrix.app")
+    msg["Message-ID"] = message_id
+    if draft_id:
+        msg["X-Noytrix-Brain-Draft-ID"] = str(int(draft_id))
     with smtplib.SMTP(cfg["host"], cfg["port"], timeout=20) as server:
         server.starttls()
         server.login(cfg["user"], cfg["password"])
         server.sendmail(cfg["from"], [recipient], msg.as_string())
+    return message_id

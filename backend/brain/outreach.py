@@ -39,11 +39,16 @@ def send_approved_draft(draft_id: int) -> dict:
     try:
         from auth.emailer import send_business_email
 
-        send_business_email(str(draft["email"]), str(draft["subject"]), str(draft["body"]))
+        message_id = send_business_email(
+            str(draft["email"]),
+            str(draft["subject"]),
+            str(draft["body"]),
+            draft_id=draft_id,
+        )
     except Exception as exc:
         repository.finish_outreach_message(draft_id, sent=False, error=str(exc))
         raise RuntimeError("brain_outreach_delivery_failed") from exc
-    repository.finish_outreach_message(draft_id, sent=True, provider_message_id="smtp")
+    repository.finish_outreach_message(draft_id, sent=True, provider_message_id=message_id)
     return {"status": "sent", "draft_id": draft_id, "prospect": draft["prospect_name"]}
 
 

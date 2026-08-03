@@ -140,6 +140,7 @@ from push_service import NoytrixPushService, PUSH_LANGS
 from brain.router import router as brain_router
 from brain.scheduler import brain_scheduler_loop
 from brain.telegram_actions import brain_telegram_actions_loop
+from brain.monitoring import brain_delivery_monitor_loop
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -8198,6 +8199,7 @@ async def startup_event():
         asyncio.create_task(daily_scan_summary_loop())
         asyncio.create_task(brain_scheduler_loop())
         asyncio.create_task(brain_telegram_actions_loop())
+        asyncio.create_task(brain_delivery_monitor_loop())
         if str(os.getenv("NOYTRIX_THREAT_COLLECTORS", "1")).strip().lower() not in {"0", "false", "no", "off"}:
             asyncio.create_task(autonomous_collector_loop())
         init_threat_memory()

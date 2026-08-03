@@ -138,9 +138,21 @@ def init_db() -> None:
               state_value TEXT NOT NULL,
               updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS brain_inbound_replies (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              imap_uid TEXT NOT NULL UNIQUE,
+              draft_id INTEGER REFERENCES brain_drafts(id) ON DELETE SET NULL,
+              kind TEXT NOT NULL DEFAULT 'reply',
+              sender TEXT NOT NULL,
+              subject TEXT NOT NULL DEFAULT '',
+              snippet TEXT NOT NULL DEFAULT '',
+              received_at TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_brain_prospects_status ON brain_prospects(pipeline, status, last_seen_at);
             CREATE INDEX IF NOT EXISTS idx_brain_evidence_prospect ON brain_evidence(prospect_id, captured_at);
             CREATE INDEX IF NOT EXISTS idx_brain_drafts_status ON brain_drafts(status, created_at);
+            CREATE INDEX IF NOT EXISTS idx_brain_inbound_received ON brain_inbound_replies(received_at, kind);
             """
         )
         conn.commit()

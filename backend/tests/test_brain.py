@@ -73,6 +73,31 @@ class BrainTests(unittest.TestCase):
         self.assertLessEqual(manual_score["overall_score"], 70)
         self.assertEqual(manual_score["decision"], "manual_review")
 
+    def test_daily_delivery_summary_counts_only_recorded_facts(self):
+        prospect_id = repository.upsert_prospect(
+            pipeline="noytrix_partnerships", name="Example", domain="example.test",
+            website_url="https://example.test", category="wallet", summary="Example",
+        )
+        contact_id = repository.add_contact(prospect_id, email="partner@example.test", source_url="https://example.test")
+        opportunity_id = repository.upsert_opportunity(prospect_id, {
+            "fit_score": 80, "revenue_score": 70, "technical_score": 75, "timing_score": 65,
+            "contact_score": 70, "risk_penalty": 0, "overall_score": 74,
+            "decision": "automatic_delivery", "rationale": ["evidence"],
+        })
+        draft_id = repository.create_draft(
+            opportunity_id=opportunity_id, contact_id=contact_id, subject="Hello", body="Message body",
+            evidence_ids=[], model="test",
+        )
+        self.assertTrue(repository.record_approval(draft_id, decision="approved", actor="test"))
+        self.assertTrue(repository.start_outreach_message(draft_id, provider="smtp", idempotency_key="summary-test"))
+        repository.finish_outreach_message(draft_id, sent=True, provider_message_id="<summary-test@noytrix.app>")
+        self.assertTrue(repository.record_inbound_reply(
+            imap_uid="1", draft_id=draft_id, kind="reply", sender="partner@example.test",
+            subject="Re: Hello", snippet="Interested", received_at=db.now_iso(),
+        ))
+        summary = repository.outreach_daily_summary(start_at="2000-01-01T00:00:00+00:00", end_at="2100-01-01T00:00:00+00:00")
+        self.assertEqual(summary, {"sent": 1, "failed": 0, "bounced": 0, "replies": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

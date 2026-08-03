@@ -281,6 +281,49 @@ def finish_outreach_message(draft_id: int, *, sent: bool, provider_message_id: s
         conn.close()
 
 
+def record_inbound_reply(*, imap_uid: str, draft_id: int | None, kind: str, sender: str, subject: str, snippet: str, received_at: str) -> bool:
+    """Store each inbound reply or bounce once so reports are auditable."""
+    if kind not in {"reply", "bounce"}:
+        raise ValueError("unsupported_inbound_kind")
+    conn = connect()
+    try:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO brain_inbound_replies(imap_uid,draft_id,kind,sender,subject,snippet,received_at,created_at)
+               VALUES(?,?,?,?,?,?,?,?)""",
+            (imap_uid[:160], draft_id, kind, sender[:320], subject[:500], snippet[:1200], received_at, now_iso()),
+        )
+        if cur.rowcount and kind == "bounce" and draft_id:
+            conn.execute(
+                "UPDATE brain_outreach_messages SET status='bounced', error_text=? WHERE draft_id=?",
+                (snippet[:800], draft_id),
+            )
+        conn.commit()
+        return bool(cur.rowcount)
+    finally:
+        conn.close()
+
+
+def outreach_daily_summary(*, start_at: str, end_at: str) -> dict[str, int]:
+    """Return delivery facts, not inferred recipient inbox placement."""
+    conn = connect()
+    try:
+        sent = int(conn.execute(
+            "SELECT COUNT(*) FROM brain_outreach_messages WHERE status IN ('sent','bounced') AND sent_at>=? AND sent_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        failed = int(conn.execute(
+            "SELECT COUNT(*) FROM brain_outreach_messages WHERE status='failed' AND created_at>=? AND created_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        bounced = int(conn.execute(
+            "SELECT COUNT(*) FROM brain_inbound_replies WHERE kind='bounce' AND received_at>=? AND received_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        replies = int(conn.execute(
+            "SELECT COUNT(*) FROM brain_inbound_replies WHERE kind='reply' AND received_at>=? AND received_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        return {"sent": sent, "failed": failed, "bounced": bounced, "replies": replies}
+    finally:
+        conn.close()
+
+
 def runtime_state(key: str) -> str | None:
     conn = connect()
     try:

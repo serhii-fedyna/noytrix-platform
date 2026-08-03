@@ -9,7 +9,7 @@ from .discovery import fetch_public_source, load_sources
 from .github_discovery import discover_web3_repositories
 from .investor_catalog import sync_public_investor_catalog
 from .outreach import auto_send_draft
-from .reports import notify_auto_delivery, notify_draft_for_approval, notify_partnership_run
+from .reports import notify_draft_for_approval
 from .repository import (
     active_sources,
     add_contact,
@@ -71,10 +71,10 @@ def _create_and_route_draft(*, opportunity_id: int, prospect_id: int, prospect: 
     score = int(scores["overall_score"])
     if score >= auto_send_threshold():
         try:
-            result = auto_send_draft(draft_id)
-            notify_auto_delivery(draft_id=draft_id, prospect_name=str(prospect["name"]), score=score, status=str(result.get("status") or "unknown"))
-        except Exception as exc:
-            notify_auto_delivery(draft_id=draft_id, prospect_name=str(prospect["name"]), score=score, status=f"delivery_failed: {str(exc)[:80]}")
+            auto_send_draft(draft_id)
+        except Exception:
+            # The daily report aggregates delivery failures; the pipeline stays bounded.
+            pass
     else:
         notify_draft_for_approval(draft_id=draft_id, prospect_name=str(prospect["name"]), score=score, email=str(contact["email"]))
     return True
@@ -222,10 +222,8 @@ def run_partnership_pipeline(*, limit: int | None = None) -> dict[str, Any]:
             "investor_source_errors": len(investor_summary.get("errors") or []),
         }
         finish_run(run_id, status=summary["status"], sources_checked=len(sources), prospects_seen=int(summary["prospects_seen"]), prospects_qualified=int(summary["prospects_qualified"]), drafts_created=int(summary["drafts_created"]), details=summary)
-        notify_partnership_run(run_id, summary)
         return {"run_id": run_id, **summary}
     except Exception as exc:
         summary = {"status": "failed", "sources_checked": len(sources), "prospects_seen": seen, "prospects_qualified": qualified, "drafts_created": drafts_created, "errors": errors + [{"source": "pipeline", "error": str(exc)[:300]}]}
         finish_run(run_id, status="failed", sources_checked=len(sources), prospects_seen=seen, prospects_qualified=qualified, drafts_created=drafts_created, details=summary, error=str(exc))
-        notify_partnership_run(run_id, summary)
         return {"run_id": run_id, **summary}

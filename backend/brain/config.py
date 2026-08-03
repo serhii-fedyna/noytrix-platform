@@ -50,3 +50,22 @@ def github_max_results() -> int:
         return max(1, min(30, int(os.getenv("NOYTRIX_BRAIN_GITHUB_MAX_RESULTS", "10"))))
     except ValueError:
         return 10
+
+
+def daily_report_hour() -> int:
+    """Local hour for the concise daily outreach report."""
+    try:
+        return max(0, min(23, int(os.getenv("NOYTRIX_BRAIN_DAILY_REPORT_HOUR", "20"))))
+    except ValueError:
+        return 20
+
+
+def report_timezone() -> str:
+    return str(os.getenv("NOYTRIX_BRAIN_REPORT_TIMEZONE", "Europe/Kyiv")).strip() or "Europe/Kyiv"
+
+
+def inbox_poll_seconds() -> int:
+    try:
+        return max(60, min(3600, int(os.getenv("NOYTRIX_BRAIN_INBOX_POLL_SECONDS", "300"))))
+    except ValueError:
+        return 300
