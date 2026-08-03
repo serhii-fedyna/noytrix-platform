@@ -5,7 +5,7 @@ import re
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
 
 try:
@@ -106,6 +106,7 @@ def fetch_public_source(url: str, timeout: int = 12) -> dict[str, Any]:
     emails = sorted({item.lower() for item in EMAIL_RE.findall(text) if item.split("@", 1)[0].lower() in BUSINESS_LOCAL_PARTS})
     links = []
     for href, label in raw_links:
+        href = urljoin(final_url, href)
         if href.startswith("mailto:"):
             email = href.split(":", 1)[1].split("?", 1)[0].strip().lower()
             if email and email.split("@", 1)[0] in BUSINESS_LOCAL_PARTS:

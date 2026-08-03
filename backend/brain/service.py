@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from urllib.parse import urlparse
 
 from .config import SOURCES_PATH, max_sources_per_run
 from .discovery import fetch_public_source, load_sources
@@ -29,6 +30,23 @@ PIPELINE = "noytrix_partnerships"
 
 def _summary_from_page(page: dict[str, Any]) -> str:
     return str(page.get("description") or page.get("title") or page.get("text") or "")[:1200]
+
+
+def _contact_research_pages(page: dict[str, Any], *, limit: int = 3) -> list[dict[str, Any]]:
+    """Read only a few same-domain public contact/partner pages for evidence."""
+    domain = str(page.get("domain") or "").lower()
+    pages: list[dict[str, Any]] = []
+    for link in page.get("relevant_links", []):
+        parsed = urlparse(str(link))
+        if parsed.netloc.lower().removeprefix("www.") != domain:
+            continue
+        try:
+            pages.append(fetch_public_source(str(link)))
+        except Exception:
+            continue
+        if len(pages) >= limit:
+            break
+    return pages
 
 
 def run_partnership_pipeline(*, limit: int | None = None) -> dict[str, Any]:
@@ -63,10 +81,21 @@ def run_partnership_pipeline(*, limit: int | None = None) -> dict[str, Any]:
                 for email in page.get("emails", [])[:3]:
                     add_contact(prospect_id, email=email, source_url=page["url"])
 
+                research_pages = _contact_research_pages(page)
+                for research_page in research_pages:
+                    if research_page.get("description"):
+                        add_evidence(prospect_id, source_url=research_page["url"], claim_type="public_contact_page", excerpt=research_page["description"], confidence=0.8)
+                    for email in research_page.get("emails", [])[:3]:
+                        add_contact(prospect_id, email=email, source_url=research_page["url"])
+
                 contact = first_contact(prospect_id)
+                research_text = " ".join(
+                    [str(page.get("title") or ""), str(page.get("description") or ""), str(page.get("text") or "")]
+                    + [" ".join((str(item.get("title") or ""), str(item.get("description") or ""), str(item.get("text") or ""))) for item in research_pages]
+                )
                 scores = score_partnership(
                     category=str(source["category"]),
-                    text=" ".join((page.get("title") or "", page.get("description") or "", page.get("text") or "")),
+                    text=research_text,
                     has_business_contact=bool(contact),
                     relevant_links=list(page.get("relevant_links") or []),
                 )
