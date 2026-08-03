@@ -37,7 +37,12 @@ def score_partnership(*, category: str, text: str, has_business_contact: bool, r
 
     risk_penalty = 0
     overall = round(0.30 * fit + 0.20 * technical + 0.20 * revenue + 0.15 * timing + 0.15 * contact - risk_penalty)
-    decision = "ready_for_review" if overall >= 65 and has_business_contact else "researching"
+    if not has_business_contact:
+        decision = "researching"
+    elif overall >= 71:
+        decision = "automatic_delivery"
+    else:
+        decision = "manual_review"
     return {
         "fit_score": fit,
         "revenue_score": revenue,

@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Header, HTTPException, Query
 
 from .config import admin_token, enabled, outreach_enabled
-from .outreach import approve_draft
+from .outreach import approve_draft, reject_draft, send_approved_draft
 from .repository import prospect_snapshot, run_snapshot
 from .service import run_partnership_pipeline
 
@@ -35,7 +35,7 @@ def _decode(item: dict) -> dict:
 
 @router.get("/health")
 def brain_health() -> dict:
-    return {"ok": True, "enabled": enabled(), "outreach_delivery_enabled": outreach_enabled(), "mode": "approval_required"}
+    return {"ok": True, "enabled": enabled(), "outreach_delivery_enabled": outreach_enabled(), "mode": "automatic_over_70_telegram_approval_otherwise"}
 
 
 @router.get("/partnerships")
@@ -67,4 +67,16 @@ def approve(draft_id: int, approved_by: str = "admin", x_brain_admin_token: str 
     _require_admin(x_brain_admin_token)
     if not approve_draft(draft_id, approved_by):
         raise HTTPException(status_code=409, detail="draft_not_pending_review")
-    return {"ok": True, "draft_id": draft_id, "status": "approved", "delivery": "still_disabled_until_provider_rollout"}
+    try:
+        delivery = send_approved_draft(draft_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {"ok": True, "draft_id": draft_id, "status": "approved", "delivery": delivery}
+
+
+@router.post("/drafts/{draft_id}/reject")
+def reject(draft_id: int, rejected_by: str = "admin", x_brain_admin_token: str | None = Header(default=None)) -> dict:
+    _require_admin(x_brain_admin_token)
+    if not reject_draft(draft_id, rejected_by):
+        raise HTTPException(status_code=409, detail="draft_not_pending_review")
+    return {"ok": True, "draft_id": draft_id, "status": "rejected"}

@@ -9,6 +9,7 @@ DATA_DIR = BASE_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 BRAIN_DB_PATH = DATA_DIR / "noytrix_brain.sqlite3"
 SOURCES_PATH = Path(__file__).with_name("sources.json")
+INVESTOR_SOURCES_PATH = Path(__file__).with_name("investor_sources.json")
 
 
 def enabled() -> bool:
@@ -34,4 +35,18 @@ def admin_token() -> str:
 
 
 def outreach_enabled() -> bool:
-    return str(os.getenv("NOYTRIX_BRAIN_OUTREACH_ENABLED", "0")).strip().lower() in {"1", "true", "yes", "on"}
+    return str(os.getenv("NOYTRIX_BRAIN_OUTREACH_ENABLED", "1")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def auto_send_threshold() -> int:
+    try:
+        return max(71, min(100, int(os.getenv("NOYTRIX_BRAIN_AUTO_SEND_THRESHOLD", "71"))))
+    except ValueError:
+        return 71
+
+
+def github_max_results() -> int:
+    try:
+        return max(1, min(30, int(os.getenv("NOYTRIX_BRAIN_GITHUB_MAX_RESULTS", "10"))))
+    except ValueError:
+        return 10

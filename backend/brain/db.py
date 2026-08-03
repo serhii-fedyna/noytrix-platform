@@ -133,6 +133,11 @@ def init_db() -> None:
               created_at TEXT NOT NULL,
               expires_at TEXT
             );
+            CREATE TABLE IF NOT EXISTS brain_runtime_state (
+              state_key TEXT PRIMARY KEY,
+              state_value TEXT NOT NULL,
+              updated_at TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS idx_brain_prospects_status ON brain_prospects(pipeline, status, last_seen_at);
             CREATE INDEX IF NOT EXISTS idx_brain_evidence_prospect ON brain_evidence(prospect_id, captured_at);
             CREATE INDEX IF NOT EXISTS idx_brain_drafts_status ON brain_drafts(status, created_at);

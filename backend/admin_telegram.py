@@ -51,6 +51,7 @@ def init_admin_telegram_db() -> None:
               event_type TEXT NOT NULL,
               message_text TEXT NOT NULL,
               payload_json TEXT NOT NULL DEFAULT '{}',
+              reply_markup_json TEXT NOT NULL DEFAULT '{}',
               status TEXT NOT NULL DEFAULT 'queued',
               attempts INTEGER NOT NULL DEFAULT 0,
               telegram_message_id TEXT,
@@ -60,6 +61,9 @@ def init_admin_telegram_db() -> None:
             )
             """
         )
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(admin_telegram_events)").fetchall()}
+        if "reply_markup_json" not in columns:
+            conn.execute("ALTER TABLE admin_telegram_events ADD COLUMN reply_markup_json TEXT NOT NULL DEFAULT '{}'")
         conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_admin_telegram_events_created ON admin_telegram_events(created_at)"
         )
@@ -106,16 +110,22 @@ def _short_user_id(value: Any) -> str:
     return raw[:10] + ("…" if len(raw) > 10 else "")
 
 
-def _store_event(event_key: str, event_type: str, message: str, payload: dict[str, Any] | None = None) -> int | None:
+def _store_event(
+    event_key: str,
+    event_type: str,
+    message: str,
+    payload: dict[str, Any] | None = None,
+    reply_markup: dict[str, Any] | None = None,
+) -> int | None:
     conn = _connect()
     try:
         cursor = conn.execute(
             """
             INSERT OR IGNORE INTO admin_telegram_events(
-              event_key, event_type, message_text, payload_json, status, created_at
-            ) VALUES(?,?,?,?,?,?)
+              event_key, event_type, message_text, payload_json, reply_markup_json, status, created_at
+            ) VALUES(?,?,?,?,?,?,?)
             """,
-            (event_key[:240], event_type[:80], message[:3900], _safe_json(payload), "queued", _now_iso()),
+            (event_key[:240], event_type[:80], message[:3900], _safe_json(payload), _safe_json(reply_markup), "queued", _now_iso()),
         )
         conn.commit()
         return int(cursor.lastrowid) if cursor.rowcount else None
@@ -131,7 +141,7 @@ def _deliver_event(event_id: int) -> None:
     conn = _connect()
     try:
         row = conn.execute(
-            "SELECT message_text, status FROM admin_telegram_events WHERE id=? LIMIT 1", (event_id,)
+            "SELECT message_text, reply_markup_json, status FROM admin_telegram_events WHERE id=? LIMIT 1", (event_id,)
         ).fetchone()
         if not row or row["status"] == "sent":
             return
@@ -152,12 +162,19 @@ def _deliver_event(event_id: int) -> None:
         if claim.rowcount != 1:
             return
         message = str(row["message_text"] or "")
+        try:
+            reply_markup = json.loads(str(row["reply_markup_json"] or "{}"))
+        except Exception:
+            reply_markup = {}
     finally:
         conn.close()
 
     try:
+        request_payload: dict[str, Any] = {"chat_id": chat_id, "text": message, "disable_web_page_preview": True}
+        if isinstance(reply_markup, dict) and reply_markup:
+            request_payload["reply_markup"] = reply_markup
         body = json.dumps(
-            {"chat_id": chat_id, "text": message, "disable_web_page_preview": True},
+            request_payload,
             ensure_ascii=False,
         ).encode("utf-8")
         request = Request(
@@ -193,10 +210,16 @@ def _deliver_event(event_id: int) -> None:
         print("[admin_telegram] delivery failed:", str(exc)[:180])
 
 
-def queue_admin_notification(event_key: str, event_type: str, message: str, payload: dict[str, Any] | None = None) -> bool:
+def queue_admin_notification(
+    event_key: str,
+    event_type: str,
+    message: str,
+    payload: dict[str, Any] | None = None,
+    reply_markup: dict[str, Any] | None = None,
+) -> bool:
     """Persist once and send in a background thread when configured."""
     try:
-        event_id = _store_event(event_key, event_type, message, payload)
+        event_id = _store_event(event_key, event_type, message, payload, reply_markup)
     except Exception as exc:
         print("[admin_telegram] audit store failed:", str(exc)[:180])
         return False

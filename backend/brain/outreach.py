@@ -1,27 +1,54 @@
 from __future__ import annotations
 
+import hashlib
+
 from . import repository
 from .config import outreach_enabled
-from .db import connect, now_iso
 
 
 def approve_draft(draft_id: int, approved_by: str, note: str = "") -> bool:
-    """Record a human decision. Approval alone never sends a message."""
-    conn = connect()
-    try:
-        row = conn.execute("SELECT id,status FROM brain_drafts WHERE id=?", (draft_id,)).fetchone()
-        if not row or row["status"] != "pending_review":
-            return False
-        conn.execute("INSERT INTO brain_approvals(draft_id,decision,approved_by,note,created_at) VALUES(?,?,?,?,?)", (draft_id, "approved", approved_by[:120], note[:800], now_iso()))
-        conn.execute("UPDATE brain_drafts SET status='approved' WHERE id=?", (draft_id,))
-        conn.commit()
-        return True
-    finally:
-        conn.close()
+    """Record an explicit human approval; delivery is a separate idempotent action."""
+    return repository.record_approval(draft_id, decision="approved", actor=approved_by, note=note)
 
 
-def send_approved_draft(_draft_id: int) -> None:
-    """Outbound delivery is intentionally unavailable until a provider rollout is approved."""
+def reject_draft(draft_id: int, rejected_by: str, note: str = "") -> bool:
+    return repository.record_approval(draft_id, decision="rejected", actor=rejected_by, note=note)
+
+
+def _delivery_key(draft: dict) -> str:
+    raw = f"noytrix-brain|{draft['id']}|{draft['email']}|{draft['subject']}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def send_approved_draft(draft_id: int) -> dict:
+    """Send one approved message once, keeping the complete provider audit in Brain."""
     if not outreach_enabled():
         raise RuntimeError("brain_outreach_delivery_disabled")
-    raise RuntimeError("brain_outreach_provider_not_configured")
+    draft = repository.draft_delivery_snapshot(draft_id)
+    if not draft:
+        raise ValueError("brain_draft_not_found")
+    if draft["status"] == "sent":
+        return {"status": "already_sent", "draft_id": draft_id}
+    if draft["status"] != "approved":
+        raise RuntimeError("brain_draft_not_approved")
+    if draft.get("contact_status") != "available" or repository.is_suppressed(str(draft.get("email") or "")):
+        raise RuntimeError("brain_contact_not_available")
+
+    if not repository.start_outreach_message(draft_id, provider="smtp", idempotency_key=_delivery_key(draft)):
+        return {"status": "already_sent", "draft_id": draft_id}
+    try:
+        from auth.emailer import send_business_email
+
+        send_business_email(str(draft["email"]), str(draft["subject"]), str(draft["body"]))
+    except Exception as exc:
+        repository.finish_outreach_message(draft_id, sent=False, error=str(exc))
+        raise RuntimeError("brain_outreach_delivery_failed") from exc
+    repository.finish_outreach_message(draft_id, sent=True, provider_message_id="smtp")
+    return {"status": "sent", "draft_id": draft_id, "prospect": draft["prospect_name"]}
+
+
+def auto_send_draft(draft_id: int) -> dict:
+    """Only score-qualified drafts use this path; it still goes through the normal audit."""
+    if not approve_draft(draft_id, "brain:auto_score_over_70", "Automatic delivery: score above 70."):
+        return {"status": "not_pending", "draft_id": draft_id}
+    return send_approved_draft(draft_id)

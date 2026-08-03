@@ -107,3 +107,22 @@ def send_code_email(to_email: str, code: str, purpose: str = "register") -> None
         server.starttls()
         server.login(cfg["user"], cfg["password"])
         server.sendmail(cfg["from"], [to_email], msg.as_string())
+
+
+def send_business_email(to_email: str, subject: str, body: str) -> None:
+    """Send an approved B2B email through the existing server-only SMTP account."""
+    cfg = _smtp_config()
+    if not cfg["host"] or not cfg["user"] or not cfg["password"]:
+        raise RuntimeError("smtp_not_configured")
+    recipient = str(to_email or "").strip().lower()
+    if "@" not in recipient:
+        raise ValueError("invalid_recipient")
+    msg = MIMEText(str(body or "").strip(), "plain", "utf-8")
+    msg["Subject"] = str(subject or "Noytrix partnership").strip()[:220]
+    msg["From"] = f"Noytrix <{cfg['from']}>"
+    msg["To"] = recipient
+    msg["Reply-To"] = cfg["from"]
+    with smtplib.SMTP(cfg["host"], cfg["port"], timeout=20) as server:
+        server.starttls()
+        server.login(cfg["user"], cfg["password"])
+        server.sendmail(cfg["from"], [recipient], msg.as_string())

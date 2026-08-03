@@ -28,7 +28,7 @@ class BrainTests(unittest.TestCase):
         repository.add_evidence(prospect_id, source_url="https://wallet.example", claim_type="description", excerpt="Public API and partner programme")
         repository.add_evidence(prospect_id, source_url="https://wallet.example", claim_type="description", excerpt="Public API and partner programme")
         contact_id = repository.add_contact(prospect_id, email="partner@wallet.example", source_url="https://wallet.example")
-        score = {"fit_score": 80, "revenue_score": 70, "technical_score": 75, "timing_score": 65, "contact_score": 70, "risk_penalty": 0, "overall_score": 74, "decision": "ready_for_review", "rationale": ["evidence"]}
+        score = {"fit_score": 80, "revenue_score": 70, "technical_score": 75, "timing_score": 65, "contact_score": 70, "risk_penalty": 0, "overall_score": 74, "decision": "automatic_delivery", "rationale": ["evidence"]}
         repository.upsert_opportunity(prospect_id, score)
         self.assertEqual(len(repository.evidence_for_prospect(prospect_id)), 1)
         self.assertEqual(repository.first_contact(prospect_id)["id"], contact_id)
@@ -37,7 +37,10 @@ class BrainTests(unittest.TestCase):
     @patch("brain.service.load_sources")
     @patch("brain.service.fetch_public_source")
     @patch("brain.service.generate_partnership_draft")
-    def test_pipeline_creates_a_review_draft_from_evidence(self, writer, fetch, sources):
+    @patch("brain.service._research_github_candidates", return_value={"github_candidates": 0, "github_qualified": 0, "github_drafts": 0})
+    @patch("brain.service.sync_public_investor_catalog", return_value={"cataloged": 0, "errors": []})
+    @patch("brain.service.auto_send_draft", return_value={"status": "sent"})
+    def test_pipeline_creates_a_review_draft_from_evidence(self, auto_send, investor_sync, github_research, writer, fetch, sources):
         sources.return_value = [{"source_key": "one", "name": "Example Wallet", "url": "https://example.test", "category": "wallet"}]
         fetch.return_value = {"url": "https://example.test", "domain": "example.test", "title": "Example Wallet API", "description": "Partner ecosystem and developer API.", "text": "Developer API partnership ecosystem.", "emails": ["partners@example.test"], "relevant_links": ["https://example.test/developers"]}
 
@@ -49,6 +52,26 @@ class BrainTests(unittest.TestCase):
         self.assertEqual(result["prospects_seen"], 1)
         self.assertEqual(result["prospects_qualified"], 1)
         self.assertEqual(result["drafts_created"], 1)
+
+    def test_score_thresholds_route_auto_and_manual_candidates(self):
+        from brain.scoring import score_partnership
+
+        auto_score = score_partnership(
+            category="wallet",
+            text="Developer API and partnership ecosystem.",
+            has_business_contact=True,
+            relevant_links=["https://wallet.example/developers"],
+        )
+        manual_score = score_partnership(
+            category="web3",
+            text="Open source project.",
+            has_business_contact=True,
+            relevant_links=[],
+        )
+        self.assertGreaterEqual(auto_score["overall_score"], 71)
+        self.assertEqual(auto_score["decision"], "automatic_delivery")
+        self.assertLessEqual(manual_score["overall_score"], 70)
+        self.assertEqual(manual_score["decision"], "manual_review")
 
 
 if __name__ == "__main__":
