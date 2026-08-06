@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from brain import config, db, discovery, repository, service
+from brain import config, db, discovery, reports, repository, service
 
 
 class BrainTests(unittest.TestCase):
@@ -96,7 +96,15 @@ class BrainTests(unittest.TestCase):
             subject="Re: Hello", snippet="Interested", received_at=db.now_iso(),
         ))
         summary = repository.outreach_daily_summary(start_at="2000-01-01T00:00:00+00:00", end_at="2100-01-01T00:00:00+00:00")
-        self.assertEqual(summary, {"sent": 1, "failed": 0, "bounced": 0, "replies": 1})
+        self.assertEqual(summary, {
+            "sent": 1,
+            "failed": 0,
+            "bounced": 0,
+            "replies": 1,
+            "contacts_found": 1,
+            "drafts_created": 1,
+            "sources_checked": 0,
+        })
 
     def test_contact_research_only_uses_public_generic_inboxes_on_same_domain(self):
         page = {
@@ -114,6 +122,23 @@ class BrainTests(unittest.TestCase):
         self.assertTrue(discovery.is_public_business_email("partnerships@wallet.example"))
         self.assertTrue(discovery.is_public_business_email("bizdev@wallet.example"))
         self.assertFalse(discovery.is_public_business_email("alex@wallet.example"))
+
+    @patch("brain.reports.queue_admin_notification")
+    def test_reports_queue_text_and_daily_research_facts(self, queue_notification):
+        reports.notify_inbound_reply(
+            prospect_name="Example", sender="team@example.test", subject="Hello", snippet="Interested",
+        )
+        args = queue_notification.call_args.args
+        self.assertEqual(args[1], "brain_partnership_reply")
+        self.assertIn("\u043f\u043e\u043b\u0443\u0447\u0435\u043d \u043e\u0442\u0432\u0435\u0442", args[2].lower())
+
+        reports.notify_daily_outreach_report(
+            report_date="2026-08-06", sender_address="noytrixapp@example.test",
+            summary={"sent": 2, "failed": 1, "bounced": 0, "replies": 1, "contacts_found": 3, "drafts_created": 2, "sources_checked": 8},
+        )
+        daily_args = queue_notification.call_args.args
+        self.assertEqual(daily_args[1], "brain_daily_outreach_report")
+        self.assertIn("\u041d\u0430\u0439\u0434\u0435\u043d\u043e \u043f\u0443\u0431\u043b\u0438\u0447\u043d\u044b\u0445 \u043a\u043e\u043d\u0442\u0430\u043a\u0442\u043e\u0432: 3", daily_args[2])
 
 
 if __name__ == "__main__":

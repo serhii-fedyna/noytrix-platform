@@ -304,7 +304,7 @@ def record_inbound_reply(*, imap_uid: str, draft_id: int | None, kind: str, send
 
 
 def outreach_daily_summary(*, start_at: str, end_at: str) -> dict[str, int]:
-    """Return delivery facts, not inferred recipient inbox placement."""
+    """Return delivery facts and auditable daily research throughput."""
     conn = connect()
     try:
         sent = int(conn.execute(
@@ -319,7 +319,24 @@ def outreach_daily_summary(*, start_at: str, end_at: str) -> dict[str, int]:
         replies = int(conn.execute(
             "SELECT COUNT(*) FROM brain_inbound_replies WHERE kind='reply' AND received_at>=? AND received_at<?", (start_at, end_at)
         ).fetchone()[0])
-        return {"sent": sent, "failed": failed, "bounced": bounced, "replies": replies}
+        contacts_found = int(conn.execute(
+            "SELECT COUNT(*) FROM brain_contacts WHERE created_at>=? AND created_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        drafts_created = int(conn.execute(
+            "SELECT COUNT(*) FROM brain_drafts WHERE created_at>=? AND created_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        sources_checked = int(conn.execute(
+            "SELECT COALESCE(SUM(sources_checked), 0) FROM brain_runs WHERE finished_at>=? AND finished_at<?", (start_at, end_at)
+        ).fetchone()[0])
+        return {
+            "sent": sent,
+            "failed": failed,
+            "bounced": bounced,
+            "replies": replies,
+            "contacts_found": contacts_found,
+            "drafts_created": drafts_created,
+            "sources_checked": sources_checked,
+        }
     finally:
         conn.close()
 

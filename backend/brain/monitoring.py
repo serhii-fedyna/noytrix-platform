@@ -30,6 +30,7 @@ def send_daily_outreach_report_if_due(now: datetime | None = None) -> bool:
 
 
 async def brain_delivery_monitor_loop() -> None:
+    """Run inbox and report tasks independently in the permanent worker."""
     await asyncio.sleep(30)
     next_inbox_check = 0.0
     while True:
@@ -37,12 +38,18 @@ async def brain_delivery_monitor_loop() -> None:
             loop = asyncio.get_running_loop()
             now_seconds = loop.time()
             if now_seconds >= next_inbox_check:
-                await asyncio.to_thread(process_inbound_mail_once)
                 next_inbox_check = now_seconds + inbox_poll_seconds()
-            await asyncio.to_thread(send_daily_outreach_report_if_due)
+                try:
+                    await asyncio.to_thread(process_inbound_mail_once)
+                except Exception as exc:
+                    print("[noytrix_brain] inbox monitor error:", str(exc)[:180])
+            try:
+                await asyncio.to_thread(send_daily_outreach_report_if_due)
+            except Exception as exc:
+                print("[noytrix_brain] daily report error:", str(exc)[:180])
             await asyncio.sleep(60)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            print("[noytrix_brain] delivery monitor error:", str(exc)[:180])
-            await asyncio.sleep(300)
+            print("[noytrix_brain] delivery monitor loop error:", str(exc)[:180])
+            await asyncio.sleep(60)

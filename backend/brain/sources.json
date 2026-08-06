@@ -6,5 +6,14 @@
   {"source_key":"zerion","name":"Zerion","url":"https://zerion.io/","category":"wallet"},
   {"source_key":"certik","name":"CertiK","url":"https://www.certik.com/","category":"security"},
   {"source_key":"elliptic","name":"Elliptic","url":"https://www.elliptic.co/","category":"blockchain_analytics"},
-  {"source_key":"trm","name":"TRM Labs","url":"https://www.trmlabs.com/","category":"blockchain_analytics"}
+  {"source_key":"trm","name":"TRM Labs","url":"https://www.trmlabs.com/","category":"blockchain_analytics"},
+  {"source_key":"blockaid","name":"Blockaid","url":"https://www.blockaid.io/","category":"security"},
+  {"source_key":"blowfish","name":"Blowfish","url":"https://blowfish.xyz/","category":"security"},
+  {"source_key":"walletguard","name":"Wallet Guard","url":"https://www.walletguard.app/","category":"wallet_security"},
+  {"source_key":"reown","name":"Reown","url":"https://reown.com/","category":"wallet_infrastructure"},
+  {"source_key":"alchemy","name":"Alchemy","url":"https://www.alchemy.com/","category":"web3"},
+  {"source_key":"quicknode","name":"QuickNode","url":"https://www.quicknode.com/","category":"saas"},
+  {"source_key":"tenderly","name":"Tenderly","url":"https://tenderly.co/","category":"saas"},
+  {"source_key":"scamsniffer","name":"Scam Sniffer","url":"https://www.scamsniffer.io/","category":"security"},
+  {"source_key":"fireblocks","name":"Fireblocks","url":"https://www.fireblocks.com/","category":"security"}
 ]
