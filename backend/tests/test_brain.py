@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from brain import config, db, repository, service
+from brain import config, db, discovery, repository, service
 
 
 class BrainTests(unittest.TestCase):
@@ -97,6 +97,23 @@ class BrainTests(unittest.TestCase):
         ))
         summary = repository.outreach_daily_summary(start_at="2000-01-01T00:00:00+00:00", end_at="2100-01-01T00:00:00+00:00")
         self.assertEqual(summary, {"sent": 1, "failed": 0, "bounced": 0, "replies": 1})
+
+    def test_contact_research_only_uses_public_generic_inboxes_on_same_domain(self):
+        page = {
+            "url": "https://wallet.example/",
+            "domain": "wallet.example",
+            "relevant_links": [
+                "https://wallet.example/partner-program",
+                "https://other.example/contact",
+            ],
+        }
+        urls = discovery.contact_page_urls(page)
+        self.assertIn("https://wallet.example/partner-program", urls)
+        self.assertIn("https://wallet.example/contact", urls)
+        self.assertNotIn("https://other.example/contact", urls)
+        self.assertTrue(discovery.is_public_business_email("partnerships@wallet.example"))
+        self.assertTrue(discovery.is_public_business_email("bizdev@wallet.example"))
+        self.assertFalse(discovery.is_public_business_email("alex@wallet.example"))
 
 
 if __name__ == "__main__":

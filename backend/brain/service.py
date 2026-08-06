@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from urllib.parse import urlparse
-
 from .config import SOURCES_PATH, auto_send_threshold, github_max_results, max_sources_per_run
-from .discovery import fetch_public_source, load_sources
+from .discovery import contact_page_urls, fetch_public_source, load_sources
 from .github_discovery import discover_web3_repositories
 from .investor_catalog import sync_public_investor_catalog
 from .outreach import auto_send_draft
@@ -35,14 +33,10 @@ def _summary_from_page(page: dict[str, Any]) -> str:
     return str(page.get("description") or page.get("title") or page.get("text") or "")[:1200]
 
 
-def _contact_research_pages(page: dict[str, Any], *, limit: int = 3) -> list[dict[str, Any]]:
-    """Read only a few same-domain public contact/partner pages for evidence."""
-    domain = str(page.get("domain") or "").lower()
+def _contact_research_pages(page: dict[str, Any], *, limit: int = 8) -> list[dict[str, Any]]:
+    """Read a bounded set of official contact and partnership pages for public inboxes."""
     pages: list[dict[str, Any]] = []
-    for link in page.get("relevant_links", []):
-        parsed = urlparse(str(link))
-        if parsed.netloc.lower().removeprefix("www.") != domain:
-            continue
+    for link in contact_page_urls(page, limit=limit):
         try:
             pages.append(fetch_public_source(str(link)))
         except Exception:

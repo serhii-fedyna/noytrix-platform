@@ -14,8 +14,16 @@ except ImportError:  # Keep the discovery worker usable in minimal deployments.
     BeautifulSoup = None
 
 
-BUSINESS_LOCAL_PARTS = {"hello", "contact", "partnerships", "partner", "business", "sales", "bd", "support", "info", "team"}
+BUSINESS_LOCAL_PARTS = {
+    "hello", "contact", "partnerships", "partnership", "partner", "partners",
+    "business", "sales", "bd", "bizdev", "growth", "ecosystem", "alliances",
+    "support", "info", "team", "press", "media", "marketing", "community",
+}
 EMAIL_RE = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}(?![\w.-])", re.I)
+CONTACT_PATHS = (
+    "/contact", "/contact-us", "/partnerships", "/partners", "/ecosystem",
+    "/business", "/about", "/company",
+)
 
 
 class _MinimalHtmlCollector(HTMLParser):
@@ -80,6 +88,39 @@ def _clean(value: str, limit: int) -> str:
     return " ".join(str(value or "").split())[:limit]
 
 
+def is_public_business_email(value: str) -> bool:
+    """Accept only generic corporate inboxes published by the organisation."""
+    local, separator, domain = str(value or "").strip().lower().partition("@")
+    return bool(separator and domain and local in BUSINESS_LOCAL_PARTS)
+
+
+def contact_page_urls(page: dict[str, Any], *, limit: int = 10) -> list[str]:
+    """Bounded same-site contact research; no guessed email addresses or profile scraping."""
+    base_url = str(page.get("url") or "").strip()
+    parsed_base = urlparse(base_url)
+    domain = str(page.get("domain") or parsed_base.netloc).lower().removeprefix("www.")
+    if not parsed_base.scheme or not parsed_base.netloc or not domain:
+        return []
+
+    candidates = list(page.get("relevant_links") or [])
+    root = f"{parsed_base.scheme}://{parsed_base.netloc}"
+    candidates.extend(urljoin(root, path) for path in CONTACT_PATHS)
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        parsed = urlparse(str(candidate))
+        candidate_domain = parsed.netloc.lower().removeprefix("www.")
+        normalized = parsed._replace(fragment="").geturl()
+        if candidate_domain != domain or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+        if len(result) >= limit:
+            break
+    return result
+
+
 def fetch_public_source(url: str, timeout: int = 12) -> dict[str, Any]:
     request = Request(url, headers={"User-Agent": "NoytrixBrain/0.1 (+https://noytrix.com)"})
     with urlopen(request, timeout=timeout) as response:
@@ -103,13 +144,15 @@ def fetch_public_source(url: str, timeout: int = 12) -> dict[str, Any]:
         description = _clean(collector.description, 800)
         text = _clean(" ".join(collector.text_parts), 8000)
         raw_links = [(href.strip(), _clean(label, 100).lower()) for href, label in collector.links]
-    emails = sorted({item.lower() for item in EMAIL_RE.findall(text) if item.split("@", 1)[0].lower() in BUSINESS_LOCAL_PARTS})
+    # Keep the HTML source too: many organisations put a public mailbox only in
+    # a mailto link or structured data, neither of which is always visible text.
+    emails = sorted({item.lower() for item in EMAIL_RE.findall(f"{html}\n{text}") if is_public_business_email(item)})
     links = []
     for href, label in raw_links:
         href = urljoin(final_url, href)
         if href.startswith("mailto:"):
             email = href.split(":", 1)[1].split("?", 1)[0].strip().lower()
-            if email and email.split("@", 1)[0] in BUSINESS_LOCAL_PARTS:
+            if is_public_business_email(email):
                 emails.append(email)
         elif href.startswith("http") and any(word in label or word in href.lower() for word in ("partner", "contact", "api", "developer", "docs")):
             links.append(href[:1000])
