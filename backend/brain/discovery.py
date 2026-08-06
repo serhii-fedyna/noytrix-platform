@@ -17,7 +17,7 @@ except ImportError:  # Keep the discovery worker usable in minimal deployments.
 BUSINESS_LOCAL_PARTS = {
     "hello", "contact", "partnerships", "partnership", "partner", "partners",
     "business", "sales", "bd", "bizdev", "growth", "ecosystem", "alliances",
-    "support", "info", "team", "press", "media", "marketing", "community",
+    "support", "info", "team", "marketing", "community",
 }
 EMAIL_RE = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}(?![\w.-])", re.I)
 CONTACT_PATHS = (

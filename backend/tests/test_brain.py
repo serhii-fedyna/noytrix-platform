@@ -122,6 +122,7 @@ class BrainTests(unittest.TestCase):
         self.assertTrue(discovery.is_public_business_email("partnerships@wallet.example"))
         self.assertTrue(discovery.is_public_business_email("bizdev@wallet.example"))
         self.assertFalse(discovery.is_public_business_email("alex@wallet.example"))
+        self.assertFalse(discovery.is_public_business_email("press@wallet.example"))
 
     @patch("brain.reports.queue_admin_notification")
     def test_reports_queue_text_and_daily_research_facts(self, queue_notification):
