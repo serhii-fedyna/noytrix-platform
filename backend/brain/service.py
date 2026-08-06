@@ -124,7 +124,7 @@ def _research_github_candidates() -> dict[str, int]:
 def run_partnership_pipeline(*, limit: int | None = None) -> dict[str, Any]:
     """Run one bounded, idempotent public-source partnership research cycle."""
     sync_sources(load_sources(SOURCES_PATH))
-    sources = active_sources(limit or max_sources_per_run())
+    sources = active_sources(limit or max_sources_per_run(), source_type="website")
     run_id = create_run(PIPELINE)
     errors: list[dict[str, str]] = []
     qualified = 0

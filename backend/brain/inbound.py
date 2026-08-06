@@ -103,6 +103,7 @@ def process_inbound_mail_once() -> int:
                         sender=sender,
                         subject=subject,
                         snippet=snippet,
+                        kind="job" if draft.get("pipeline") == "serhii_job_search" else "partnership",
                     )
         set_runtime_state(STATE_KEY, uids[-1])
         return processed

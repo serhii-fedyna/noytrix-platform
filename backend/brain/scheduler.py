@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 
-from .config import enabled, interval_seconds
+from .config import enabled, interval_seconds, jobs_enabled
+from .jobs import run_job_pipeline
 from .service import run_partnership_pipeline
 
 
@@ -13,6 +14,8 @@ async def brain_scheduler_loop() -> None:
         try:
             if enabled():
                 await asyncio.to_thread(run_partnership_pipeline)
+                if jobs_enabled():
+                    await asyncio.to_thread(run_job_pipeline)
             await asyncio.sleep(interval_seconds())
         except asyncio.CancelledError:
             raise

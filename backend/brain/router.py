@@ -5,7 +5,8 @@ import json
 
 from fastapi import APIRouter, Header, HTTPException, Query
 
-from .config import admin_token, enabled, outreach_enabled
+from .config import admin_token, enabled, jobs_enabled, outreach_enabled
+from .jobs import run_job_pipeline
 from .outreach import approve_draft, reject_draft, send_approved_draft
 from .repository import prospect_snapshot, run_snapshot
 from .service import run_partnership_pipeline
@@ -35,7 +36,7 @@ def _decode(item: dict) -> dict:
 
 @router.get("/health")
 def brain_health() -> dict:
-    return {"ok": True, "enabled": enabled(), "outreach_delivery_enabled": outreach_enabled(), "mode": "automatic_over_70_telegram_approval_otherwise"}
+    return {"ok": True, "enabled": enabled(), "jobs_enabled": jobs_enabled(), "outreach_delivery_enabled": outreach_enabled(), "mode": "automatic_over_70_telegram_approval_otherwise"}
 
 
 @router.get("/partnerships")
@@ -44,7 +45,16 @@ def partnerships(
     x_brain_admin_token: str | None = Header(default=None),
 ) -> dict:
     _require_admin(x_brain_admin_token)
-    return {"ok": True, "items": [_decode(item) for item in prospect_snapshot(limit)]}
+    return {"ok": True, "items": [_decode(item) for item in prospect_snapshot(limit, pipeline="noytrix_partnerships")]}
+
+
+@router.get("/jobs")
+def jobs(
+    limit: int = Query(50, ge=1, le=200),
+    x_brain_admin_token: str | None = Header(default=None),
+) -> dict:
+    _require_admin(x_brain_admin_token)
+    return {"ok": True, "items": [_decode(item) for item in prospect_snapshot(limit, pipeline="serhii_job_search")]}
 
 
 @router.get("/runs")
@@ -60,6 +70,17 @@ async def run_partnerships(
 ) -> dict:
     _require_admin(x_brain_admin_token)
     return await asyncio.to_thread(run_partnership_pipeline, limit=limit)
+
+
+@router.post("/jobs/run")
+async def run_jobs(
+    limit: int = Query(8, ge=1, le=25),
+    x_brain_admin_token: str | None = Header(default=None),
+) -> dict:
+    _require_admin(x_brain_admin_token)
+    if not jobs_enabled():
+        raise HTTPException(status_code=503, detail="brain_jobs_disabled")
+    return await asyncio.to_thread(run_job_pipeline, limit=limit)
 
 
 @router.post("/drafts/{draft_id}/approve")

@@ -39,11 +39,23 @@ def send_approved_draft(draft_id: int) -> dict:
     try:
         from auth.emailer import send_business_email
 
+        attachment_paths = None
+        from_name = "Noytrix"
+        if draft.get("pipeline") == "serhii_job_search":
+            from .candidate import CANDIDATE, resume_is_ready, resume_path
+
+            if not resume_is_ready():
+                raise RuntimeError("candidate_resume_not_available")
+            from_name = CANDIDATE["name"]
+            attachment_paths = [resume_path()]
+
         message_id = send_business_email(
             str(draft["email"]),
             str(draft["subject"]),
             str(draft["body"]),
             draft_id=draft_id,
+            from_name=from_name,
+            attachment_paths=attachment_paths,
         )
     except Exception as exc:
         repository.finish_outreach_message(draft_id, sent=False, error=str(exc))
@@ -54,6 +66,6 @@ def send_approved_draft(draft_id: int) -> dict:
 
 def auto_send_draft(draft_id: int) -> dict:
     """Only score-qualified drafts use this path; it still goes through the normal audit."""
-    if not approve_draft(draft_id, "brain:auto_score_over_70", "Automatic delivery: score above 70."):
+    if not approve_draft(draft_id, "brain:auto_score_threshold", "Automatic delivery: score passed the configured threshold."):
         return {"status": "not_pending", "draft_id": draft_id}
     return send_approved_draft(draft_id)

@@ -124,6 +124,19 @@ class BrainTests(unittest.TestCase):
         self.assertFalse(discovery.is_public_business_email("alex@wallet.example"))
         self.assertFalse(discovery.is_public_business_email("press@wallet.example"))
 
+    def test_job_contacts_and_scoring_require_a_real_recruiting_route(self):
+        from brain.job_scoring import score_job
+
+        self.assertTrue(discovery.is_public_recruiting_email("careers@wallet.example"))
+        self.assertFalse(discovery.is_public_recruiting_email("alex@wallet.example"))
+        score = score_job(
+            text="We are hiring a remote full-stack engineer with Python, FastAPI, PostgreSQL and AI experience.",
+            has_verified_recruiting_contact=True,
+            has_apply_route=True,
+        )
+        self.assertGreaterEqual(score["overall_score"], 80)
+        self.assertEqual(score["decision"], "automatic_delivery")
+
     @patch("brain.reports.queue_admin_notification")
     def test_reports_queue_text_and_daily_research_facts(self, queue_notification):
         reports.notify_inbound_reply(

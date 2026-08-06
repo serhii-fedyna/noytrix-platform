@@ -20,7 +20,7 @@ def sync_sources(items: list[dict[str, Any]]) -> None:
                 INSERT INTO brain_sources(source_key,name,url,category,source_type,enabled,terms_checked_at,created_at)
                 VALUES(?,?,?,?,?,1,?,?)
                 ON CONFLICT(source_key) DO UPDATE SET
-                  name=excluded.name,url=excluded.url,category=excluded.category
+                  name=excluded.name,url=excluded.url,category=excluded.category,source_type=excluded.source_type
                 """,
                 (item["source_key"], item["name"], item["url"], item["category"], item.get("source_type", "website"), now_iso(), now_iso()),
             )
@@ -29,12 +29,19 @@ def sync_sources(items: list[dict[str, Any]]) -> None:
         conn.close()
 
 
-def active_sources(limit: int) -> list[dict[str, Any]]:
+def active_sources(limit: int, *, source_type: str | None = None) -> list[dict[str, Any]]:
     conn = connect()
     try:
-        return [dict(row) for row in conn.execute(
-            "SELECT * FROM brain_sources WHERE enabled=1 ORDER BY COALESCE(last_run_at,'') ASC, id ASC LIMIT ?", (limit,)
-        ).fetchall()]
+        if source_type:
+            rows = conn.execute(
+                "SELECT * FROM brain_sources WHERE enabled=1 AND source_type=? ORDER BY COALESCE(last_run_at,'') ASC, id ASC LIMIT ?",
+                (source_type, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM brain_sources WHERE enabled=1 ORDER BY COALESCE(last_run_at,'') ASC, id ASC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(row) for row in rows]
     finally:
         conn.close()
 
@@ -110,7 +117,14 @@ def add_evidence(prospect_id: int, *, source_url: str, claim_type: str, excerpt:
         conn.close()
 
 
-def add_contact(prospect_id: int, *, email: str, source_url: str, role: str = "business_contact") -> int | None:
+def add_contact(
+    prospect_id: int,
+    *,
+    email: str,
+    source_url: str,
+    role: str = "business_contact",
+    contact_basis: str = "public_business_contact",
+) -> int | None:
     normalized = email.strip().lower()[:320]
     if not normalized or is_suppressed(normalized):
         return None
@@ -120,7 +134,7 @@ def add_contact(prospect_id: int, *, email: str, source_url: str, role: str = "b
             """INSERT INTO brain_contacts(prospect_id,email,role,source_url,contact_basis,status,created_at)
                VALUES(?,?,?,?,?,'available',?)
                ON CONFLICT(email) DO UPDATE SET prospect_id=excluded.prospect_id,source_url=excluded.source_url,status='available'""",
-            (prospect_id, normalized, role, source_url[:1000], "public_business_contact", now_iso()),
+            (prospect_id, normalized, role, source_url[:1000], contact_basis[:100], now_iso()),
         )
         row = conn.execute("SELECT id FROM brain_contacts WHERE email=?", (normalized,)).fetchone()
         conn.commit()
@@ -169,12 +183,15 @@ def evidence_for_prospect(prospect_id: int, limit: int = 12) -> list[dict[str, A
         conn.close()
 
 
-def first_contact(prospect_id: int) -> dict[str, Any] | None:
+def first_contact(prospect_id: int, *, role: str | None = None) -> dict[str, Any] | None:
     conn = connect()
     try:
-        row = conn.execute(
-            "SELECT * FROM brain_contacts WHERE prospect_id=? AND status='available' ORDER BY id ASC LIMIT 1", (prospect_id,)
-        ).fetchone()
+        query = "SELECT * FROM brain_contacts WHERE prospect_id=? AND status='available'"
+        params: list[Any] = [prospect_id]
+        if role:
+            query += " AND role=?"
+            params.append(role)
+        row = conn.execute(query + " ORDER BY id ASC LIMIT 1", params).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
@@ -207,7 +224,7 @@ def draft_delivery_snapshot(draft_id: int) -> dict[str, Any] | None:
         row = conn.execute(
             """
             SELECT d.*, o.overall_score, o.decision, p.id AS prospect_id, p.name AS prospect_name,
-                   p.website_url, p.category, c.email, c.status AS contact_status
+                   p.website_url, p.category, p.pipeline, c.email, c.status AS contact_status
             FROM brain_drafts d
             JOIN brain_opportunities o ON o.id=d.opportunity_id
             JOIN brain_prospects p ON p.id=o.prospect_id
@@ -281,6 +298,24 @@ def finish_outreach_message(draft_id: int, *, sent: bool, provider_message_id: s
         conn.close()
 
 
+def sent_count_since(*, pipeline: str, start_at: str) -> int:
+    conn = connect()
+    try:
+        return int(conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM brain_outreach_messages m
+            JOIN brain_drafts d ON d.id=m.draft_id
+            JOIN brain_opportunities o ON o.id=d.opportunity_id
+            JOIN brain_prospects p ON p.id=o.prospect_id
+            WHERE p.pipeline=? AND m.status='sent' AND m.sent_at>=?
+            """,
+            (pipeline, start_at),
+        ).fetchone()[0])
+    finally:
+        conn.close()
+
+
 def record_inbound_reply(*, imap_uid: str, draft_id: int | None, kind: str, sender: str, subject: str, snippet: str, received_at: str) -> bool:
     """Store each inbound reply or bounce once so reports are auditable."""
     if kind not in {"reply", "bounce"}:
@@ -303,31 +338,31 @@ def record_inbound_reply(*, imap_uid: str, draft_id: int | None, kind: str, send
         conn.close()
 
 
-def outreach_daily_summary(*, start_at: str, end_at: str) -> dict[str, int]:
+def outreach_daily_summary(*, start_at: str, end_at: str, pipeline: str | None = None) -> dict[str, int]:
     """Return delivery facts and auditable daily research throughput."""
     conn = connect()
     try:
-        sent = int(conn.execute(
-            "SELECT COUNT(*) FROM brain_outreach_messages WHERE status IN ('sent','bounced') AND sent_at>=? AND sent_at<?", (start_at, end_at)
-        ).fetchone()[0])
-        failed = int(conn.execute(
-            "SELECT COUNT(*) FROM brain_outreach_messages WHERE status='failed' AND created_at>=? AND created_at<?", (start_at, end_at)
-        ).fetchone()[0])
-        bounced = int(conn.execute(
-            "SELECT COUNT(*) FROM brain_inbound_replies WHERE kind='bounce' AND received_at>=? AND received_at<?", (start_at, end_at)
-        ).fetchone()[0])
-        replies = int(conn.execute(
-            "SELECT COUNT(*) FROM brain_inbound_replies WHERE kind='reply' AND received_at>=? AND received_at<?", (start_at, end_at)
-        ).fetchone()[0])
-        contacts_found = int(conn.execute(
-            "SELECT COUNT(*) FROM brain_contacts WHERE created_at>=? AND created_at<?", (start_at, end_at)
-        ).fetchone()[0])
-        drafts_created = int(conn.execute(
-            "SELECT COUNT(*) FROM brain_drafts WHERE created_at>=? AND created_at<?", (start_at, end_at)
-        ).fetchone()[0])
-        sources_checked = int(conn.execute(
-            "SELECT COALESCE(SUM(sources_checked), 0) FROM brain_runs WHERE finished_at>=? AND finished_at<?", (start_at, end_at)
-        ).fetchone()[0])
+        scope = ""
+        if pipeline:
+            scope = " JOIN brain_drafts d ON d.id=m.draft_id JOIN brain_opportunities o ON o.id=d.opportunity_id JOIN brain_prospects p ON p.id=o.prospect_id AND p.pipeline=?"
+            params.append(pipeline)
+        sent = int(conn.execute(f"SELECT COUNT(*) FROM brain_outreach_messages m {scope} WHERE m.status IN ('sent','bounced') AND m.sent_at>=? AND m.sent_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
+        failed = int(conn.execute(f"SELECT COUNT(*) FROM brain_outreach_messages m {scope} WHERE m.status='failed' AND m.created_at>=? AND m.created_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
+        reply_scope = ""
+        if pipeline:
+            reply_scope = " JOIN brain_drafts d ON d.id=r.draft_id JOIN brain_opportunities o ON o.id=d.opportunity_id JOIN brain_prospects p ON p.id=o.prospect_id AND p.pipeline=?"
+        bounced = int(conn.execute(f"SELECT COUNT(*) FROM brain_inbound_replies r {reply_scope} WHERE r.kind='bounce' AND r.received_at>=? AND r.received_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
+        replies = int(conn.execute(f"SELECT COUNT(*) FROM brain_inbound_replies r {reply_scope} WHERE r.kind='reply' AND r.received_at>=? AND r.received_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
+        contact_scope = ""
+        if pipeline:
+            contact_scope = " JOIN brain_prospects p ON p.id=c.prospect_id AND p.pipeline=?"
+        contacts_found = int(conn.execute(f"SELECT COUNT(*) FROM brain_contacts c {contact_scope} WHERE c.created_at>=? AND c.created_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
+        draft_scope = ""
+        if pipeline:
+            draft_scope = " JOIN brain_opportunities o ON o.id=d.opportunity_id JOIN brain_prospects p ON p.id=o.prospect_id AND p.pipeline=?"
+        drafts_created = int(conn.execute(f"SELECT COUNT(*) FROM brain_drafts d {draft_scope} WHERE d.created_at>=? AND d.created_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
+        run_scope = " AND pipeline=?" if pipeline else ""
+        sources_checked = int(conn.execute(f"SELECT COALESCE(SUM(sources_checked), 0) FROM brain_runs WHERE finished_at>=? AND finished_at<?{run_scope}", [start_at, end_at] + ([pipeline] if pipeline else [])).fetchone()[0])
         return {
             "sent": sent,
             "failed": failed,
@@ -363,18 +398,22 @@ def set_runtime_state(key: str, value: str) -> None:
         conn.close()
 
 
-def prospect_snapshot(limit: int = 50) -> list[dict[str, Any]]:
+def prospect_snapshot(limit: int = 50, *, pipeline: str | None = None) -> list[dict[str, Any]]:
     conn = connect()
     try:
+        scope = "WHERE p.pipeline=?" if pipeline else ""
+        params: list[Any] = [pipeline] if pipeline else []
+        params.append(max(1, min(limit, 200)))
         return [dict(row) for row in conn.execute(
-            """
+            f"""
             SELECT p.*, o.overall_score, o.decision, o.rationale_json,
                    (SELECT COUNT(1) FROM brain_evidence e WHERE e.prospect_id=p.id) AS evidence_count,
                    (SELECT COUNT(1) FROM brain_contacts c WHERE c.prospect_id=p.id) AS contact_count,
                    (SELECT COUNT(1) FROM brain_drafts d JOIN brain_opportunities od ON od.id=d.opportunity_id WHERE od.prospect_id=p.id) AS draft_count
             FROM brain_prospects p LEFT JOIN brain_opportunities o ON o.prospect_id=p.id
+            {scope}
             ORDER BY COALESCE(o.overall_score,0) DESC, p.last_seen_at DESC LIMIT ?
-            """, (max(1, min(limit, 200)),)
+            """, params
         ).fetchall()]
     finally:
         conn.close()

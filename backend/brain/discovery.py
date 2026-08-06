@@ -19,10 +19,17 @@ BUSINESS_LOCAL_PARTS = {
     "business", "sales", "bd", "bizdev", "growth", "ecosystem", "alliances",
     "support", "info", "team", "marketing", "community",
 }
+RECRUITING_LOCAL_PARTS = {
+    "careers", "career", "jobs", "job", "recruiting", "recruitment", "talent",
+    "hiring", "hr", "people", "workwithus", "work-with-us",
+}
 EMAIL_RE = re.compile(r"(?<![\w.+-])[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,63}(?![\w.-])", re.I)
 CONTACT_PATHS = (
     "/contact", "/contact-us", "/partnerships", "/partners", "/ecosystem",
     "/business", "/about", "/company",
+)
+CAREER_PATHS = (
+    "/careers", "/career", "/jobs", "/job-openings", "/vacancies", "/work-with-us",
 )
 
 
@@ -94,6 +101,12 @@ def is_public_business_email(value: str) -> bool:
     return bool(separator and domain and local in BUSINESS_LOCAL_PARTS)
 
 
+def is_public_recruiting_email(value: str) -> bool:
+    """Only accept a published generic recruitment inbox; never infer a person's address."""
+    local, separator, domain = str(value or "").strip().lower().partition("@")
+    return bool(separator and domain and local in RECRUITING_LOCAL_PARTS)
+
+
 def contact_page_urls(page: dict[str, Any], *, limit: int = 10) -> list[str]:
     """Bounded same-site contact research; no guessed email addresses or profile scraping."""
     base_url = str(page.get("url") or "").strip()
@@ -113,6 +126,30 @@ def contact_page_urls(page: dict[str, Any], *, limit: int = 10) -> list[str]:
         candidate_domain = parsed.netloc.lower().removeprefix("www.")
         normalized = parsed._replace(fragment="").geturl()
         if candidate_domain != domain or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def career_page_urls(page: dict[str, Any], *, limit: int = 10) -> list[str]:
+    """Return only same-organisation pages that visibly relate to open roles."""
+    base_url = str(page.get("url") or "").strip()
+    parsed_base = urlparse(base_url)
+    domain = str(page.get("domain") or parsed_base.netloc).lower().removeprefix("www.")
+    if not parsed_base.scheme or not parsed_base.netloc or not domain:
+        return []
+    root = f"{parsed_base.scheme}://{parsed_base.netloc}"
+    candidates = list(page.get("career_links") or [])
+    candidates.extend(urljoin(root, path) for path in CAREER_PATHS)
+    result: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        parsed = urlparse(str(candidate))
+        normalized = parsed._replace(fragment="").geturl()
+        if parsed.netloc.lower().removeprefix("www.") != domain or normalized in seen:
             continue
         seen.add(normalized)
         result.append(normalized)
@@ -146,16 +183,23 @@ def fetch_public_source(url: str, timeout: int = 12) -> dict[str, Any]:
         raw_links = [(href.strip(), _clean(label, 100).lower()) for href, label in collector.links]
     # Keep the HTML source too: many organisations put a public mailbox only in
     # a mailto link or structured data, neither of which is always visible text.
-    emails = sorted({item.lower() for item in EMAIL_RE.findall(f"{html}\n{text}") if is_public_business_email(item)})
+    all_emails = sorted({item.lower() for item in EMAIL_RE.findall(f"{html}\n{text}")})
+    emails = [item for item in all_emails if is_public_business_email(item)]
+    recruiting_emails = [item for item in all_emails if is_public_recruiting_email(item)]
     links = []
+    career_links = []
     for href, label in raw_links:
         href = urljoin(final_url, href)
         if href.startswith("mailto:"):
             email = href.split(":", 1)[1].split("?", 1)[0].strip().lower()
             if is_public_business_email(email):
                 emails.append(email)
+            if is_public_recruiting_email(email):
+                recruiting_emails.append(email)
         elif href.startswith("http") and any(word in label or word in href.lower() for word in ("partner", "contact", "api", "developer", "docs")):
             links.append(href[:1000])
+        if href.startswith("http") and any(word in label or word in href.lower() for word in ("career", "careers", "job", "jobs", "vacanc", "opening", "hiring", "work with us")):
+            career_links.append(href[:1000])
     return {
         "url": final_url,
         "domain": urlparse(final_url).netloc.lower().removeprefix("www."),
@@ -163,5 +207,7 @@ def fetch_public_source(url: str, timeout: int = 12) -> dict[str, Any]:
         "description": description,
         "text": text,
         "emails": sorted(set(emails)),
+        "recruiting_emails": sorted(set(recruiting_emails)),
         "relevant_links": sorted(set(links))[:16],
+        "career_links": sorted(set(career_links))[:16],
     }

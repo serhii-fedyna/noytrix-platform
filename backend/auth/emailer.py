@@ -1,6 +1,9 @@
 import os
 import smtplib
+from pathlib import Path
 from email.utils import make_msgid
+from email.mime.application import MIMEApplication
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
@@ -115,17 +118,36 @@ def send_code_email(to_email: str, code: str, purpose: str = "register") -> None
         server.sendmail(cfg["from"], [to_email], msg.as_string())
 
 
-def send_business_email(to_email: str, subject: str, body: str, *, draft_id: int | None = None) -> str:
-    """Send an approved B2B email through the existing server-only SMTP account."""
+def send_business_email(
+    to_email: str,
+    subject: str,
+    body: str,
+    *,
+    draft_id: int | None = None,
+    from_name: str = "Noytrix",
+    attachment_paths: list[str | Path] | None = None,
+) -> str:
+    """Send audited server-side email, optionally with a locally stored attachment."""
     cfg = _smtp_config()
     if not cfg["host"] or not cfg["user"] or not cfg["password"]:
         raise RuntimeError("smtp_not_configured")
     recipient = str(to_email or "").strip().lower()
     if "@" not in recipient:
         raise ValueError("invalid_recipient")
-    msg = MIMEText(str(body or "").strip(), "plain", "utf-8")
+    paths = [Path(item) for item in (attachment_paths or [])]
+    if paths:
+        msg = MIMEMultipart()
+        msg.attach(MIMEText(str(body or "").strip(), "plain", "utf-8"))
+        for path in paths:
+            if not path.is_file():
+                raise ValueError("attachment_not_found")
+            part = MIMEApplication(path.read_bytes(), Name=path.name)
+            part.add_header("Content-Disposition", "attachment", filename=path.name)
+            msg.attach(part)
+    else:
+        msg = MIMEText(str(body or "").strip(), "plain", "utf-8")
     msg["Subject"] = str(subject or "Noytrix partnership").strip()[:220]
-    msg["From"] = f"Noytrix <{cfg['from']}>"
+    msg["From"] = f"{str(from_name or 'Noytrix').strip()[:80]} <{cfg['from']}>"
     msg["To"] = recipient
     msg["Reply-To"] = cfg["from"]
     message_id = make_msgid(idstring=f"noytrix-brain-{int(draft_id or 0)}", domain="noytrix.app")

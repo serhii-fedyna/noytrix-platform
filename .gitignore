@@ -54,6 +54,7 @@ expo-env.d.ts
 *.tsbuildinfo
 *.inspect.ndjson
 backend/tests/reports/
+backend/data/resumes/
 
 # Native and tooling
 .kotlin/

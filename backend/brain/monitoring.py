@@ -23,8 +23,16 @@ def send_daily_outreach_report_if_due(now: datetime | None = None) -> bool:
         return False
     start = datetime.combine(local_now.date(), time.min, tzinfo=zone).astimezone(ZoneInfo("UTC"))
     end = local_now.astimezone(ZoneInfo("UTC"))
-    summary = outreach_daily_summary(start_at=start.replace(microsecond=0).isoformat(), end_at=end.replace(microsecond=0).isoformat())
-    notify_daily_outreach_report(report_date=report_date, sender_address=outbound_sender_address(), summary=summary)
+    start_at = start.replace(microsecond=0).isoformat()
+    end_at = end.replace(microsecond=0).isoformat()
+    summary = outreach_daily_summary(start_at=start_at, end_at=end_at, pipeline="noytrix_partnerships")
+    job_summary = outreach_daily_summary(start_at=start_at, end_at=end_at, pipeline="serhii_job_search")
+    notify_daily_outreach_report(
+        report_date=report_date,
+        sender_address=outbound_sender_address(),
+        summary=summary,
+        job_summary=job_summary,
+    )
     set_runtime_state(state_key, report_date)
     return True
 

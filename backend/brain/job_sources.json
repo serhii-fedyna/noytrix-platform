@@ -1,0 +1,10 @@
+[
+  {"source_key":"alchemy-careers","name":"Alchemy","url":"https://www.alchemy.com/careers","category":"web3","source_type":"job_board"},
+  {"source_key":"chainalysis-careers","name":"Chainalysis","url":"https://www.chainalysis.com/careers/","category":"blockchain_analytics","source_type":"job_board"},
+  {"source_key":"fireblocks-careers","name":"Fireblocks","url":"https://www.fireblocks.com/careers/","category":"security","source_type":"job_board"},
+  {"source_key":"blockaid-careers","name":"Blockaid","url":"https://www.blockaid.io/careers","category":"security","source_type":"job_board"},
+  {"source_key":"openzeppelin-careers","name":"OpenZeppelin","url":"https://openzeppelin.com/careers/","category":"security","source_type":"job_board"},
+  {"source_key":"polygon-careers","name":"Polygon Labs","url":"https://polygon.technology/careers","category":"web3","source_type":"job_board"},
+  {"source_key":"certik-careers","name":"CertiK","url":"https://www.certik.com/careers","category":"security","source_type":"job_board"},
+  {"source_key":"reown-careers","name":"Reown","url":"https://reown.com/careers","category":"wallet_infrastructure","source_type":"job_board"}
+]

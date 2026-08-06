@@ -32,10 +32,7 @@ def _telegram_call(token: str, method: str, payload: dict[str, Any] | None = Non
 
 def _get_updates(token: str, offset: int) -> list[dict[str, Any]]:
     params = urlencode({"offset": offset, "timeout": 0, "allowed_updates": json.dumps(["callback_query"])})
-    request = Request(
-        f"{admin_telegram.TELEGRAM_API_ROOT}/bot{token}/getUpdates?{params}",
-        headers={"User-Agent": "NoytrixBrain/1.0"},
-    )
+    request = Request(f"{admin_telegram.TELEGRAM_API_ROOT}/bot{token}/getUpdates?{params}", headers={"User-Agent": "NoytrixBrain/1.0"})
     with urlopen(request, timeout=15) as response:
         result = json.loads(response.read().decode("utf-8") or "{}")
     return list(result.get("result") or []) if isinstance(result, dict) and result.get("ok") else []
@@ -56,7 +53,7 @@ def _clear_buttons(token: str, chat_id: str, message_id: int) -> None:
 
 
 def process_telegram_actions_once() -> int:
-    """Process only signed-in admin button clicks. Other bot messages are ignored."""
+    """Process approval buttons from the configured administrator only."""
     config = admin_telegram._config()
     if not config:
         return 0
@@ -75,8 +72,7 @@ def process_telegram_actions_once() -> int:
         chat = message.get("chat") or {}
         if str(chat.get("id") or "") != str(configured_chat_id):
             continue
-        data = str(callback.get("data") or "")
-        parts = data.split(":")
+        parts = str(callback.get("data") or "").split(":")
         if len(parts) != 3 or parts[0] != "brain" or parts[1] not in {"approve", "reject"}:
             continue
         try:
