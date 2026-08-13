@@ -133,6 +133,7 @@ from routes.push import create_push_router
 from routes.b2b import create_b2b_router
 from routes.telegram import create_telegram_router
 from routes.runtime import create_runtime_router
+from routes.workspace import create_workspace_router
 from routes.community import create_community_router
 from routes.immunity import create_immunity_router
 from scamshield.scam_of_day import create_scam_of_day_router, record_scam_of_day_signal
@@ -7192,6 +7193,13 @@ async def scan(
             },
         })
         raise HTTPException(status_code=500, detail=tr(L, "scan_failed"))
+
+app.include_router(create_workspace_router(
+    scan_fn=scan,
+    authenticated_identity=_authenticated_account_identity,
+    entitlement_active=lambda user_id: bool(entitlement_status_for_user(user_id, "pro").get("active")),
+    watch_db_path=DATA_DIR / "workspace_watches.sqlite3",
+))
 
 app.include_router(create_community_router(
     get_lang,

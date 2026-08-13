@@ -22,6 +22,21 @@ server {
         add_header Cache-Control "no-store" always;
     }
 
+    # Staging-only interactive scan workspace. SSE buffering is disabled so
+    # users see each verified analysis stage as the staging API emits it.
+    location ^~ /workspace/ {
+        proxy_pass http://127.0.0.1:8025;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 300s;
+        add_header Cache-Control "no-store" always;
+    }
+
     # Public, read-only intelligence data for the staging UI. The API key
     # never reaches the browser, and browser-provided identities are rejected.
     location = /scam-of-day {
