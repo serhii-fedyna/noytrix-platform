@@ -111,6 +111,46 @@ def _normalized_target(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower()).rstrip("/")
 
 
+DEFAULT_WORKSPACE_SETTINGS: dict[str, Any] = {
+    "language": "en",
+    "region": "UA",
+    "timezone": "Europe/Kyiv",
+    "theme": "dark",
+    "density": "compact",
+    "reduce_motion": False,
+    "auto_detect": True,
+    "show_sources": True,
+    "save_history": True,
+    "detail_level": "detailed",
+    "sync_settings": True,
+    "reopen_last_result": False,
+    "history_retention": "90",
+}
+
+
+def _workspace_settings(payload: Any) -> dict[str, Any]:
+    """Keep the saved workspace preference contract deliberately small and typed."""
+    values = payload if isinstance(payload, dict) else {}
+    normalized = dict(DEFAULT_WORKSPACE_SETTINGS)
+    allowed_choices = {
+        "language": {"en", "ru", "uk"},
+        "region": {"UA", "EU", "US", "GLOBAL"},
+        "timezone": {"Europe/Kyiv", "Europe/Rome", "Europe/London", "America/New_York", "UTC"},
+        "theme": {"dark", "system", "light"},
+        "density": {"compact", "comfortable"},
+        "detail_level": {"standard", "detailed"},
+        "history_retention": {"7", "30", "90", "365", "forever"},
+    }
+    for key, choices in allowed_choices.items():
+        value = str(values.get(key) or "")
+        if value in choices:
+            normalized[key] = value
+    for key in ("reduce_motion", "auto_detect", "show_sources", "save_history", "sync_settings", "reopen_last_result"):
+        if isinstance(values.get(key), bool):
+            normalized[key] = values[key]
+    return normalized
+
+
 def create_workspace_router(
     scan_fn: Callable[..., Awaitable[dict[str, Any]]],
     authenticated_identity: Callable[[Request], str | None],
@@ -159,6 +199,11 @@ def create_workspace_router(
                 updated_at TEXT NOT NULL,
                 PRIMARY KEY(subject, scan_hash, usage_day)
             );
+            CREATE TABLE IF NOT EXISTS workspace_settings (
+                user_id TEXT PRIMARY KEY,
+                settings_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
             """
         )
         conn.commit()
@@ -178,6 +223,51 @@ def create_workspace_router(
         if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", session_id):
             raise HTTPException(status_code=400, detail="invalid_workspace_session")
         return "session:" + session_id, False
+
+    @router.get("/workspace/settings")
+    async def get_workspace_settings(request: Request):
+        user_id = identity_for_request(request)
+        if not user_id:
+            return {"ok": True, "authenticated": False, "settings": dict(DEFAULT_WORKSPACE_SETTINGS)}
+        conn = connect()
+        try:
+            row = conn.execute("SELECT settings_json,updated_at FROM workspace_settings WHERE user_id=?", (user_id,)).fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return {"ok": True, "authenticated": True, "settings": dict(DEFAULT_WORKSPACE_SETTINGS), "updated_at": None}
+        try:
+            stored = json.loads(str(row["settings_json"] or "{}"))
+        except (TypeError, ValueError):
+            stored = {}
+        return {
+            "ok": True,
+            "authenticated": True,
+            "settings": _workspace_settings(stored),
+            "updated_at": str(row["updated_at"] or "") or None,
+        }
+
+    @router.put("/workspace/settings")
+    async def save_workspace_settings(request: Request, payload: dict[str, Any] = Body(...)):
+        user_id = identity_for_request(request)
+        if not user_id:
+            raise HTTPException(status_code=401, detail="workspace_auth_required")
+        settings = _workspace_settings(payload.get("settings"))
+        updated_at = _now()
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                INSERT INTO workspace_settings(user_id,settings_json,updated_at)
+                VALUES(?,?,?)
+                ON CONFLICT(user_id) DO UPDATE SET settings_json=excluded.settings_json,updated_at=excluded.updated_at
+                """,
+                (user_id, json.dumps(settings, ensure_ascii=False), updated_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return {"ok": True, "settings": settings, "updated_at": updated_at}
 
     @router.post("/workspace/scan-stream")
     async def scan_stream(request: Request, payload: dict[str, Any] = Body(...)):
