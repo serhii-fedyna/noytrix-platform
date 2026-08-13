@@ -85,6 +85,7 @@ from identity import resolve_from_request, resolve_user_id
 from product_analytics import record_product_event_safe
 from admin_telegram import daily_scan_summary_loop, notify_critical_error
 from subscriptions import (
+    billing_snapshot_for_user,
     entitlement_status,
     entitlement_status_for_user,
     grant_entitlement,
@@ -7198,6 +7199,7 @@ app.include_router(create_workspace_router(
     scan_fn=scan,
     authenticated_identity=_authenticated_account_identity,
     entitlement_active=lambda user_id: bool(entitlement_status_for_user(user_id, "pro").get("active")),
+    billing_snapshot=billing_snapshot_for_user,
     watch_db_path=DATA_DIR / "workspace_watches.sqlite3",
 ))
 

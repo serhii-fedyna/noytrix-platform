@@ -155,6 +155,7 @@ def create_workspace_router(
     scan_fn: Callable[..., Awaitable[dict[str, Any]]],
     authenticated_identity: Callable[[Request], str | None],
     entitlement_active: Callable[[str], bool],
+    billing_snapshot: Callable[[str], dict[str, Any]],
     watch_db_path: Path,
 ) -> APIRouter:
     router = APIRouter(tags=["workspace"])
@@ -223,6 +224,13 @@ def create_workspace_router(
         if not re.fullmatch(r"[A-Za-z0-9_-]{16,128}", session_id):
             raise HTTPException(status_code=400, detail="invalid_workspace_session")
         return "session:" + session_id, False
+
+    @router.get("/workspace/billing")
+    async def get_workspace_billing(request: Request):
+        user_id = identity_for_request(request)
+        if not user_id:
+            return {"ok": True, "authenticated": False, "current": None, "history": []}
+        return {"ok": True, "authenticated": True, **billing_snapshot(user_id)}
 
     @router.get("/workspace/settings")
     async def get_workspace_settings(request: Request):

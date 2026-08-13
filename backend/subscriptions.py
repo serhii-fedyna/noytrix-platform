@@ -620,6 +620,88 @@ def entitlement_status_for_user(user_id: Any, entitlement: str = "pro") -> dict:
         conn.close()
 
 
+def billing_snapshot_for_user(user_id: Any, limit: int = 20) -> dict:
+    """Return a safe, account-scoped billing view for the workspace UI.
+
+    Purchase tokens, transaction identifiers, raw provider payloads and any
+    payment data stay server-side. The browser only receives the information a
+    person needs to understand their own access and its recorded lifecycle.
+    """
+    uid = str(user_id or "").strip()
+    if not uid:
+        return {"current": None, "history": []}
+
+    entitlement = entitlement_status_for_user(uid, "pro")
+    bounded_limit = max(1, min(int(limit or 20), 50))
+    conn = _connect()
+    try:
+        subscription = None
+        subscription_id = entitlement.get("subscriptionId")
+        if subscription_id:
+            try:
+                subscription = conn.execute(
+                    """
+                    SELECT id, provider, product_id, status, started_at, expires_at,
+                           auto_renew, environment, source, updated_at
+                    FROM subscriptions
+                    WHERE id=? AND user_id=?
+                    """,
+                    (int(subscription_id), uid),
+                ).fetchone()
+            except (TypeError, ValueError):
+                subscription = None
+        if subscription is None:
+            subscription = conn.execute(
+                """
+                SELECT id, provider, product_id, status, started_at, expires_at,
+                       auto_renew, environment, source, updated_at
+                FROM subscriptions
+                WHERE user_id=?
+                ORDER BY datetime(updated_at) DESC, id DESC
+                LIMIT 1
+                """,
+                (uid,),
+            ).fetchone()
+
+        active = bool(entitlement.get("active"))
+        current = {
+            "active": active,
+            "plan": "Noytrix PRO" if active else "Free",
+            "status": (
+                str(subscription["status"] or "")
+                if subscription is not None
+                else ("active" if active else "free")
+            ),
+            "provider": entitlement.get("provider") or (str(subscription["provider"] or "") if subscription else ""),
+            "source": entitlement.get("source") or (str(subscription["source"] or "") if subscription else ""),
+            "expiresAt": entitlement.get("expiresAt") or (str(subscription["expires_at"] or "") if subscription else None),
+            "autoRenew": bool(subscription["auto_renew"]) if subscription else False,
+        }
+        rows = conn.execute(
+            """
+            SELECT provider, event_type, product_id, status, environment, created_at
+            FROM purchase_events
+            WHERE user_id=? AND environment='production'
+            ORDER BY datetime(created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (uid, bounded_limit),
+        ).fetchall()
+        history = [
+            {
+                "provider": str(row["provider"] or ""),
+                "eventType": str(row["event_type"] or ""),
+                "productId": str(row["product_id"] or ""),
+                "status": str(row["status"] or ""),
+                "createdAt": row["created_at"],
+            }
+            for row in rows
+        ]
+        return {"current": current, "history": history}
+    finally:
+        conn.close()
+
+
 def has_active_entitlement(values: Iterable[Any], entitlement: str = "pro") -> bool:
     return bool(entitlement_status(values, entitlement).get("active"))
 
