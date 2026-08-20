@@ -31,7 +31,7 @@ import { useAuthStore } from "../lib/store.auth";
 import { identityHeaders } from "../lib/identity";
 import { BACKEND } from "../lib/backend";
 import AiVerdictCard from "../components/AiVerdictCard";
-import Protect24Cta from "../components/Protect24Cta";
+import TrackingCta from "../components/TrackingCta";
 import { hasAccountProAccess } from "../lib/proEntitlement";
 import { useScanQuotaStore } from "../lib/store.scanQuota";
 import NoyBot from "../../components/NoyBot";
@@ -1230,7 +1230,7 @@ export default function Home() {
                   title={TT("scan.aiVerdict.title", "AI verdict", "AI-вердикт", "AI-вердикт")}
                   text={normalizedReport.aiHumanVerdict}
                 />
-                <Protect24Cta
+                <TrackingCta
                   result={normalizedReport}
                   target={targetLabel || input}
                   source="home"
@@ -1322,26 +1322,26 @@ export default function Home() {
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginTop: 2 }}>
             <ToolCard
-              title={TT("home.qt.scan", "SCAMSHIELD", "СКАМ ШИЛД", "СКАМ ШИЛД")}
-              sub={TT("home.qt.scanSub", "Full anti-scam report", "Полный анти-скам разбор", "Повний анти-скам розбір")}
+              title={TT("home.tileShield", "SCAMSHIELD", "СКАМ ШИЛД", "СКАМ ШИЛД")}
+              sub={TT("home.tileShieldSub", "Full anti-scam report", "Полный анти-скам разбор", "Повний анти-скам розбір")}
               icon="shield-checkmark"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "shield" }); router.push("/shield"); }}
             />
             <ToolCard
-              title={TT("home.qt.immunity", "IMMUNITY", "ИММУНИТЕТ", "ІМУНІТЕТ")}
-              sub={TT("home.qt.immunitySub", "Your protection score", "Твой уровень защиты", "Твій рівень захисту")}
-              icon="shield-outline"
-              onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "immunity" }); router.push("/immunity"); }}
+              title={TT("home.tileTracking", "TRACKING", "ОТСЛЕЖИВАНИЕ", "ВІДСТЕЖЕННЯ")}
+              sub={TT("home.tileTrackingSub", "Security changes and alerts", "Изменения риска и уведомления", "Зміни ризику та сповіщення")}
+              icon="eye"
+              onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "tracking" }); router.push("/tracking"); }}
             />
             <ToolCard
-              title={TT("home.qt.explain", "EXPLAIN", "EXPLAIN", "ПОЯСНЕННЯ")}
-              sub={TT("home.qt.explainSub", "Understand the risk", "Понять риск простыми словами", "Зрозуміти ризик простими словами")}
+              title={TT("home.tileExplain", "EXPLAIN", "EXPLAIN", "ПОЯСНЕННЯ")}
+              sub={TT("home.tileExplainSub", "Understand the risk", "Понять риск простыми словами", "Зрозуміти ризик простими словами")}
               icon="book"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "explain" }); router.push("/explain"); }}
             />
             <ToolCard
-              title={TT("home.qt.calendar", "CALENDAR", "КАЛЕНДАРЬ", "КАЛЕНДАР")}
-              sub={TT("home.qt.calendarSub", "Events that move market", "События, которые двигают рынок", "Події, які рухають ринок")}
+              title={TT("home.tileCalendar", "CALENDAR", "КАЛЕНДАРЬ", "КАЛЕНДАР")}
+              sub={TT("home.tileCalendarSub", "Events that move market", "События, которые двигают рынок", "Події, які рухають ринок")}
               icon="calendar"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "calendar" }); router.push("/calendar"); }}
             />

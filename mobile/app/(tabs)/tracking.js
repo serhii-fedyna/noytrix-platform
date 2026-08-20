@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
 import { getAuthState } from "../lib/authApi";
@@ -20,105 +20,111 @@ import { showAppAlert } from "../lib/appAlert";
 
 const COPY = {
   en: {
-    title: "Immunity 24/7",
-    subtitle: "Objects under protection. Noytrix alerts only when risk really changes.",
-    protected: "Protected objects",
+    title: "Tracking",
+    subtitle: "Your monitored crypto objects. Noytrix alerts you only when security meaningfully changes.",
+    protected: "Active objects",
     lastCheck: "Last check",
     changes: "Important changes",
     noCheck: "No checks yet",
-    emptyTitle: "No objects protected yet",
-    emptyText: "Run a scan and tap Protect 24/7 under the verdict.",
+    emptyTitle: "Nothing is being tracked yet",
+    emptyText: "Run a scan and tap Track this object under the verdict.",
     startScan: "Run first scan",
-    authTitle: "Sign in to protect objects",
-    authText: "Immunity needs an account to keep protection across devices.",
-    proTitle: "PRO unlocks Immunity",
-    proText: "Add an object once. Noytrix keeps watching it for meaningful changes.",
+    authTitle: "Sign in to track objects",
+    authText: "Your account keeps tracked objects and alerts available on every device.",
+    proTitle: "Tracking requires PRO",
+    proText: "Add an object once. Noytrix keeps checking it for meaningful changes.",
     openProfile: "Open profile",
     openPro: "Open PRO",
     type: "Type",
     score: "Risk score",
     status: "Status",
-    protectedStatus: "Protected",
+    protectedStatus: "Tracking",
     pausedStatus: "Paused",
     lastChange: "Last change",
     noChange: "No meaningful change",
-    alerts: "Push alerts",
+    alerts: "Important change alerts",
+    criticalOnly: "Critical changes only",
+    nextCheck: "Next automatic check",
     activity: "View activity",
     pause: "Pause",
     resume: "Resume",
     recheck: "Recheck now",
     remove: "Remove",
     updated: "Updated",
-    removed: "Removed from Immunity",
-    error: "Immunity error",
+    removed: "Removed from tracking",
+    error: "Tracking error",
     eventsEmpty: "No security events yet.",
   },
   ru: {
-    title: "Immunity 24/7",
-    subtitle: "Объекты под защитой. Noytrix предупреждает только о реальных изменениях риска.",
-    protected: "Объектов под защитой",
+    title: "Отслеживание",
+    subtitle: "Ваши объекты под наблюдением. Noytrix сообщает только о важных изменениях безопасности.",
+    protected: "Активных объектов",
     lastCheck: "Последняя проверка",
     changes: "Важные изменения",
     noCheck: "Проверок ещё нет",
-    emptyTitle: "Пока нет объектов под защитой",
-    emptyText: "Запустите проверку и нажмите «Защитить 24/7» под вердиктом.",
+    emptyTitle: "Пока ничего не отслеживается",
+    emptyText: "Запустите проверку и нажмите «Добавить в отслеживание» под вердиктом.",
     startScan: "Начать проверку",
-    authTitle: "Войдите для защиты объектов",
-    authText: "Immunity нужен аккаунт, чтобы сохранять защиту на всех устройствах.",
-    proTitle: "Immunity доступен в PRO",
+    authTitle: "Войдите для отслеживания",
+    authText: "Аккаунт сохранит объекты и уведомления на всех ваших устройствах.",
+    proTitle: "Отслеживание доступно в PRO",
     proText: "Добавьте объект один раз. Noytrix будет следить за важными изменениями.",
     openProfile: "Открыть профиль",
     openPro: "Открыть PRO",
     type: "Тип",
     score: "Риск",
     status: "Статус",
-    protectedStatus: "Защищён",
+    protectedStatus: "Отслеживается",
     pausedStatus: "Пауза",
     lastChange: "Последнее изменение",
     noChange: "Важных изменений нет",
-    alerts: "Push-уведомления",
+    alerts: "Важные изменения",
+    criticalOnly: "Только критические",
+    nextCheck: "Следующая автопроверка",
     activity: "История",
     pause: "Пауза",
     resume: "Возобновить",
     recheck: "Проверить сейчас",
     remove: "Удалить",
     updated: "Обновлено",
-    removed: "Удалено из Immunity",
-    error: "Ошибка Immunity",
+    removed: "Удалено из отслеживания",
+    error: "Ошибка отслеживания",
     eventsEmpty: "Событий безопасности пока нет.",
   },
   uk: {
-    title: "Immunity 24/7",
-    subtitle: "Об'єкти під захистом. Noytrix попереджає лише про реальні зміни ризику.",
-    protected: "Об'єктів під захистом",
+    title: "Відстеження",
+    subtitle: "Ваші об'єкти під наглядом. Noytrix повідомляє лише про важливі зміни безпеки.",
+    protected: "Активних об'єктів",
     lastCheck: "Остання перевірка",
     changes: "Важливі зміни",
     noCheck: "Перевірок ще немає",
-    emptyTitle: "Поки немає об'єктів під захистом",
-    emptyText: "Запустіть перевірку й натисніть «Захистити 24/7» під вердиктом.",
+    emptyTitle: "Поки нічого не відстежується",
+    emptyText: "Запустіть перевірку й натисніть «Додати до відстеження» під вердиктом.",
     startScan: "Почати перевірку",
-    authTitle: "Увійдіть для захисту об'єктів",
-    authText: "Immunity потрібен акаунт, щоб зберігати захист на всіх пристроях.",
-    proTitle: "Immunity доступний у PRO",
+    authTitle: "Увійдіть для відстеження",
+    authText: "Акаунт збереже об'єкти та сповіщення на всіх ваших пристроях.",
+    proTitle: "Відстеження доступне у PRO",
     proText: "Додайте об'єкт один раз. Noytrix стежитиме за важливими змінами.",
     openProfile: "Відкрити профіль",
     openPro: "Відкрити PRO",
     type: "Тип",
     score: "Ризик",
     status: "Статус",
-    protectedStatus: "Захищено",
+    protectedStatus: "Відстежується",
     pausedStatus: "Пауза",
     lastChange: "Остання зміна",
     noChange: "Важливих змін немає",
-    alerts: "Push-сповіщення",
+    alerts: "Важливі зміни",
+    criticalOnly: "Лише критичні",
+    nextCheck: "Наступна автоперевірка",
     activity: "Історія",
     pause: "Пауза",
     resume: "Відновити",
     recheck: "Перевірити зараз",
     remove: "Видалити",
     updated: "Оновлено",
-    removed: "Видалено з Immunity",
-    error: "Помилка Immunity",
+    removed: "Видалено з відстеження",
+    error: "Помилка відстеження",
     eventsEmpty: "Подій безпеки поки немає.",
   },
 };
@@ -166,7 +172,8 @@ function shortTarget(value) {
   return text.length > 34 ? `${text.slice(0, 18)}...${text.slice(-12)}` : text;
 }
 
-export default function ImmunityScreen() {
+export default function TrackingScreen() {
+  const { watchId } = useLocalSearchParams();
   const { i18n } = useTranslation();
   const lang = langKey(i18n?.language);
   const t = COPY[lang];
@@ -221,14 +228,21 @@ export default function ImmunityScreen() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    const selected = Number(watchId);
+    if (selected > 0 && items.some((item) => Number(item.id) === selected)) {
+      setExpanded(selected);
+    }
+  }, [items, watchId]);
+
   const stats = useMemo(() => {
     const active = items.filter((item) => !item.paused);
     const last = items
-      .map((item) => item.last_checked_at || item.updated_at || item.created_at)
+      .map((item) => item.lastCheckedAt || item.last_checked_at || item.updatedAt || item.createdAt)
       .filter(Boolean)
       .sort()
       .pop();
-    const changes = items.filter((item) => item.last_event_type || item.last_event_summary).length;
+    const changes = items.filter((item) => item.lastEventType || item.lastEventSummary).length;
     return { active: active.length, last, changes };
   }, [items]);
 
@@ -264,7 +278,7 @@ export default function ImmunityScreen() {
         headers: await headers(),
       });
       const payload = await response.json().catch(() => ({}));
-      setEvents((current) => ({ ...current, [item.id]: Array.isArray(payload.events) ? payload.events : [] }));
+      setEvents((current) => ({ ...current, [item.id]: Array.isArray(payload.items) ? payload.items : [] }));
     } catch {
       setEvents((current) => ({ ...current, [item.id]: [] }));
     }
@@ -282,10 +296,18 @@ export default function ImmunityScreen() {
   }
 
   function toggleAlerts(item) {
-    const current = item.alert_settings || {};
+    const current = item.alertSettings || item.alert_settings || {};
     mutate(item, `/workspace/watches/${item.id}`, {
       method: "PATCH",
-      body: JSON.stringify({ alertSettings: { ...current, pushMeaningfulChange: current.pushMeaningfulChange === false } }),
+      body: JSON.stringify({ alertSettings: { ...current, risk_change: current.risk_change === false } }),
+    });
+  }
+
+  function toggleCriticalOnly(item) {
+    const current = item.alertSettings || item.alert_settings || {};
+    mutate(item, `/workspace/watches/${item.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ alertSettings: { ...current, critical_only: !current.critical_only } }),
     });
   }
 
@@ -351,7 +373,9 @@ export default function ImmunityScreen() {
             {items.map((item) => {
               const score = Number(item.score || 0);
               const itemEvents = events[item.id] || [];
-              const alertsOn = (item.alert_settings || {}).pushMeaningfulChange !== false;
+              const alertSettings = item.alertSettings || item.alert_settings || {};
+              const alertsOn = alertSettings.risk_change !== false;
+              const criticalOnly = Boolean(alertSettings.critical_only);
               return (
                 <View key={item.id} style={styles.card}>
                   <View style={styles.cardTop}>
@@ -366,9 +390,10 @@ export default function ImmunityScreen() {
 
                   <View style={styles.row}>
                     <Info label={t.status} value={item.paused ? t.pausedStatus : t.protectedStatus} color={item.paused ? C.gold : C.green} />
-                    <Info label={t.lastCheck} value={formatTime(item.last_checked_at, t.noCheck)} />
+                    <Info label={t.lastCheck} value={formatTime(item.lastCheckedAt || item.last_checked_at, t.noCheck)} />
                   </View>
-                  <Info label={t.lastChange} value={item.last_event_summary || t.noChange} color={item.last_event_summary ? C.red : C.dim} />
+                  <Info label={t.lastChange} value={item.lastEventSummary || t.noChange} color={item.lastEventSummary ? C.red : C.dim} />
+                  <Info label={t.nextCheck} value={formatTime(item.nextCheckAt, t.noCheck)} />
 
                   <View style={styles.switchRow}>
                     <Text style={styles.switchText}>{t.alerts}</Text>
@@ -377,6 +402,17 @@ export default function ImmunityScreen() {
                       onValueChange={() => toggleAlerts(item)}
                       trackColor={{ false: "#1c2744", true: "rgba(54,214,107,0.45)" }}
                       thumbColor={alertsOn ? C.green : C.dim}
+                    />
+                  </View>
+
+                  <View style={styles.switchRow}>
+                    <Text style={styles.switchText}>{t.criticalOnly}</Text>
+                    <Switch
+                      value={criticalOnly}
+                      onValueChange={() => toggleCriticalOnly(item)}
+                      disabled={!alertsOn}
+                      trackColor={{ false: "#1c2744", true: "rgba(255,178,30,0.45)" }}
+                      thumbColor={criticalOnly ? C.gold : C.dim}
                     />
                   </View>
 
@@ -393,7 +429,7 @@ export default function ImmunityScreen() {
                         <Text style={styles.eventText}>{t.eventsEmpty}</Text>
                       ) : itemEvents.map((event) => (
                         <Text key={event.id || `${event.created_at}-${event.summary}`} style={styles.eventText}>
-                          {formatTime(event.created_at, "")} - {event.summary || event.event_type}
+                          {formatTime(event.createdAt, "")} - {event.summary || event.eventType}
                         </Text>
                       ))}
                     </View>

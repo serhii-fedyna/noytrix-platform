@@ -222,6 +222,41 @@ class NoytrixPushService:
             r.raise_for_status()
             return r.json()
 
+    async def send_user_push(
+        self,
+        user_id: str,
+        title: str,
+        body: str,
+        data: dict | None = None,
+    ) -> dict:
+        """Send a private notification to the OneSignal external_id for one Noytrix account."""
+        external_id = str(user_id or "").strip()
+        if not external_id:
+            raise ValueError("user_id is required for a private push")
+        if not self.app_id or not self.api_key:
+            raise RuntimeError("OneSignal is not configured")
+
+        payload = {
+            "app_id": self.app_id,
+            "headings": {"en": str(title or "Noytrix")[:240]},
+            "contents": {"en": str(body or "")[:1000]},
+            "include_aliases": {"external_id": [external_id]},
+            "target_channel": "push",
+            "priority": 10,
+        }
+        if isinstance(data, dict) and data:
+            payload["data"] = data
+        headers = {
+            "Authorization": f"Basic {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as cl:
+            response = await cl.post("https://onesignal.com/api/v1/notifications", json=payload, headers=headers)
+            print("[onesignal:user] status =", response.status_code)
+            response.raise_for_status()
+            return response.json()
+
     async def broadcast_localized_push(
         self,
         messages: dict,

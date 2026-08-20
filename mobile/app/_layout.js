@@ -406,6 +406,7 @@ export default function RootLayout() {
   const init = useAuthStore((s) => s.init);
   const isReady = useAuthStore((s) => s.isReady);
   const isAuth = useAuthStore((s) => s.isAuth);
+  const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
   const [hasToken, setHasToken] = useState(false);
@@ -530,7 +531,26 @@ export default function RootLayout() {
               const data = event?.notification?.additionalData || {};
               const input = data?.input || data?.url || "";
               const screen = data?.screen || "shield";
+              const watchId = String(data?.watch_id || data?.watchId || "").trim();
               const scamSignalId = String(data?.scamSignalId || data?.scam_signal_id || "").trim();
+
+              if (screen === "tracking" || watchId) {
+                try {
+                  await AsyncStorage.setItem(PENDING_SCAM_SIGNAL_KEY, JSON.stringify({
+                    screen: "tracking",
+                    watchId,
+                    source: data?.source || "tracking_alert",
+                  }));
+                } catch (e) {
+                  console.log("[PUSH NAV] tracking target save error:", e);
+                }
+
+                router.push({
+                  pathname: "/tracking",
+                  params: { watchId, source: data?.source || "tracking_alert" },
+                });
+                return;
+              }
 
               if (input || scamSignalId) {
                 console.log("[PUSH NAV] open scan:", input);
@@ -643,6 +663,32 @@ export default function RootLayout() {
   }, [isReady]);
 
   useEffect(() => {
+    if (!isReady || !oneSignalInitDone.current) return;
+    let cancelled = false;
+
+    const timer = setTimeout(async () => {
+      if (cancelled) return;
+      try {
+        const externalId = isAuth && user?.id != null ? String(user.id).trim() : "";
+        if (externalId) {
+          await OneSignal.login(externalId);
+          console.log("[ONESIGNAL] user linked", { externalId });
+        } else {
+          await OneSignal.logout();
+          console.log("[ONESIGNAL] anonymous user");
+        }
+      } catch (e) {
+        console.log("[ONESIGNAL] user identity sync error:", e);
+      }
+    }, 1300);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isAuth, isReady, user?.id]);
+
+  useEffect(() => {
     if (!isAuth || !hasToken || !bioChecked) return;
     let cancelled = false;
     (async () => {
@@ -651,6 +697,16 @@ export default function RootLayout() {
         if (!raw || cancelled) return;
         const pending = JSON.parse(raw);
         await AsyncStorage.removeItem(PENDING_SCAM_SIGNAL_KEY);
+        if (pending?.screen === "tracking" || pending?.watchId) {
+          router.push({
+            pathname: "/tracking",
+            params: {
+              watchId: String(pending?.watchId || ""),
+              source: pending?.source || "tracking_alert",
+            },
+          });
+          return;
+        }
         if (cancelled || (!pending?.input && !pending?.scamSignalId)) return;
         router.push({
           pathname: pending?.screen === "shield_pro" || pending?.screen === "shield-pro" ? "/shield-pro" : "/shield",

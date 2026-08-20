@@ -136,7 +136,6 @@ from routes.telegram import create_telegram_router
 from routes.runtime import create_runtime_router
 from routes.workspace import create_workspace_router
 from routes.community import create_community_router
-from routes.immunity import create_immunity_router
 from scamshield.scam_of_day import create_scam_of_day_router, record_scam_of_day_signal
 from push_service import NoytrixPushService, PUSH_LANGS
 from brain.router import router as brain_router
@@ -7195,14 +7194,6 @@ async def scan(
         })
         raise HTTPException(status_code=500, detail=tr(L, "scan_failed"))
 
-app.include_router(create_workspace_router(
-    scan_fn=scan,
-    authenticated_identity=_authenticated_account_identity,
-    entitlement_active=lambda user_id: bool(entitlement_status_for_user(user_id, "pro").get("active")),
-    billing_snapshot=billing_snapshot_for_user,
-    watch_db_path=DATA_DIR / "workspace_watches.sqlite3",
-))
-
 app.include_router(create_community_router(
     get_lang,
     require_app_key,
@@ -7250,18 +7241,6 @@ app.include_router(create_scam_of_day_router(
     _analyze_scam_of_day_signal,
 ))
 
-app.include_router(create_immunity_router(
-    get_lang,
-    require_app_key,
-    tr,
-    _community_immunity_compute,
-    _community_top_items,
-    _get_user_id,
-    enforce_free_quota,
-    _profile_track_event,
-    DAILY_FREE_LIMIT,
-))
-
 # =========================================================
 # PUSH SENDER (OneSignal)
 # =========================================================
@@ -7269,6 +7248,27 @@ push_service = NoytrixPushService(DATA_DIR, ONESIGNAL_APP_ID, ONESIGNAL_API_KEY)
 _push_dedupe_connect = push_service.connect
 broadcast_localized_push = push_service.broadcast_localized_push
 send_onesignal_push = push_service.send_onesignal_push
+
+
+async def _workspace_background_scan(target: str, language: str, user_id: str) -> dict:
+    return await security_analyze_core({
+        "input": target,
+        "lang": language,
+        "user_id": user_id,
+        "is_pro": True,
+    })
+
+
+workspace_router = create_workspace_router(
+    scan_fn=scan,
+    authenticated_identity=_authenticated_account_identity,
+    entitlement_active=lambda user_id: bool(entitlement_status_for_user(user_id, "pro").get("active")),
+    billing_snapshot=billing_snapshot_for_user,
+    watch_db_path=DATA_DIR / "workspace_watches.sqlite3",
+    background_scan_fn=_workspace_background_scan,
+    send_user_push=push_service.send_user_push,
+)
+app.include_router(workspace_router)
 
 # =========================================================
 # REDDIT SCAM MONITOR (dry-run first)
@@ -8193,6 +8193,19 @@ async def security_alerts_loop():
         except Exception as e:
             print("[security_alerts] error:", e)
         await asyncio.sleep(5 * 60)
+
+
+async def workspace_tracking_loop():
+    await asyncio.sleep(30)
+    print("[tracking] worker started")
+    while True:
+        try:
+            stats = await workspace_router.run_tracking_batch()
+            if stats.get("processed") or stats.get("failed"):
+                print("[tracking] batch", stats)
+        except Exception as exc:
+            print("[tracking] worker error:", exc)
+        await asyncio.sleep(5 * 60)
 # =========================================================
 # STARTUP
 # =========================================================
@@ -8207,6 +8220,7 @@ async def startup_event():
         asyncio.create_task(safety_tip_loop())
         asyncio.create_task(reddit_scam_monitor_loop())
         asyncio.create_task(daily_scan_summary_loop())
+        asyncio.create_task(workspace_tracking_loop())
         asyncio.create_task(brain_scheduler_loop())
         asyncio.create_task(brain_telegram_actions_loop())
         asyncio.create_task(brain_delivery_monitor_loop())

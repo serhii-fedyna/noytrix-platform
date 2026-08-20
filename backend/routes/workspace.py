@@ -46,11 +46,12 @@ def _text(lang: str, key: str) -> str:
             "watch_missing": "This tracked object was not found.",
             "watch_rechecked": "The object was checked again. A verified change was found.",
             "watch_unchanged": "The object was checked again. Its risk status has not changed.",
-            "watch_paused": "24/7 protection was paused for this object.",
-            "watch_resumed": "24/7 protection is active for this object again.",
-            "watch_paused_skip": "This object is paused. Resume protection before rechecking it.",
-            "watch_updated": "Protection settings were updated.",
-            "pro_required": "Immunity 24/7 protection is available with Noytrix PRO.",
+            "watch_paused": "Tracking was paused for this object.",
+            "watch_resumed": "Tracking is active for this object again.",
+            "watch_paused_skip": "This object is paused. Resume tracking before rechecking it.",
+            "watch_updated": "Tracking settings were updated.",
+            "pro_required": "24/7 tracking and security alerts are available with Noytrix PRO.",
+            "watch_alert_title": "Tracked risk changed",
             "auth_required": "Sign in to follow an object and receive verified changes.",
             "chat_limit": "You have used four free follow-up questions for this result today. PRO has unlimited follow-up questions.",
         },
@@ -67,6 +68,12 @@ def _text(lang: str, key: str) -> str:
             "watch_missing": "\u042d\u0442\u043e\u0442 \u043e\u0431\u044a\u0435\u043a\u0442 \u043e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u044f \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d.",
             "watch_rechecked": "\u041e\u0431\u044a\u0435\u043a\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e. \u041d\u0430\u0439\u0434\u0435\u043d\u043e \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043d\u043e\u0435 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435.",
             "watch_unchanged": "\u041e\u0431\u044a\u0435\u043a\u0442 \u043f\u0440\u043e\u0432\u0435\u0440\u0435\u043d \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e. \u0421\u0442\u0430\u0442\u0443\u0441 \u0440\u0438\u0441\u043a\u0430 \u043d\u0435 \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0441\u044f.",
+            "watch_paused": "\u041e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u0435 \u044d\u0442\u043e\u0433\u043e \u043e\u0431\u044a\u0435\u043a\u0442\u0430 \u043f\u0440\u0438\u043e\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u043e.",
+            "watch_resumed": "\u041e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u0435 \u044d\u0442\u043e\u0433\u043e \u043e\u0431\u044a\u0435\u043a\u0442\u0430 \u0441\u043d\u043e\u0432\u0430 \u0430\u043a\u0442\u0438\u0432\u043d\u043e.",
+            "watch_paused_skip": "\u041e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u0435 \u043f\u0440\u0438\u043e\u0441\u0442\u0430\u043d\u043e\u0432\u043b\u0435\u043d\u043e. \u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u0432\u043e\u0437\u043e\u0431\u043d\u043e\u0432\u0438\u0442\u0435 \u0435\u0433\u043e.",
+            "watch_updated": "\u041d\u0430\u0441\u0442\u0440\u043e\u0439\u043a\u0438 \u043e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u044f \u043e\u0431\u043d\u043e\u0432\u043b\u0435\u043d\u044b.",
+            "pro_required": "\u041e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u043d\u0438\u0435 24/7 \u0438 \u0443\u0432\u0435\u0434\u043e\u043c\u043b\u0435\u043d\u0438\u044f \u043e\u0431 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f\u0445 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b \u0432 Noytrix PRO.",
+            "watch_alert_title": "\u0420\u0438\u0441\u043a \u043e\u0431\u044a\u0435\u043a\u0442\u0430 \u0438\u0437\u043c\u0435\u043d\u0438\u043b\u0441\u044f",
             "auth_required": "\u0412\u043e\u0439\u0434\u0438\u0442\u0435 \u0432 \u0430\u043a\u043a\u0430\u0443\u043d\u0442, \u0447\u0442\u043e\u0431\u044b \u043e\u0442\u0441\u043b\u0435\u0436\u0438\u0432\u0430\u0442\u044c \u043e\u0431\u044a\u0435\u043a\u0442 \u0438 \u043f\u043e\u043b\u0443\u0447\u0430\u0442\u044c \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043d\u043d\u044b\u0435 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u044f.",
             "chat_limit": "\u0421\u0435\u0433\u043e\u0434\u043d\u044f \u0432\u044b \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u043b\u0438 \u0447\u0435\u0442\u044b\u0440\u0435 \u0431\u0435\u0441\u043f\u043b\u0430\u0442\u043d\u044b\u0445 \u0443\u0442\u043e\u0447\u043d\u044f\u044e\u0449\u0438\u0445 \u0432\u043e\u043f\u0440\u043e\u0441\u0430. \u0412 PRO \u0432\u043e\u043f\u0440\u043e\u0441\u044b \u0431\u0435\u0437 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u0439.",
         },
@@ -83,6 +90,12 @@ def _text(lang: str, key: str) -> str:
             "watch_missing": "\u0426\u0435\u0439 \u043e\u0431\u2019\u0454\u043a\u0442 \u0432\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f \u043d\u0435 \u0437\u043d\u0430\u0439\u0434\u0435\u043d\u043e.",
             "watch_rechecked": "\u041e\u0431\u2019\u0454\u043a\u0442 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u0435\u043d\u043e \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e. \u0417\u043d\u0430\u0439\u0434\u0435\u043d\u043e \u043f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u0443 \u0437\u043c\u0456\u043d\u0443.",
             "watch_unchanged": "\u041e\u0431\u2019\u0454\u043a\u0442 \u043f\u0435\u0440\u0435\u0432\u0456\u0440\u0435\u043d\u043e \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e. \u0421\u0442\u0430\u0442\u0443\u0441 \u0440\u0438\u0437\u0438\u043a\u0443 \u043d\u0435 \u0437\u043c\u0456\u043d\u0438\u0432\u0441\u044f.",
+            "watch_paused": "\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f \u0446\u044c\u043e\u0433\u043e \u043e\u0431\u2019\u0454\u043a\u0442\u0430 \u043f\u0440\u0438\u0437\u0443\u043f\u0438\u043d\u0435\u043d\u043e.",
+            "watch_resumed": "\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f \u0446\u044c\u043e\u0433\u043e \u043e\u0431\u2019\u0454\u043a\u0442\u0430 \u0437\u043d\u043e\u0432\u0443 \u0430\u043a\u0442\u0438\u0432\u043d\u0435.",
+            "watch_paused_skip": "\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f \u043f\u0440\u0438\u0437\u0443\u043f\u0438\u043d\u0435\u043d\u043e. \u0421\u043f\u043e\u0447\u0430\u0442\u043a\u0443 \u043f\u043e\u043d\u043e\u0432\u0456\u0442\u044c \u0439\u043e\u0433\u043e.",
+            "watch_updated": "\u041d\u0430\u043b\u0430\u0448\u0442\u0443\u0432\u0430\u043d\u043d\u044f \u0432\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f \u043e\u043d\u043e\u0432\u043b\u0435\u043d\u043e.",
+            "pro_required": "\u0412\u0456\u0434\u0441\u0442\u0435\u0436\u0435\u043d\u043d\u044f 24/7 \u0442\u0430 \u0441\u043f\u043e\u0432\u0456\u0449\u0435\u043d\u043d\u044f \u043f\u0440\u043e \u0437\u043c\u0456\u043d\u0438 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u0456 \u0432 Noytrix PRO.",
+            "watch_alert_title": "\u0420\u0438\u0437\u0438\u043a \u043e\u0431\u2019\u0454\u043a\u0442\u0430 \u0437\u043c\u0456\u043d\u0438\u0432\u0441\u044f",
             "auth_required": "\u0423\u0432\u0456\u0439\u0434\u0456\u0442\u044c \u0434\u043e \u043e\u0431\u043b\u0456\u043a\u043e\u0432\u043e\u0433\u043e \u0437\u0430\u043f\u0438\u0441\u0443, \u0449\u043e\u0431 \u0432\u0456\u0434\u0441\u0442\u0435\u0436\u0443\u0432\u0430\u0442\u0438 \u043e\u0431\u2019\u0454\u043a\u0442 \u0442\u0430 \u043e\u0442\u0440\u0438\u043c\u0443\u0432\u0430\u0442\u0438 \u043f\u0456\u0434\u0442\u0432\u0435\u0440\u0434\u0436\u0435\u043d\u0456 \u0437\u043c\u0456\u043d\u0438.",
             "chat_limit": "\u0421\u044c\u043e\u0433\u043e\u0434\u043d\u0456 \u0432\u0438 \u0432\u0438\u043a\u043e\u0440\u0438\u0441\u0442\u0430\u043b\u0438 \u0447\u043e\u0442\u0438\u0440\u0438 \u0431\u0435\u0437\u043a\u043e\u0448\u0442\u043e\u0432\u043d\u0456 \u0443\u0442\u043e\u0447\u043d\u044e\u0432\u0430\u043b\u044c\u043d\u0456 \u0437\u0430\u043f\u0438\u0442\u0430\u043d\u043d\u044f. \u0423 PRO \u0437\u0430\u043f\u0438\u0442\u0430\u043d\u043d\u044f \u0431\u0435\u0437 \u043e\u0431\u043c\u0435\u0436\u0435\u043d\u044c.",
         },
@@ -268,7 +281,7 @@ def _collect_risk_flags(payload: dict[str, Any]) -> list[str]:
     return sorted(found)
 
 
-def _meaningful_change(previous: dict[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+def _meaningful_change(previous: dict[str, Any], current: dict[str, Any], language: str = "en") -> dict[str, Any]:
     before_score = _score_from_payload(previous)
     after_score = _score_from_payload(current)
     before_level = _level_from_payload(previous)
@@ -280,18 +293,38 @@ def _meaningful_change(previous: dict[str, Any], current: dict[str, Any]) -> dic
     level_increased = _risk_rank(after_level) > _risk_rank(before_level)
     score_jump = abs(after_score - before_score) >= 25
     changed = bool(score_crossed or level_increased or score_jump or new_flags)
+    copy = {
+        "en": {
+            "score": "Risk score changed from {before} to {after}.",
+            "level": "Risk level changed from {before} to {after}.",
+            "signals": "New risk signals: {signals}.",
+            "stable": "No meaningful security change was found.",
+        },
+        "ru": {
+            "score": "Оценка риска изменилась с {before} до {after}.",
+            "level": "Уровень риска изменился: {before} → {after}.",
+            "signals": "Новые сигналы риска: {signals}.",
+            "stable": "Значимых изменений безопасности не найдено.",
+        },
+        "uk": {
+            "score": "Оцінка ризику змінилася з {before} до {after}.",
+            "level": "Рівень ризику змінився: {before} → {after}.",
+            "signals": "Нові сигнали ризику: {signals}.",
+            "stable": "Значущих змін безпеки не виявлено.",
+        },
+    }.get(_lang(language), {})
     pieces: list[str] = []
     if before_score != after_score:
-        pieces.append(f"Risk score changed from {before_score} to {after_score}.")
+        pieces.append(copy["score"].format(before=before_score, after=after_score))
     if before_level != after_level:
-        pieces.append(f"Risk level changed from {before_level} to {after_level}.")
+        pieces.append(copy["level"].format(before=before_level, after=after_level))
     if new_flags:
-        pieces.append("New risk signals: " + ", ".join(new_flags[:6]) + ".")
+        pieces.append(copy["signals"].format(signals=", ".join(new_flags[:6])))
     return {
         "changed": changed,
         "event_type": "risk_status_changed" if changed else "risk_status_stable",
         "severity": after_level if changed else "info",
-        "summary": " ".join(pieces) if pieces else "No meaningful security change found.",
+        "summary": " ".join(pieces) if pieces else copy["stable"],
     }
 
 
@@ -341,6 +374,8 @@ def create_workspace_router(
     entitlement_active: Callable[[str], bool],
     billing_snapshot: Callable[[str], dict[str, Any]],
     watch_db_path: Path,
+    background_scan_fn: Callable[[str, str, str], Awaitable[dict[str, Any]]] | None = None,
+    send_user_push: Callable[[str, str, str, dict[str, Any]], Awaitable[dict[str, Any]]] | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["workspace"])
     watch_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -399,6 +434,11 @@ def create_workspace_router(
             "ALTER TABLE workspace_watches ADD COLUMN last_event_at TEXT",
             "ALTER TABLE workspace_watch_events ADD COLUMN severity TEXT",
             "ALTER TABLE workspace_watch_events ADD COLUMN summary TEXT",
+            "ALTER TABLE workspace_watches ADD COLUMN language TEXT NOT NULL DEFAULT 'en'",
+            "ALTER TABLE workspace_watches ADD COLUMN next_check_at TEXT",
+            "ALTER TABLE workspace_watches ADD COLUMN check_interval_minutes INTEGER NOT NULL DEFAULT 360",
+            "ALTER TABLE workspace_watches ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE workspace_watches ADD COLUMN last_error TEXT",
         )
         for statement in migrations:
             try:
@@ -723,11 +763,11 @@ def create_workspace_router(
         try:
             conn.execute(
                 """
-                INSERT INTO workspace_watches(user_id,target,normalized_target,kind,initial_score,initial_level,snapshot_json,active,paused,alert_settings_json,created_at,updated_at,last_checked_at)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(user_id,normalized_target) DO UPDATE SET target=excluded.target,kind=excluded.kind,initial_score=excluded.initial_score,initial_level=excluded.initial_level,snapshot_json=excluded.snapshot_json,active=1,paused=0,alert_settings_json=excluded.alert_settings_json,updated_at=excluded.updated_at,last_checked_at=excluded.last_checked_at
+                INSERT INTO workspace_watches(user_id,target,normalized_target,kind,initial_score,initial_level,snapshot_json,active,paused,alert_settings_json,created_at,updated_at,last_checked_at,language,next_check_at,failure_count,last_error)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(user_id,normalized_target) DO UPDATE SET target=excluded.target,kind=excluded.kind,initial_score=excluded.initial_score,initial_level=excluded.initial_level,snapshot_json=excluded.snapshot_json,active=1,paused=0,alert_settings_json=excluded.alert_settings_json,updated_at=excluded.updated_at,last_checked_at=excluded.last_checked_at,language=excluded.language,next_check_at=excluded.next_check_at,failure_count=0,last_error=NULL
                 """,
-                (user_id, target, _normalized_target(target), kind, score, level, json.dumps(result, ensure_ascii=False), 1, 0, json.dumps(alert_settings, ensure_ascii=False), now, now, now),
+                (user_id, target, _normalized_target(target), kind, score, level, json.dumps(result, ensure_ascii=False), 1, 0, json.dumps(alert_settings, ensure_ascii=False), now, now, now, language, (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat(), 0, None),
             )
             row = conn.execute(
                 "SELECT * FROM workspace_watches WHERE user_id=? AND normalized_target=? AND active=1",
@@ -770,7 +810,147 @@ def create_workspace_router(
             "paused": paused,
             "protected": not paused,
             "alertSettings": alerts,
+            "alert_settings": alerts,
+            "language": str(row["language"] or "en") if "language" in row.keys() else "en",
+            "nextCheckAt": (str(row["next_check_at"] or "") or None) if "next_check_at" in row.keys() else None,
+            "checkIntervalMinutes": int(row["check_interval_minutes"] or 360) if "check_interval_minutes" in row.keys() else 360,
+            "failureCount": int(row["failure_count"] or 0) if "failure_count" in row.keys() else 0,
+            "lastError": (str(row["last_error"] or "") or None) if "last_error" in row.keys() else None,
         }
+
+    async def process_watch(
+        row: sqlite3.Row,
+        *,
+        request: Request | None = None,
+        language: str | None = None,
+        notify: bool = True,
+    ) -> tuple[sqlite3.Row, dict[str, Any], dict[str, Any]]:
+        """Recheck one watch through the same path for manual and scheduled runs."""
+        watch_id = int(row["id"])
+        user_id = str(row["user_id"])
+        lang = _lang(language or row["language"] or "en")
+        interval = max(15, int(row["check_interval_minutes"] or 360))
+        lease_until = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+        conn = connect()
+        try:
+            conn.execute(
+                "UPDATE workspace_watches SET next_check_at=? WHERE id=? AND active=1",
+                (lease_until, watch_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        try:
+            if request is not None:
+                result = _safe_result(await scan_fn(request, input=str(row["target"]), lang=lang, userId=user_id))
+            elif background_scan_fn is not None:
+                result = _safe_result(await background_scan_fn(str(row["target"]), lang, user_id))
+            else:
+                raise RuntimeError("background_scan_not_configured")
+            if not result:
+                raise RuntimeError("empty_tracking_result")
+        except Exception as exc:
+            failures = int(row["failure_count"] or 0) + 1
+            delay = min(interval * (2 ** min(failures, 4)), 24 * 60)
+            conn = connect()
+            try:
+                conn.execute(
+                    """
+                    UPDATE workspace_watches
+                    SET failure_count=?,last_error=?,updated_at=?,next_check_at=?
+                    WHERE id=? AND active=1
+                    """,
+                    (
+                        failures,
+                        str(exc)[:500],
+                        _now(),
+                        (datetime.now(timezone.utc) + timedelta(minutes=delay)).isoformat(),
+                        watch_id,
+                    ),
+                )
+                updated = conn.execute("SELECT * FROM workspace_watches WHERE id=?", (watch_id,)).fetchone()
+                conn.commit()
+            finally:
+                conn.close()
+            raise RuntimeError(f"tracking_recheck_failed:{watch_id}") from exc
+
+        previous = _safe_json_dict(row["snapshot_json"])
+        change = _meaningful_change(previous, result, lang)
+        changed = bool(change["changed"])
+        now = _now()
+        next_check = (datetime.now(timezone.utc) + timedelta(minutes=interval)).isoformat()
+        event_id: int | None = None
+        conn = connect()
+        try:
+            conn.execute(
+                """
+                UPDATE workspace_watches
+                SET snapshot_json=?,kind=?,initial_score=?,initial_level=?,updated_at=?,last_checked_at=?,last_change_at=?,
+                    last_event_type=?,last_event_summary=?,last_event_at=?,next_check_at=?,failure_count=0,last_error=NULL
+                WHERE id=? AND user_id=? AND active=1
+                """,
+                (
+                    json.dumps(result, ensure_ascii=False),
+                    _object_kind(str(row["target"]), result),
+                    _score_from_payload(result),
+                    _level_from_payload(result),
+                    now,
+                    now,
+                    now if changed else row["last_change_at"],
+                    change["event_type"] if changed else row["last_event_type"],
+                    change["summary"] if changed else row["last_event_summary"],
+                    now if changed else row["last_event_at"],
+                    next_check,
+                    watch_id,
+                    user_id,
+                ),
+            )
+            if changed:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO workspace_watch_events(watch_id,event_type,severity,summary,previous_json,current_json,created_at)
+                    VALUES(?,?,?,?,?,?,?)
+                    """,
+                    (
+                        watch_id,
+                        change["event_type"],
+                        change["severity"],
+                        change["summary"],
+                        json.dumps(previous, ensure_ascii=False),
+                        json.dumps(result, ensure_ascii=False),
+                        now,
+                    ),
+                )
+                event_id = int(cursor.lastrowid)
+            updated = conn.execute("SELECT * FROM workspace_watches WHERE id=?", (watch_id,)).fetchone()
+            conn.commit()
+        finally:
+            conn.close()
+
+        alerts = _safe_json_dict(row["alert_settings_json"] or "{}")
+        should_notify = changed and notify and bool(alerts.get("risk_change", True))
+        if alerts.get("critical_only") and _risk_rank(str(change["severity"])) < _risk_rank("critical"):
+            should_notify = False
+        if should_notify and send_user_push is not None:
+            titles = {"en": "Noytrix Tracking: risk changed", "ru": "Noytrix: риск изменился", "uk": "Noytrix: ризик змінився"}
+            try:
+                await send_user_push(
+                    user_id,
+                    titles[lang],
+                    str(change["summary"]),
+                    {"screen": "tracking", "route": "tracking", "watch_id": str(watch_id), "type": "tracking_change"},
+                )
+                if event_id:
+                    conn = connect()
+                    try:
+                        conn.execute("UPDATE workspace_watch_events SET delivered_at=? WHERE id=?", (_now(), event_id))
+                        conn.commit()
+                    finally:
+                        conn.close()
+            except Exception as exc:
+                print(f"[tracking] private push failed watch={watch_id}: {exc}")
+        return updated, result, change
 
     @router.get("/workspace/watches")
     async def list_watches(request: Request, lang: str = "en"):
@@ -807,52 +987,11 @@ def create_workspace_router(
         if int(row["paused"] or 0):
             return {"ok": True, "changed": False, "message": _text(language, "watch_paused_skip"), "item": watch_item(row)}
 
-        result = _safe_result(await scan_fn(request, input=str(row["target"]), lang=language, userId=user_id))
-        previous = _safe_json_dict(row["snapshot_json"])
-        change = _meaningful_change(previous, result)
-        changed = bool(change["changed"])
-        now = _now()
-        conn = connect()
         try:
-            conn.execute(
-                """
-                UPDATE workspace_watches
-                SET snapshot_json=?,kind=?,initial_score=?,initial_level=?,updated_at=?,last_checked_at=?,last_change_at=?,
-                    last_event_type=?,last_event_summary=?,last_event_at=?
-                WHERE id=? AND user_id=?
-                """,
-                (
-                    json.dumps(result, ensure_ascii=False),
-                    _object_kind(str(row["target"]), result),
-                    _score_from_payload(result),
-                    _level_from_payload(result),
-                    now,
-                    now,
-                    now if changed else row["last_change_at"],
-                    change["event_type"] if changed else row["last_event_type"],
-                    change["summary"] if changed else row["last_event_summary"],
-                    now if changed else row["last_event_at"],
-                    watch_id,
-                    user_id,
-                ),
-            )
-            if changed:
-                conn.execute(
-                    "INSERT INTO workspace_watch_events(watch_id,event_type,severity,summary,previous_json,current_json,created_at) VALUES(?,?,?,?,?,?,?)",
-                    (
-                        watch_id,
-                        change["event_type"],
-                        change["severity"],
-                        change["summary"],
-                        json.dumps(previous, ensure_ascii=False),
-                        json.dumps(result, ensure_ascii=False),
-                        now,
-                    ),
-                )
-            updated = conn.execute("SELECT * FROM workspace_watches WHERE id=?", (watch_id,)).fetchone()
-            conn.commit()
-        finally:
-            conn.close()
+            updated, result, change = await process_watch(row, request=request, language=language)
+        except RuntimeError:
+            raise HTTPException(status_code=503, detail={"message": _text(language, "failed")})
+        changed = bool(change["changed"])
         return {"ok": True, "changed": changed, "message": _text(language, "watch_rechecked" if changed else "watch_unchanged"), "item": watch_item(updated), "result": result}
 
     @router.get("/workspace/watches/{watch_id}/events")
@@ -939,5 +1078,39 @@ def create_workspace_router(
         if not result.rowcount:
             raise HTTPException(status_code=404, detail="watch_not_found")
         return {"ok": True}
+
+    async def run_tracking_batch(limit: int = 25) -> dict[str, int]:
+        """Process due PRO watches. Stable scans never generate notifications."""
+        if background_scan_fn is None:
+            return {"processed": 0, "changed": 0, "failed": 0}
+        now = _now()
+        conn = connect()
+        try:
+            rows = conn.execute(
+                """
+                SELECT * FROM workspace_watches
+                WHERE active=1 AND paused=0 AND (next_check_at IS NULL OR next_check_at<=?)
+                ORDER BY COALESCE(next_check_at, created_at) ASC
+                LIMIT ?
+                """,
+                (now, max(1, min(int(limit), 100))),
+            ).fetchall()
+        finally:
+            conn.close()
+        stats = {"processed": 0, "changed": 0, "failed": 0}
+        for row in rows:
+            user_id = str(row["user_id"])
+            if not entitlement_active(user_id):
+                continue
+            try:
+                _updated, _result, change = await process_watch(row)
+                stats["processed"] += 1
+                stats["changed"] += 1 if change["changed"] else 0
+            except Exception as exc:
+                stats["failed"] += 1
+                print(f"[tracking] watch failed id={row['id']}: {exc}")
+        return stats
+
+    setattr(router, "run_tracking_batch", run_tracking_batch)
 
     return router

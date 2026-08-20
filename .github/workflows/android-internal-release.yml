@@ -1,4 +1,4 @@
-name: Android Internal Testing Release
+name: Android Production Release
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: noytrix-android-internal-release
+  group: noytrix-android-production-release
   cancel-in-progress: false
 
 jobs:
@@ -49,7 +49,7 @@ jobs:
         run: npx expo export --platform android --output-dir .ci-export --no-bytecode
 
   build-and-upload:
-    name: Build signed AAB and upload to Google Play Internal Testing
+    name: Build signed AAB and upload to Google Play Production
     needs: test
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -158,11 +158,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload to Google Play Internal Testing
+      - name: Upload to Google Play Production
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.noytrix.app
           releaseFiles: mobile/android/app/artifacts/noytrix-release.aab
-          tracks: internal
+          tracks: production
           status: completed

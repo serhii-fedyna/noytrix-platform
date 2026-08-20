@@ -25,7 +25,7 @@
     "pro": "PRO",
     "spot": "Spot",
     "trading": "Trading",
-    "immunity": "Immunity",
+    "tracking": "Tracking",
     "profile": "Profile"
   },
   "auth": {
@@ -125,8 +125,8 @@
     "heroText": "Check a link or wallet, get a strict verdict and a clear explanation — before you click, connect a wallet or send funds.",
     "btnCheck": "Check",
     "btnExplain": "Explain risk",
-    "tileImmunity": "Immunity",
-    "tileImmunitySub": "Stop scams before losses",
+    "tileTracking": "Tracking",
+    "tileTrackingSub": "Security changes and alerts",
     "tileShield": "Anti-scam",
     "tileShieldSub": "Check links and addresses",
     "tileExplain": "Explain",

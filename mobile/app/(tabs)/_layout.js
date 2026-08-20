@@ -18,7 +18,7 @@ export default function TabsLayout() {
     index: t("tabs.home"),
     pro: t("tabs.pro"),
     spot: t("tabs.spot"),
-    immunity: t("tabs.immunity"),
+    tracking: t("tabs.tracking"),
     profile: t("tabs.profile"),
   };
 
@@ -85,8 +85,8 @@ export default function TabsLayout() {
             case "spot":
               return <Ionicons name="cube" size={22} color={color} />;
 
-            case "immunity":
-              return <Ionicons name="shield-checkmark" size={22} color={color} />;
+            case "tracking":
+              return <Ionicons name="eye" size={22} color={color} />;
 
             case "profile":
               return (
@@ -131,8 +131,8 @@ export default function TabsLayout() {
         options={{ title: t("tabs.spot") }}
       />
       <Tabs.Screen
-        name="immunity"
-        options={{ title: t("tabs.immunity") }}
+        name="tracking"
+        options={{ title: t("tabs.tracking") }}
       />
       <Tabs.Screen
         name="trading"
