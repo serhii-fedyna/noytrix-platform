@@ -31,6 +31,7 @@ import { useAuthStore } from "../lib/store.auth";
 import { identityHeaders } from "../lib/identity";
 import { BACKEND } from "../lib/backend";
 import AiVerdictCard from "../components/AiVerdictCard";
+import Protect24Cta from "../components/Protect24Cta";
 import { hasAccountProAccess } from "../lib/proEntitlement";
 import { useScanQuotaStore } from "../lib/store.scanQuota";
 import NoyBot from "../../components/NoyBot";
@@ -1228,6 +1229,12 @@ export default function Home() {
                 <AiVerdictCard
                   title={TT("scan.aiVerdict.title", "AI verdict", "AI-вердикт", "AI-вердикт")}
                   text={normalizedReport.aiHumanVerdict}
+                />
+                <Protect24Cta
+                  result={normalizedReport}
+                  target={targetLabel || input}
+                  source="home"
+                  compact
                 />
               </View>
 

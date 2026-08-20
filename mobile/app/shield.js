@@ -19,6 +19,7 @@ import { shareImagePremium } from "./lib/sharePremium";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
+import Protect24Cta from "./components/Protect24Cta";
 import ScamOfDay from "./components/ScamOfDay";
 import { hasAccountProAccess } from "./lib/proEntitlement";
 import { FREE_DAILY_LIMIT, normalizeFreeQuota } from "./lib/quota";
@@ -2063,6 +2064,11 @@ export default function Shield() {
                 <AiVerdictCard
                   title={tx("scan.aiVerdict.title", pickLang(currentLang, "AI-вердикт", "AI verdict", "AI-вердикт"))}
                   text={normalizedReport.aiHumanVerdict}
+                />
+                <Protect24Cta
+                  result={normalizedReport}
+                  target={targetLabel || input}
+                  source="shield"
                 />
               </View>
 

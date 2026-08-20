@@ -25,6 +25,7 @@
     "pro": "PRO",
     "spot": "Spot",
     "trading": "Trading",
+    "immunity": "Immunity",
     "profile": "Profile"
   },
   "auth": {

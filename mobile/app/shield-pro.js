@@ -32,6 +32,7 @@ import { recordReviewPromptScan } from "./lib/reviewPrompt";
 import { showAppAlert } from "./lib/appAlert";
 import { BACKEND } from "./lib/backend";
 import AiVerdictCard from "./components/AiVerdictCard";
+import Protect24Cta from "./components/Protect24Cta";
 import ScamOfDay from "./components/ScamOfDay";
 import { hasAccountProAccess } from "./lib/proEntitlement";
 
@@ -2488,6 +2489,11 @@ ${uri}`,
                   text={normalizedOut.aiHumanVerdict}
                 />
                 <ProVerdictDetails result={normalizedOut.aiExplanationResult} tx={tx} lang={currentLang} />
+                <Protect24Cta
+                  result={normalizedOut}
+                  target={targetText || input}
+                  source="shield_pro"
+                />
 
                 {!!normalizedOut.verdictBasis && (
                   <View
