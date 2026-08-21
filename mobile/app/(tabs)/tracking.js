@@ -29,12 +29,13 @@ const COPY = {
     emptyTitle: "Nothing is being tracked yet",
     emptyText: "Run a scan and tap Track this object under the verdict.",
     startScan: "Run first scan",
-    authTitle: "Sign in to track objects",
-    authText: "Your account keeps tracked objects and alerts available on every device.",
-    proTitle: "Tracking requires PRO",
-    proText: "Add an object once. Noytrix keeps checking it for meaningful changes.",
-    openProfile: "Open profile",
-    openPro: "Open PRO",
+    proTitle: "Protect what matters, 24/7",
+    proText: "Add wallets, tokens, contracts and websites after a check. Noytrix tracks meaningful changes and alerts you only when action may be needed.",
+    proBenefitOne: "New threat signals",
+    proBenefitTwo: "Risk-score changes",
+    proBenefitThree: "Contract or domain changes",
+    proBenefitFour: "A clear history of every change",
+    openPro: "Unlock PRO monitoring",
     type: "Type",
     score: "Risk score",
     status: "Status",
@@ -65,12 +66,13 @@ const COPY = {
     emptyTitle: "Пока ничего не отслеживается",
     emptyText: "Запустите проверку и нажмите «Добавить в отслеживание» под вердиктом.",
     startScan: "Начать проверку",
-    authTitle: "Войдите для отслеживания",
-    authText: "Аккаунт сохранит объекты и уведомления на всех ваших устройствах.",
-    proTitle: "Отслеживание доступно в PRO",
-    proText: "Добавьте объект один раз. Noytrix будет следить за важными изменениями.",
-    openProfile: "Открыть профиль",
-    openPro: "Открыть PRO",
+    proTitle: "Следите за риском 24/7",
+    proText: "Добавляйте кошельки, токены, контракты и сайты после проверки. Noytrix отслеживает важные изменения и предупреждает только тогда, когда может потребоваться действие.",
+    proBenefitOne: "Новые сигналы угроз",
+    proBenefitTwo: "Изменения уровня риска",
+    proBenefitThree: "Изменения контракта или домена",
+    proBenefitFour: "Понятная история каждого изменения",
+    openPro: "Открыть PRO-наблюдение",
     type: "Тип",
     score: "Риск",
     status: "Статус",
@@ -101,12 +103,13 @@ const COPY = {
     emptyTitle: "Поки нічого не відстежується",
     emptyText: "Запустіть перевірку й натисніть «Додати до відстеження» під вердиктом.",
     startScan: "Почати перевірку",
-    authTitle: "Увійдіть для відстеження",
-    authText: "Акаунт збереже об'єкти та сповіщення на всіх ваших пристроях.",
-    proTitle: "Відстеження доступне у PRO",
-    proText: "Додайте об'єкт один раз. Noytrix стежитиме за важливими змінами.",
-    openProfile: "Відкрити профіль",
-    openPro: "Відкрити PRO",
+    proTitle: "Стежте за ризиком 24/7",
+    proText: "Додавайте гаманці, токени, контракти й сайти після перевірки. Noytrix відстежує важливі зміни та попереджає лише тоді, коли може знадобитися дія.",
+    proBenefitOne: "Нові сигнали загроз",
+    proBenefitTwo: "Зміни рівня ризику",
+    proBenefitThree: "Зміни контракту або домену",
+    proBenefitFour: "Зрозуміла історія кожної зміни",
+    openPro: "Відкрити PRO-спостереження",
     type: "Тип",
     score: "Ризик",
     status: "Статус",
@@ -200,7 +203,7 @@ export default function TrackingScreen() {
       }
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401) {
-        setGate("auth");
+        setGate("pro");
         setItems([]);
         return;
       }
@@ -324,13 +327,23 @@ export default function TrackingScreen() {
     }
   }
 
+  const proBenefits = [t.proBenefitOne, t.proBenefitTwo, t.proBenefitThree, t.proBenefitFour];
+
   const gateCard = gate ? (
     <View style={styles.empty}>
-      <Ionicons name={gate === "auth" ? "person-circle-outline" : "star"} size={34} color={C.gold} />
-      <Text style={styles.emptyTitle}>{gate === "auth" ? t.authTitle : t.proTitle}</Text>
-      <Text style={styles.emptyText}>{gate === "auth" ? t.authText : t.proText}</Text>
-      <Pressable style={styles.primary} onPress={() => router.push(gate === "auth" ? "/profile" : "/pro")}>
-        <Text style={styles.primaryText}>{gate === "auth" ? t.openProfile : t.openPro}</Text>
+      <Ionicons name="shield-checkmark-outline" size={34} color={C.gold} />
+      <Text style={styles.emptyTitle}>{t.proTitle}</Text>
+      <Text style={styles.emptyText}>{t.proText}</Text>
+      <View style={styles.benefitList}>
+        {proBenefits.map((benefit) => (
+          <View style={styles.benefitRow} key={benefit}>
+            <Ionicons name="checkmark-circle" size={18} color="#35dc78" />
+            <Text style={styles.benefitText}>{benefit}</Text>
+          </View>
+        ))}
+      </View>
+      <Pressable style={styles.primary} onPress={() => router.push("/pro")}>
+        <Text style={styles.primaryText}>{t.openPro}</Text>
       </Pressable>
     </View>
   ) : null;
@@ -481,6 +494,9 @@ const styles = StyleSheet.create({
   empty: { borderWidth: 1, borderColor: "rgba(255,178,30,0.35)", backgroundColor: C.panel, borderRadius: 22, padding: 22, gap: 12 },
   emptyTitle: { color: C.text, fontSize: 24, fontWeight: "900" },
   emptyText: { color: C.dim, fontSize: 16, lineHeight: 24, fontWeight: "700" },
+  benefitList: { gap: 10, marginTop: 4 },
+  benefitRow: { flexDirection: "row", alignItems: "center", gap: 9 },
+  benefitText: { color: C.text, flex: 1, fontSize: 15, fontWeight: "800", lineHeight: 21 },
   primary: { marginTop: 8, minHeight: 54, borderRadius: 16, backgroundColor: C.gold, alignItems: "center", justifyContent: "center" },
   primaryText: { color: "#071025", fontSize: 16, fontWeight: "900" },
   list: { gap: 14 },
