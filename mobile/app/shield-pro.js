@@ -2433,7 +2433,7 @@ ${uri}`,
           </View>
         </BlurCard>
 
-        <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />
+        {!normalizedOut && <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />}
 
         {!!backendError && (
           <BlurCard style={{ borderColor: "rgba(255,107,107,0.35)" }}>
@@ -2560,6 +2560,8 @@ ${uri}`,
                 />
               </View>
             </BlurCard>
+
+            <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />
 
             {false && (
               <>

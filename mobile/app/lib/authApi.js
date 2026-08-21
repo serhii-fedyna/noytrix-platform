@@ -25,12 +25,35 @@ function withQuery(url, params = {}) {
   return url + (url.includes("?") ? "&" : "?") + qs;
 }
 
-async function saveAuthState({ user, access_token, refresh_token }) {
-  const state = {
-    user: user || null,
-    access_token: access_token || null,
-    refresh_token: refresh_token || null,
+function firstToken(...values) {
+  return values.find((value) => typeof value === "string" && value.trim()) || null;
+}
+
+function normalizeAuthState(value, fallback = {}) {
+  const source = value && typeof value === "object" ? value : {};
+  const secondary = fallback && typeof fallback === "object" ? fallback : {};
+  const tokens = source.tokens && typeof source.tokens === "object" ? source.tokens : {};
+  const fallbackTokens = secondary.tokens && typeof secondary.tokens === "object" ? secondary.tokens : {};
+
+  return {
+    user: source.user || source.profile || source.account || secondary.user || secondary.profile || secondary.account || null,
+    access_token: firstToken(
+      source.access_token, source.accessToken, source.access, source.token, source.jwt,
+      tokens.access_token, tokens.accessToken, tokens.access, tokens.token, tokens.jwt,
+      secondary.access_token, secondary.accessToken, secondary.access, secondary.token, secondary.jwt,
+      fallbackTokens.access_token, fallbackTokens.accessToken, fallbackTokens.access, fallbackTokens.token, fallbackTokens.jwt
+    ),
+    refresh_token: firstToken(
+      source.refresh_token, source.refreshToken, source.refresh,
+      tokens.refresh_token, tokens.refreshToken, tokens.refresh,
+      secondary.refresh_token, secondary.refreshToken, secondary.refresh,
+      fallbackTokens.refresh_token, fallbackTokens.refreshToken, fallbackTokens.refresh
+    ),
   };
+}
+
+async function saveAuthState(stateInput = {}) {
+  const state = normalizeAuthState(stateInput);
   try {
     await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(state));
   } catch {}
@@ -40,34 +63,34 @@ async function saveAuthState({ user, access_token, refresh_token }) {
 
 async function migrateLegacyIfAny() {
   try {
-    const raw = await AsyncStorage.getItem(AUTH_KEY);
-    if (raw) return; 
-
-    const [uRaw, tRaw, nUser, nTok] = await Promise.all([
+    const [raw, uRaw, tRaw, nUser, nTok] = await Promise.all([
+      AsyncStorage.getItem(AUTH_KEY),
       AsyncStorage.getItem("auth_user"),
       AsyncStorage.getItem("auth_tokens"),
       AsyncStorage.getItem("noytrix:user"),
       AsyncStorage.getItem("noytrix:tokens"),
     ]);
 
-    const legacyUser = uRaw ? safeJson(uRaw) : nUser ? safeJson(nUser) : null;
-    const legacyTokens = tRaw ? safeJson(tRaw) : nTok ? safeJson(nTok) : null;
+    const current = safeJson(raw) || {};
+    const legacyUser = safeJson(uRaw) || safeJson(nUser) || null;
+    const legacyTokens = safeJson(tRaw) || safeJson(nTok) || {};
+    const state = normalizeAuthState(current, { user: legacyUser, ...legacyTokens });
 
-    const access_token = legacyTokens?.access_token || null;
-    const refresh_token = legacyTokens?.refresh_token || null;
-
-    if (legacyUser || access_token || refresh_token) {
-      await saveAuthState({ user: legacyUser, access_token, refresh_token });
+    if (raw || legacyUser || Object.keys(legacyTokens).length) {
+      await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(state));
     }
 
-    
-    await AsyncStorage.multiRemove([
-      "auth_user",
-      "auth_tokens",
-      "noytrix:user",
-      "noytrix:tokens",
-    ]);
+    if (uRaw || tRaw || nUser || nTok) {
+      await AsyncStorage.multiRemove([
+        "auth_user",
+        "auth_tokens",
+        "noytrix:user",
+        "noytrix:tokens",
+      ]);
+    }
+    return state;
   } catch {}
+  return null;
 }
 
 function safeJson(s) {
@@ -80,14 +103,23 @@ function safeJson(s) {
 
 
 export async function getAuthState() {
-  await migrateLegacyIfAny();
+  const migrated = await migrateLegacyIfAny();
+  if (migrated) return migrated;
 
   try {
     const raw = await AsyncStorage.getItem(AUTH_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) return normalizeAuthState(safeJson(raw));
   } catch {}
 
   return { user: null, access_token: null, refresh_token: null };
+}
+
+export async function updateAuthUser(user) {
+  const current = await getAuthState();
+  return saveAuthState({
+    ...current,
+    user: user || null,
+  });
 }
 
 export async function getAuthenticatedHeaders(extraHeaders = {}, tokenOverride = null) {
@@ -436,10 +468,14 @@ export async function clearAuth() {
 export async function me() {
   const state = await getAuthState();
   const token = state?.access_token || null;
-  if (!token) return null;
+  // A persisted refresh token is still a valid recoverable session. Let jsonFetch
+  // refresh it after the first 401 instead of treating the user as logged out.
+  if (!token && !state?.refresh_token) return null;
 
   try {
-    return await jsonFetch(API.me, { method: "GET", token });
+    const profile = await jsonFetch(API.me, { method: "GET", token });
+    if (profile) await updateAuthUser(profile);
+    return profile;
   } catch (e) {
     console.log("[authApi.me] error:", e?.message || e);
     return null;

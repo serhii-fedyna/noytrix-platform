@@ -81,12 +81,18 @@ export const useAuthStore = create((set, get) => ({
       );
 
       let user = state?.user ? enhanceUser(state.user) : null;
-      const isAuth = !!state?.access_token;
+      // The access token can expire while the refresh token remains valid. Keep
+      // the session recoverable and ask the backend to confirm it on app launch.
+      const hasStoredSession = !!(state?.access_token || state?.refresh_token);
+      let isAuth = hasStoredSession;
 
-      if (isAuth && !user) {
+      if (hasStoredSession) {
         try {
           const profile = await withTimeout(apiMe(), 5000, null);
-          if (profile) user = enhanceUser(profile);
+          if (profile) {
+            user = enhanceUser(profile);
+            isAuth = true;
+          }
         } catch {}
       }
 

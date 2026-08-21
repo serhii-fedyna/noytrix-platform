@@ -2002,7 +2002,7 @@ export default function Shield() {
           </View>
         </BlurCard>
 
-        <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />
+        {!showResultBlock && <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />}
 
         {!!backendError && (
           <BlurCard style={{ borderColor: "rgba(255,107,107,0.35)" }}>
@@ -2095,6 +2095,8 @@ export default function Shield() {
                 />
               </View>
             </BlurCard>
+
+            <ScamOfDay signalId={String(routeParams?.scamSignalId || routeParams?.scam_signal_id || "")} />
 
             <BlurCard>
               <Text style={{ color: T.text, fontWeight: "900", fontSize: 16, marginBottom: 10 }}>

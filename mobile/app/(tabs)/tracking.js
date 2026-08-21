@@ -16,6 +16,7 @@ import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
 import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
+import { useAuthStore } from "../lib/store.auth";
 
 const COPY = {
   en: {
@@ -174,6 +175,7 @@ function shortTarget(value) {
 export default function TrackingScreen() {
   const { watchId } = useLocalSearchParams();
   const { i18n } = useTranslation();
+  const refreshMe = useAuthStore((state) => state.refreshMe);
   const lang = langKey(i18n?.language);
   const t = COPY[lang];
   const [items, setItems] = useState([]);
@@ -188,9 +190,14 @@ export default function TrackingScreen() {
     if (!soft) setLoading(true);
     setGate(null);
     try {
-      const response = await authenticatedFetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
+      const requestWatches = () => authenticatedFetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
         headers: { "Content-Type": "application/json" },
       });
+      let response = await requestWatches();
+      if (response.status === 401) {
+        const restoredUser = await refreshMe().catch(() => null);
+        if (restoredUser) response = await requestWatches();
+      }
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401) {
         setGate("auth");
@@ -210,7 +217,7 @@ export default function TrackingScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [lang, t.error]);
+  }, [lang, refreshMe, t.error]);
 
   useEffect(() => {
     load();

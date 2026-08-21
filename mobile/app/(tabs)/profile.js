@@ -21,6 +21,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useTranslation } from "react-i18next";
 
 import { useAuthStore } from "../lib/store.auth";
+import { getAuthState, updateAuthUser } from "../lib/authApi";
 import SignIn from "../auth/signin";
 import { getPushSubscriptionState, setPushNotificationsEnabled } from "../lib/notifications";
 import { BACKEND } from "../lib/backend";
@@ -42,7 +43,6 @@ const UI = {
   warn: "#FF8A3D",
 };
 
-const AUTH_KEY = "auth_state_v1";
 const AVATAR_SIZE = 64;
 const EMPTY_VALUE = "-";
 
@@ -65,26 +65,12 @@ const pillBase = {
 };
 
 async function persistAuthUserOnly(nextUser) {
-  try {
-    const raw = await AsyncStorage.getItem(AUTH_KEY);
-    const prev = raw ? JSON.parse(raw) : {};
-    const next = {
-      user: nextUser ?? null,
-      access_token: prev?.access_token ?? null,
-      refresh_token: prev?.refresh_token ?? null,
-    };
-    await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(next));
-  } catch {}
+  await updateAuthUser(nextUser);
 }
 
 async function getAuthAccessToken() {
-  try {
-    const raw = await AsyncStorage.getItem(AUTH_KEY);
-    const parsed = raw ? JSON.parse(raw) : null;
-    return parsed?.access_token || null;
-  } catch {
-    return null;
-  }
+  const state = await getAuthState();
+  return state?.access_token || null;
 }
 
 function getScoreTone(score) {
