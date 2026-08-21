@@ -90,6 +90,58 @@ export async function getAuthState() {
   return { user: null, access_token: null, refresh_token: null };
 }
 
+export async function getAuthenticatedHeaders(extraHeaders = {}, tokenOverride = null) {
+  const state = await getAuthState();
+  const token = tokenOverride || state?.access_token || null;
+  const idHeaders = await identityHeaders();
+
+  return {
+    ...idHeaders,
+    ...extraHeaders,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+export async function authenticatedFetch(url, options = {}) {
+  const { headers: extraHeaders = {}, ...requestOptions } = options;
+  const state = await getAuthState();
+
+  async function request(token) {
+    return fetch(url, {
+      ...requestOptions,
+      headers: await getAuthenticatedHeaders(extraHeaders, token),
+    });
+  }
+
+  const response = await request(state?.access_token || null);
+  if (response.status !== 401 || !state?.refresh_token) return response;
+
+  try {
+    const refreshed = await refreshAccessToken(state.refresh_token);
+    const accessToken =
+      refreshed?.access_token ||
+      refreshed?.accessToken ||
+      refreshed?.tokens?.access_token ||
+      null;
+    const refreshToken =
+      refreshed?.refresh_token ||
+      refreshed?.refreshToken ||
+      refreshed?.tokens?.refresh_token ||
+      state.refresh_token;
+
+    if (!accessToken) return response;
+
+    await saveAuthState({
+      user: state?.user || null,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    return request(accessToken);
+  } catch {
+    return response;
+  }
+}
+
 
 async function refreshAccessToken(refresh_token) {
   if (!refresh_token) throw new Error("No refresh token");

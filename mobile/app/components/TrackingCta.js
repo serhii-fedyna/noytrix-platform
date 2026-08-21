@@ -4,8 +4,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
-import { getAuthState } from "../lib/authApi";
-import { getIdentityUserId, getInstallUserId, identityHeaders } from "../lib/identity";
+import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
 
 const COPY = {
@@ -79,17 +78,9 @@ export default function TrackingCta({ result, target, source = "scan", compact =
     if (!object || busy) return;
     setBusy(true);
     try {
-      const auth = await getAuthState().catch(() => null);
-      const identityUserId = await getIdentityUserId().catch(() => null);
-      const installUserId = await getInstallUserId().catch(() => null);
-      const userId = auth?.user?.id || auth?.user?.email || identityUserId || installUserId || "";
-      const headers = await identityHeaders({
-        "Content-Type": "application/json",
-        ...(userId ? { "X-User-Id": String(userId) } : {}),
-      });
-      const response = await fetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           target: object,
           scan: result || {},

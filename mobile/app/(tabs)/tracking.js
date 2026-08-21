@@ -14,13 +14,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
-import { getAuthState } from "../lib/authApi";
-import { getIdentityUserId, getInstallUserId, identityHeaders } from "../lib/identity";
+import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
 
 const COPY = {
   en: {
-    title: "Tracking",
+    title: "Watchlist",
     subtitle: "Your monitored crypto objects. Noytrix alerts you only when security meaningfully changes.",
     protected: "Active objects",
     lastCheck: "Last check",
@@ -56,7 +55,7 @@ const COPY = {
     eventsEmpty: "No security events yet.",
   },
   ru: {
-    title: "Отслеживание",
+    title: "Наблюдение",
     subtitle: "Ваши объекты под наблюдением. Noytrix сообщает только о важных изменениях безопасности.",
     protected: "Активных объектов",
     lastCheck: "Последняя проверка",
@@ -92,7 +91,7 @@ const COPY = {
     eventsEmpty: "Событий безопасности пока нет.",
   },
   uk: {
-    title: "Відстеження",
+    title: "Спостереження",
     subtitle: "Ваші об'єкти під наглядом. Noytrix повідомляє лише про важливі зміни безпеки.",
     protected: "Активних об'єктів",
     lastCheck: "Остання перевірка",
@@ -185,23 +184,12 @@ export default function TrackingScreen() {
   const [busyId, setBusyId] = useState(null);
   const [gate, setGate] = useState(null);
 
-  const headers = useCallback(async () => {
-    const auth = await getAuthState().catch(() => null);
-    const identityUserId = await getIdentityUserId().catch(() => null);
-    const installUserId = await getInstallUserId().catch(() => null);
-    const userId = auth?.user?.id || auth?.user?.email || identityUserId || installUserId || "";
-    return identityHeaders({
-      "Content-Type": "application/json",
-      ...(userId ? { "X-User-Id": String(userId) } : {}),
-    });
-  }, []);
-
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
     setGate(null);
     try {
-      const response = await fetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
-        headers: await headers(),
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401) {
@@ -222,7 +210,7 @@ export default function TrackingScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [headers, lang, t.error]);
+  }, [lang, t.error]);
 
   useEffect(() => {
     load();
@@ -249,9 +237,9 @@ export default function TrackingScreen() {
   async function mutate(item, path, options, successText) {
     setBusyId(item.id);
     try {
-      const response = await fetch(`${BACKEND}${path}?lang=${encodeURIComponent(lang)}`, {
-        headers: await headers(),
+      const response = await authenticatedFetch(`${BACKEND}${path}?lang=${encodeURIComponent(lang)}`, {
         ...options,
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.detail?.message || payload?.message || t.error);
@@ -274,8 +262,8 @@ export default function TrackingScreen() {
     setExpanded(item.id);
     if (events[item.id]) return;
     try {
-      const response = await fetch(`${BACKEND}/workspace/watches/${item.id}/events?lang=${encodeURIComponent(lang)}`, {
-        headers: await headers(),
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches/${item.id}/events?lang=${encodeURIComponent(lang)}`, {
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       setEvents((current) => ({ ...current, [item.id]: Array.isArray(payload.items) ? payload.items : [] }));
@@ -314,9 +302,9 @@ export default function TrackingScreen() {
   async function remove(item) {
     setBusyId(item.id);
     try {
-      const response = await fetch(`${BACKEND}/workspace/watches/${item.id}?lang=${encodeURIComponent(lang)}`, {
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches/${item.id}?lang=${encodeURIComponent(lang)}`, {
         method: "DELETE",
-        headers: await headers(),
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.detail?.message || payload?.message || t.error);
