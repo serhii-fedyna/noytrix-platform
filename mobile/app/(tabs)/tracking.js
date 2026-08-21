@@ -14,31 +14,31 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
-import { getAuthState } from "../lib/authApi";
-import { getIdentityUserId, getInstallUserId, identityHeaders } from "../lib/identity";
+import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
 
 const COPY = {
   en: {
-    title: "Tracking",
-    subtitle: "Your monitored crypto objects. Noytrix alerts you only when security meaningfully changes.",
-    protected: "Active objects",
+    eyebrow: "24/7 SECURITY WATCH",
+    title: "Watchlist",
+    subtitle: "Objects Noytrix checks in the background. You are alerted only when the security risk actually changes.",
+    protected: "Under watch",
     lastCheck: "Last check",
     changes: "Important changes",
     noCheck: "No checks yet",
-    emptyTitle: "Nothing is being tracked yet",
-    emptyText: "Run a scan and tap Track this object under the verdict.",
+    emptyTitle: "No objects under watch yet",
+    emptyText: "Scan a link, wallet, token or contract, then add the object after the verdict.",
     startScan: "Run first scan",
-    authTitle: "Sign in to track objects",
-    authText: "Your account keeps tracked objects and alerts available on every device.",
-    proTitle: "Tracking requires PRO",
+    authTitle: "Sign in to use Watchlist",
+    authText: "Your account securely keeps tracked objects and alerts available on every device.",
+    proTitle: "Watchlist is available with PRO",
     proText: "Add an object once. Noytrix keeps checking it for meaningful changes.",
     openProfile: "Open profile",
     openPro: "Open PRO",
     type: "Type",
     score: "Risk score",
     status: "Status",
-    protectedStatus: "Tracking",
+    protectedStatus: "Under watch",
     pausedStatus: "Paused",
     lastChange: "Last change",
     noChange: "No meaningful change",
@@ -56,32 +56,33 @@ const COPY = {
     eventsEmpty: "No security events yet.",
   },
   ru: {
-    title: "Отслеживание",
-    subtitle: "Ваши объекты под наблюдением. Noytrix сообщает только о важных изменениях безопасности.",
-    protected: "Активных объектов",
+    eyebrow: "ЗАЩИТА 24/7",
+    title: "Наблюдение",
+    subtitle: "Объекты, за которыми Noytrix следит в фоне. Уведомление приходит только при реальном изменении риска.",
+    protected: "Под наблюдением",
     lastCheck: "Последняя проверка",
     changes: "Важные изменения",
     noCheck: "Проверок ещё нет",
-    emptyTitle: "Пока ничего не отслеживается",
-    emptyText: "Запустите проверку и нажмите «Добавить в отслеживание» под вердиктом.",
+    emptyTitle: "Пока нет объектов под наблюдением",
+    emptyText: "Проверьте ссылку, кошелёк, токен или контракт и добавьте объект после вердикта.",
     startScan: "Начать проверку",
-    authTitle: "Войдите для отслеживания",
-    authText: "Аккаунт сохранит объекты и уведомления на всех ваших устройствах.",
-    proTitle: "Отслеживание доступно в PRO",
+    authTitle: "Войдите, чтобы использовать наблюдение",
+    authText: "Аккаунт безопасно сохранит объекты и уведомления на всех ваших устройствах.",
+    proTitle: "Наблюдение доступно в PRO",
     proText: "Добавьте объект один раз. Noytrix будет следить за важными изменениями.",
     openProfile: "Открыть профиль",
     openPro: "Открыть PRO",
     type: "Тип",
     score: "Риск",
     status: "Статус",
-    protectedStatus: "Отслеживается",
+    protectedStatus: "Под наблюдением",
     pausedStatus: "Пауза",
     lastChange: "Последнее изменение",
     noChange: "Важных изменений нет",
     alerts: "Важные изменения",
     criticalOnly: "Только критические",
     nextCheck: "Следующая автопроверка",
-    activity: "История",
+    activity: "Изменения",
     pause: "Пауза",
     resume: "Возобновить",
     recheck: "Проверить сейчас",
@@ -92,32 +93,33 @@ const COPY = {
     eventsEmpty: "Событий безопасности пока нет.",
   },
   uk: {
-    title: "Відстеження",
-    subtitle: "Ваші об'єкти під наглядом. Noytrix повідомляє лише про важливі зміни безпеки.",
-    protected: "Активних об'єктів",
+    eyebrow: "ЗАХИСТ 24/7",
+    title: "Спостереження",
+    subtitle: "Об'єкти, за якими Noytrix стежить у фоні. Сповіщення надходить лише за реальної зміни ризику.",
+    protected: "Під наглядом",
     lastCheck: "Остання перевірка",
     changes: "Важливі зміни",
     noCheck: "Перевірок ще немає",
-    emptyTitle: "Поки нічого не відстежується",
-    emptyText: "Запустіть перевірку й натисніть «Додати до відстеження» під вердиктом.",
+    emptyTitle: "Поки немає об'єктів під наглядом",
+    emptyText: "Перевірте посилання, гаманець, токен або контракт і додайте об'єкт після вердикту.",
     startScan: "Почати перевірку",
-    authTitle: "Увійдіть для відстеження",
-    authText: "Акаунт збереже об'єкти та сповіщення на всіх ваших пристроях.",
-    proTitle: "Відстеження доступне у PRO",
+    authTitle: "Увійдіть, щоб використовувати спостереження",
+    authText: "Акаунт безпечно збереже об'єкти та сповіщення на всіх ваших пристроях.",
+    proTitle: "Спостереження доступне у PRO",
     proText: "Додайте об'єкт один раз. Noytrix стежитиме за важливими змінами.",
     openProfile: "Відкрити профіль",
     openPro: "Відкрити PRO",
     type: "Тип",
     score: "Ризик",
     status: "Статус",
-    protectedStatus: "Відстежується",
+    protectedStatus: "Під наглядом",
     pausedStatus: "Пауза",
     lastChange: "Остання зміна",
     noChange: "Важливих змін немає",
     alerts: "Важливі зміни",
     criticalOnly: "Лише критичні",
     nextCheck: "Наступна автоперевірка",
-    activity: "Історія",
+    activity: "Зміни",
     pause: "Пауза",
     resume: "Відновити",
     recheck: "Перевірити зараз",
@@ -185,23 +187,12 @@ export default function TrackingScreen() {
   const [busyId, setBusyId] = useState(null);
   const [gate, setGate] = useState(null);
 
-  const headers = useCallback(async () => {
-    const auth = await getAuthState().catch(() => null);
-    const identityUserId = await getIdentityUserId().catch(() => null);
-    const installUserId = await getInstallUserId().catch(() => null);
-    const userId = auth?.user?.id || auth?.user?.email || identityUserId || installUserId || "";
-    return identityHeaders({
-      "Content-Type": "application/json",
-      ...(userId ? { "X-User-Id": String(userId) } : {}),
-    });
-  }, []);
-
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
     setGate(null);
     try {
-      const response = await fetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
-        headers: await headers(),
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401) {
@@ -222,7 +213,7 @@ export default function TrackingScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [headers, lang, t.error]);
+  }, [lang, t.error]);
 
   useEffect(() => {
     load();
@@ -249,9 +240,9 @@ export default function TrackingScreen() {
   async function mutate(item, path, options, successText) {
     setBusyId(item.id);
     try {
-      const response = await fetch(`${BACKEND}${path}?lang=${encodeURIComponent(lang)}`, {
-        headers: await headers(),
+      const response = await authenticatedFetch(`${BACKEND}${path}?lang=${encodeURIComponent(lang)}`, {
         ...options,
+        headers: { "Content-Type": "application/json", ...(options?.headers || {}) },
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.detail?.message || payload?.message || t.error);
@@ -274,8 +265,8 @@ export default function TrackingScreen() {
     setExpanded(item.id);
     if (events[item.id]) return;
     try {
-      const response = await fetch(`${BACKEND}/workspace/watches/${item.id}/events?lang=${encodeURIComponent(lang)}`, {
-        headers: await headers(),
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches/${item.id}/events?lang=${encodeURIComponent(lang)}`, {
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       setEvents((current) => ({ ...current, [item.id]: Array.isArray(payload.items) ? payload.items : [] }));
@@ -314,9 +305,9 @@ export default function TrackingScreen() {
   async function remove(item) {
     setBusyId(item.id);
     try {
-      const response = await fetch(`${BACKEND}/workspace/watches/${item.id}?lang=${encodeURIComponent(lang)}`, {
+      const response = await authenticatedFetch(`${BACKEND}/workspace/watches/${item.id}?lang=${encodeURIComponent(lang)}`, {
         method: "DELETE",
-        headers: await headers(),
+        headers: { "Content-Type": "application/json" },
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.detail?.message || payload?.message || t.error);
@@ -347,6 +338,7 @@ export default function TrackingScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={C.gold} />}
       >
         <View style={styles.header}>
+          <Text style={styles.eyebrow}>{t.eyebrow}</Text>
           <Text style={styles.title}>{t.title}</Text>
           <Text style={styles.subtitle}>{t.subtitle}</Text>
         </View>
@@ -476,6 +468,7 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
   container: { padding: 22, paddingBottom: 110 },
   header: { marginTop: 16, marginBottom: 18 },
+  eyebrow: { color: C.gold, fontSize: 12, fontWeight: "900", letterSpacing: 1.1, marginBottom: 6 },
   title: { color: C.gold, fontSize: 42, fontWeight: "900" },
   subtitle: { color: C.dim, fontSize: 17, lineHeight: 25, fontWeight: "700", marginTop: 8 },
   stats: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },

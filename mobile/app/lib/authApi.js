@@ -90,6 +90,20 @@ export async function getAuthState() {
   return { user: null, access_token: null, refresh_token: null };
 }
 
+// Use the same account session for product APIs as the profile screen.
+// This prevents feature screens from falling back to an anonymous device ID.
+export async function getAuthenticatedHeaders(extra = {}, tokenOverride = null) {
+  const state = await getAuthState();
+  const token = tokenOverride || state?.access_token || null;
+  const idHeaders = await identityHeaders();
+
+  return {
+    ...idHeaders,
+    ...extra,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
 
 async function refreshAccessToken(refresh_token) {
   if (!refresh_token) throw new Error("No refresh token");
@@ -203,6 +217,48 @@ export async function login({ email, password }) {
   await saveAuthState({ user, access_token: access, refresh_token: refresh });
   await identifyUser({ email: user?.email || email, authUserId: user?.id });
   return data;
+}
+
+export async function authenticatedFetch(url, options = {}) {
+  const { headers: extraHeaders = {}, ...requestOptions } = options;
+  const state = await getAuthState();
+  let token = state?.access_token || null;
+
+  const request = async (accessToken) => fetch(url, {
+    ...requestOptions,
+    headers: await getAuthenticatedHeaders(extraHeaders, accessToken),
+  });
+
+  let response = await request(token);
+  if (response.status !== 401 || !state?.refresh_token) return response;
+
+  try {
+    const refreshed = await refreshAccessToken(state.refresh_token);
+    const nextAccess =
+      refreshed?.access_token ||
+      refreshed?.accessToken ||
+      refreshed?.tokens?.access_token ||
+      null;
+    const nextRefresh =
+      refreshed?.refresh_token ||
+      refreshed?.refreshToken ||
+      refreshed?.tokens?.refresh_token ||
+      state.refresh_token;
+
+    if (!nextAccess) return response;
+
+    await saveAuthState({
+      user: state?.user || null,
+      access_token: nextAccess,
+      refresh_token: nextRefresh,
+    });
+    token = nextAccess;
+    response = await request(token);
+  } catch {
+    // Preserve the original 401 so the screen can show the correct account state.
+  }
+
+  return response;
 }
 
 export async function loginGoogle({ accessToken }) {
