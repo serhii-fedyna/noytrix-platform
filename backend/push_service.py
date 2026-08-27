@@ -183,6 +183,40 @@ class NoytrixPushService:
         finally:
             conn.close()
 
+    def claim_send(self, dedupe_key: str, title: str, body: str, data: dict | None = None, cooldown_sec: int = PUSH_DEFAULT_DEDUPE_SEC) -> bool:
+        """Atomically reserve a push before the provider request."""
+        if not dedupe_key:
+            return True
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        cutoff = datetime.fromtimestamp(now.timestamp() - max(60, int(cooldown_sec)), tz=timezone.utc).isoformat()
+        now_iso = now.isoformat()
+        conn = self.connect()
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT last_sent_at FROM sent_push_alerts WHERE dedupe_key=?", (dedupe_key,)).fetchone()
+            if row and str(row["last_sent_at"]) >= cutoff:
+                conn.rollback()
+                return False
+            conn.execute(
+                """INSERT INTO sent_push_alerts(dedupe_key,title,body,data_json,first_sent_at,last_sent_at,send_count)
+                   VALUES(?,?,?,?,?,?,0)
+                   ON CONFLICT(dedupe_key) DO UPDATE SET title=excluded.title,body=excluded.body,
+                     data_json=excluded.data_json,last_sent_at=excluded.last_sent_at""",
+                (dedupe_key, str(title or "")[:240], str(body or "")[:1000], json.dumps(data or {}, ensure_ascii=False), now_iso, now_iso),
+            )
+            conn.commit()
+            return True
+        finally:
+            conn.close()
+
+    def release_claim(self, dedupe_key: str) -> None:
+        conn = self.connect()
+        try:
+            conn.execute("DELETE FROM sent_push_alerts WHERE dedupe_key=? AND send_count=0", (dedupe_key,))
+            conn.commit()
+        finally:
+            conn.close()
+
     @staticmethod
     def lang_filter(lang: str) -> list[dict]:
         return [{"field": "tag", "key": "lang", "relation": "=", "value": str(lang or "en")}]
@@ -236,6 +270,12 @@ class NoytrixPushService:
         if not self.app_id or not self.api_key:
             raise RuntimeError("OneSignal is not configured")
 
+        push_data = dict(data or {})
+        semantic = str(push_data.get("dedupe_key") or self.dedupe_key(title, body, push_data))
+        private_key = hashlib.sha256(f"user:{external_id}:{semantic}".encode()).hexdigest()
+        if not self.claim_send(private_key, title, body, push_data):
+            return {"ok": True, "provider": "onesignal", "skipped": True, "reason": "duplicate_recent_push"}
+        push_data.pop("dedupe_key", None)
         payload = {
             "app_id": self.app_id,
             "headings": {"en": str(title or "Noytrix")[:240]},
@@ -244,18 +284,24 @@ class NoytrixPushService:
             "target_channel": "push",
             "priority": 10,
         }
-        if isinstance(data, dict) and data:
-            payload["data"] = data
+        if push_data:
+            payload["data"] = push_data
         headers = {
             "Authorization": f"Basic {self.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
-        async with httpx.AsyncClient(timeout=15.0) as cl:
-            response = await cl.post("https://onesignal.com/api/v1/notifications", json=payload, headers=headers)
-            print("[onesignal:user] status =", response.status_code)
-            response.raise_for_status()
-            return response.json()
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as cl:
+                response = await cl.post("https://onesignal.com/api/v1/notifications", json=payload, headers=headers)
+                print("[onesignal:user] status =", response.status_code)
+                response.raise_for_status()
+                result = response.json()
+            self.mark_sent(private_key, title, body, push_data)
+            return result
+        except Exception:
+            self.release_claim(private_key)
+            raise
 
     async def broadcast_localized_push(
         self,
@@ -279,7 +325,7 @@ class NoytrixPushService:
             lang_data = dict(data or {})
             lang_data["lang"] = lang
             dedupe_key = self.dedupe_key(title, body, lang_data)
-            if self.recently_sent(dedupe_key):
+            if not self.claim_send(dedupe_key, title, body, lang_data):
                 sent.append({"lang": lang, "skipped": "duplicate_recent_push"})
                 continue
             try:
@@ -287,6 +333,7 @@ class NoytrixPushService:
                 self.mark_sent(dedupe_key, title, body, lang_data)
                 sent.append({"lang": lang, "response": resp})
             except Exception as e:
+                self.release_claim(dedupe_key)
                 errors.append({"lang": lang, "error": str(e)})
                 print("[broadcast_localized_push] onesignal error:", lang, e)
 

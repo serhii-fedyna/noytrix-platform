@@ -459,6 +459,47 @@ def _total_unique_installs() -> int:
     return len({identity for row in rows if (identity := _event_identity(row, prefer_anonymous=True))})
 
 
+def _tracking_activity_for_day(start_utc: datetime, end_utc: datetime) -> dict[str, dict[str, int]]:
+    names = tuple(sorted(name for name in product_analytics.ALLOWED_EVENTS if name.startswith("tracking_") or name == "platform_impact_viewed"))
+    result = {name: {"events": 0, "users": 0} for name in names}
+    if not product_analytics.ANALYTICS_DB_PATH.exists() or not names:
+        return result
+    placeholders = ",".join("?" for _ in names)
+    conn = sqlite3.connect(product_analytics.ANALYTICS_DB_PATH, timeout=20)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            f"SELECT event_name,user_id,anonymous_id FROM product_events WHERE event_name IN ({placeholders}) AND event_time>=? AND event_time<?",
+            (*names, start_utc.isoformat(), end_utc.isoformat()),
+        ).fetchall()
+    finally:
+        conn.close()
+    identities: dict[str, set[str]] = {name: set() for name in names}
+    for row in rows:
+        name = str(row["event_name"])
+        result[name]["events"] += 1
+        identity = _event_identity(row)
+        if identity:
+            identities[name].add(identity)
+    for name in names:
+        result[name]["users"] = len(identities[name])
+    return result
+
+
+def _outreach_activity_for_day(start_utc: datetime, end_utc: datetime) -> dict[str, dict[str, int]]:
+    blank = {"sent": 0, "failed": 0, "bounced": 0, "replies": 0, "contactsFound": 0, "draftsCreated": 0, "sourcesChecked": 0}
+    try:
+        from brain.repository import outreach_daily_summary
+        args = {"start_at": start_utc.isoformat(), "end_at": end_utc.isoformat()}
+        return {
+            "partnerships": {**blank, **outreach_daily_summary(**args, pipeline="noytrix_partnerships")},
+            "jobs": {**blank, **outreach_daily_summary(**args, pipeline="serhii_job_search")},
+        }
+    except Exception as exc:
+        print("[admin_telegram] outreach metrics unavailable:", str(exc)[:180])
+        return {"partnerships": dict(blank), "jobs": dict(blank)}
+
+
 def build_daily_scan_summary(report_day: date | None = None) -> tuple[str, dict[str, Any]]:
     tz = _timezone()
     local_day = report_day or datetime.now(tz).date()
@@ -504,6 +545,8 @@ def build_daily_scan_summary(report_day: date | None = None) -> tuple[str, dict[
     error_count = _count_recent_critical_errors(start_utc, end_utc)
     payment_funnel = _payment_funnel_for_day(start_utc, end_utc)
     total_unique_installs = _total_unique_installs()
+    tracking = _tracking_activity_for_day(start_utc, end_utc)
+    outreach = _outreach_activity_for_day(start_utc, end_utc)
     message = (
         f"📊 Noytrix — сводка за {local_day.strftime('%d.%m.%Y')}\n\n"
         f"Всего сканов: {total}\n"
@@ -527,12 +570,28 @@ def build_daily_scan_summary(report_day: date | None = None) -> tuple[str, dict[
         f"Ошибка оплаты: {payment_funnel['purchase_failed']}\n\n"
         f"📱 Уникальных установок за всё время: {total_unique_installs}"
     )
+    message += (
+        "\n\n👁 Наблюдение — реальные события приложения\n"
+        f"Открыли страницу: {tracking['tracking_screen_opened']['users']} чел. / {tracking['tracking_screen_opened']['events']} раз\n"
+        f"Добавили объект: {tracking['tracking_object_added']['users']} чел. / {tracking['tracking_object_added']['events']} раз\n"
+        f"Открыли объект: {tracking['tracking_object_opened']['users']} чел. / {tracking['tracking_object_opened']['events']} раз\n"
+        f"Запустили перепроверку: {tracking['tracking_recheck_started']['users']} чел. / {tracking['tracking_recheck_started']['events']} раз\n"
+        f"Удалили объект: {tracking['tracking_object_removed']['users']} чел. / {tracking['tracking_object_removed']['events']} раз\n"
+        f"Увидели счётчик платформы: {tracking['platform_impact_viewed']['users']} чел. / {tracking['platform_impact_viewed']['events']} раз"
+    )
+    message += (
+        "\n\n📬 Поиск работы и партнёрств — реальные записи backend\n"
+        f"Работа: отправлено {outreach['jobs']['sent']}, ответов {outreach['jobs']['replies']}, ошибок {outreach['jobs']['failed']}\n"
+        f"B2B: отправлено {outreach['partnerships']['sent']}, ответов {outreach['partnerships']['replies']}, ошибок {outreach['partnerships']['failed']}"
+    )
     return message, {
         "day": local_day.isoformat(), "total": total, "completed": completed,
         "failed": failed, "dangerous": dangerous, "unique_users": len(unique_users),
         "counts": counts, "critical_errors": error_count,
         "payment_funnel": payment_funnel,
         "total_unique_installs": total_unique_installs,
+        "tracking_activity": tracking,
+        "outreach_activity": outreach,
     }
 
 

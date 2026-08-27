@@ -2542,6 +2542,14 @@ def _profile_build_achievements(uid: Optional[str]) -> list[dict]:
         add("community_3", "Community Voice", "Р“РѕР»РѕСЃ РєРѕРјСЊСЋРЅРёС‚Рё", "Submitted 3 community votes.", "РћС‚РїСЂР°РІР»РµРЅРѕ 3 РіРѕР»РѕСЃР° РєРѕРјСЊСЋРЅРёС‚Рё.")
     if identity["plan"] == "pro":
         add("pro_user", "PRO User", "PRO-РїРѕР»СЊР·РѕРІР°С‚РµР»СЊ", "PRO access is active.", "PRO-РґРѕСЃС‚СѓРї Р°РєС‚РёРІРµРЅ.")
+    try:
+        joined = datetime.fromisoformat(str(identity.get("memberSince") or "").replace("Z", "+00:00"))
+        if joined.tzinfo is None:
+            joined = joined.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - joined.astimezone(timezone.utc) >= timedelta(days=30):
+            add("member_30_days", "One Month Safer", "Месяц вместе", "You have been building safer habits with Noytrix for one month.", "Вы уже месяц укрепляете цифровую защиту вместе с Noytrix.")
+    except Exception:
+        pass
 
     return ach
 
@@ -2561,7 +2569,15 @@ def _profile_achievement_texts(achievements: list[dict], lang: str) -> list[dict
 # OBJECT DETECTION / NORMALIZATION
 # =========================================================
 # Register profile routes after profile helper functions are defined.
-app.include_router(create_profile_router(_profile_build_stats, _profile_build_achievements, _profile_achievement_texts))
+app.include_router(create_profile_router(
+    _profile_build_stats,
+    _profile_build_achievements,
+    _profile_achievement_texts,
+    profile_db_path=PROFILE_DB_PATH,
+    authenticated_user=_authenticated_account_identity,
+    authenticated_aliases=lambda request: _profile_aliases_for_uid(_authenticated_account_identity(request)),
+    send_push=lambda user_id, title, body, data: push_service.send_user_push(user_id, title, body, data),
+))
 
 RE_URL = re.compile(r"^https?://", re.I)
 RE_DOMAIN = re.compile(r"^(?:[a-z0-9-]+\.)+[a-z]{2,63}(?:/.*)?$", re.I)

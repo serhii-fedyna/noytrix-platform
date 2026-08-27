@@ -345,7 +345,6 @@ def outreach_daily_summary(*, start_at: str, end_at: str, pipeline: str | None =
         scope = ""
         if pipeline:
             scope = " JOIN brain_drafts d ON d.id=m.draft_id JOIN brain_opportunities o ON o.id=d.opportunity_id JOIN brain_prospects p ON p.id=o.prospect_id AND p.pipeline=?"
-            params.append(pipeline)
         sent = int(conn.execute(f"SELECT COUNT(*) FROM brain_outreach_messages m {scope} WHERE m.status IN ('sent','bounced') AND m.sent_at>=? AND m.sent_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
         failed = int(conn.execute(f"SELECT COUNT(*) FROM brain_outreach_messages m {scope} WHERE m.status='failed' AND m.created_at>=? AND m.created_at<?", ([pipeline] if pipeline else []) + [start_at, end_at]).fetchone()[0])
         reply_scope = ""

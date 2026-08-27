@@ -47,6 +47,21 @@ const SERVER_EVENTS = new Set([
   "subscription_cancelled",
   "subscription_expired",
   "app_feedback_submitted",
+  "tracking_screen_opened",
+  "tracking_object_add_started",
+  "tracking_object_added",
+  "tracking_object_add_failed",
+  "tracking_object_opened",
+  "tracking_recheck_started",
+  "tracking_recheck_completed",
+  "tracking_recheck_failed",
+  "tracking_pause_changed",
+  "tracking_alert_settings_changed",
+  "tracking_object_removed",
+  "tracking_upgrade_clicked",
+  "tracking_monthly_report_opened",
+  "platform_impact_viewed",
+  "achievement_notification_opened",
 ]);
 
 const SENSITIVE_PARTS = [

@@ -17,6 +17,7 @@ import { BACKEND } from "../lib/backend";
 import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
 import { useAuthStore } from "../lib/store.auth";
+import { logEvent } from "../lib/analytics";
 
 const COPY = {
   en: {
@@ -223,8 +224,9 @@ export default function TrackingScreen() {
   }, [lang, refreshMe, t.error]);
 
   useEffect(() => {
+    logEvent("tracking_screen_opened", { screen: "tracking", source: watchId ? "push_or_deeplink" : "navigation" });
     load();
-  }, [load]);
+  }, [load, watchId]);
 
   useEffect(() => {
     const selected = Number(watchId);
@@ -244,7 +246,7 @@ export default function TrackingScreen() {
     return { active: active.length, last, changes };
   }, [items]);
 
-  async function mutate(item, path, options, successText) {
+  async function mutate(item, path, options, successText, eventName = "") {
     setBusyId(item.id);
     try {
       const response = await authenticatedFetch(`${BACKEND}${path}?lang=${encodeURIComponent(lang)}`, {
@@ -257,7 +259,9 @@ export default function TrackingScreen() {
         setItems((current) => current.map((row) => (row.id === payload.item.id ? payload.item : row)));
       }
       if (successText) showAppAlert(t.updated, payload?.message || successText);
+      if (eventName) logEvent(`${eventName}_completed`, { screen: "tracking", kind: item?.kind || "unknown" });
     } catch (error) {
+      if (eventName) logEvent(`${eventName}_failed`, { screen: "tracking", reason: String(error?.message || "error").slice(0, 120) });
       showAppAlert(t.error, error?.message || t.error);
     } finally {
       setBusyId(null);
@@ -270,6 +274,7 @@ export default function TrackingScreen() {
       return;
     }
     setExpanded(item.id);
+    logEvent("tracking_object_opened", { screen: "tracking", kind: item?.kind || "unknown" });
     if (events[item.id]) return;
     try {
       const response = await authenticatedFetch(`${BACKEND}/workspace/watches/${item.id}/events?lang=${encodeURIComponent(lang)}`, {
@@ -283,10 +288,12 @@ export default function TrackingScreen() {
   }
 
   function recheck(item) {
-    mutate(item, `/workspace/watches/${item.id}/recheck`, { method: "POST" });
+    logEvent("tracking_recheck_started", { screen: "tracking", kind: item?.kind || "unknown" });
+    mutate(item, `/workspace/watches/${item.id}/recheck`, { method: "POST" }, "", "tracking_recheck");
   }
 
   function togglePause(item) {
+    logEvent("tracking_pause_changed", { screen: "tracking", paused: !item.paused, kind: item?.kind || "unknown" });
     mutate(item, `/workspace/watches/${item.id}`, {
       method: "PATCH",
       body: JSON.stringify({ paused: !item.paused }),
@@ -294,6 +301,7 @@ export default function TrackingScreen() {
   }
 
   function toggleAlerts(item) {
+    logEvent("tracking_alert_settings_changed", { screen: "tracking", setting: "risk_change" });
     const current = item.alertSettings || item.alert_settings || {};
     mutate(item, `/workspace/watches/${item.id}`, {
       method: "PATCH",
@@ -302,6 +310,7 @@ export default function TrackingScreen() {
   }
 
   function toggleCriticalOnly(item) {
+    logEvent("tracking_alert_settings_changed", { screen: "tracking", setting: "critical_only" });
     const current = item.alertSettings || item.alert_settings || {};
     mutate(item, `/workspace/watches/${item.id}`, {
       method: "PATCH",
@@ -319,6 +328,7 @@ export default function TrackingScreen() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok || !payload?.ok) throw new Error(payload?.detail?.message || payload?.message || t.error);
       setItems((current) => current.filter((row) => row.id !== item.id));
+      logEvent("tracking_object_removed", { screen: "tracking", kind: item?.kind || "unknown" });
       showAppAlert(t.updated, t.removed);
     } catch (error) {
       showAppAlert(t.error, error?.message || t.error);

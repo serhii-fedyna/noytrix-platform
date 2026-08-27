@@ -1065,7 +1065,7 @@ def create_workspace_router(
                     user_id,
                     titles[lang],
                     str(change["summary"]),
-                    {"screen": "tracking", "route": "tracking", "watch_id": str(watch_id), "type": "tracking_change"},
+                    {"screen": "tracking", "route": "tracking", "watch_id": str(watch_id), "type": "tracking_change", "dedupe_key": f"tracking_change:{watch_id}:{event_id}"},
                 )
                 if event_id:
                     conn = connect()
@@ -1339,7 +1339,7 @@ def create_workspace_router(
                 "uk": f"{summary['checks']} фонових перевірок · {summary['activeObjects']} об’єктів під захистом · {summary['criticalThreatsCaught']} критичних загроз виявлено.",
             }
             try:
-                await send_user_push(user_id, titles[lang], bodies[lang], {"screen": "tracking", "route": "tracking", "type": "monthly_security_report", "period": period})
+                await send_user_push(user_id, titles[lang], bodies[lang], {"screen": "tracking", "route": "tracking", "type": "monthly_security_report", "period": period, "dedupe_key": f"monthly_security_report:{period}"})
                 conn = connect()
                 try:
                     conn.execute(

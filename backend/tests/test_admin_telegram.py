@@ -112,6 +112,26 @@ class AdminTelegramTests(unittest.TestCase):
         })
         self.assertIn("Уникальных установок за всё время: 2", message)
 
+    def test_daily_summary_includes_tracking_activity_with_unique_users(self):
+        day = date(2026, 7, 31)
+        for event_id, name, user in (
+            ("track-open-1", "tracking_screen_opened", "user-1"),
+            ("track-open-2", "tracking_screen_opened", "user-1"),
+            ("track-open-3", "tracking_screen_opened", "user-2"),
+            ("track-add-1", "tracking_object_added", "user-1"),
+            ("impact-1", "platform_impact_viewed", "user-2"),
+        ):
+            product_analytics.record_product_event({
+                "event_id": event_id,
+                "event_name": name,
+                "event_time": f"{day.isoformat()}T12:00:00+00:00",
+                "user_id": user,
+            })
+        message, summary = admin_telegram.build_daily_scan_summary(day)
+        self.assertEqual(summary["tracking_activity"]["tracking_screen_opened"], {"events": 3, "users": 2})
+        self.assertEqual(summary["tracking_activity"]["tracking_object_added"], {"events": 1, "users": 1})
+        self.assertIn("Открыли страницу: 2 чел. / 3 раз", message)
+
     @patch("admin_telegram.urlopen")
     def test_delivery_uses_telegram_only_when_enabled(self, mocked_open):
         mocked_open.return_value.__enter__.return_value.read.return_value = b'{"ok": true, "result": {"message_id": 12}}'

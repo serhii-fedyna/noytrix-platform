@@ -13,6 +13,9 @@ from .repository import outreach_daily_summary, runtime_state, set_runtime_state
 
 
 def send_daily_outreach_report_if_due(now: datetime | None = None) -> bool:
+    """Legacy entrypoint; outreach metrics now live in the single Noytrix daily report."""
+    return False
+    # Kept below temporarily for source compatibility with older workers.
     zone = ZoneInfo(report_timezone())
     local_now = now.astimezone(zone) if now else datetime.now(zone)
     if local_now.hour < daily_report_hour():
@@ -51,10 +54,6 @@ async def brain_delivery_monitor_loop() -> None:
                     await asyncio.to_thread(process_inbound_mail_once)
                 except Exception as exc:
                     print("[noytrix_brain] inbox monitor error:", str(exc)[:180])
-            try:
-                await asyncio.to_thread(send_daily_outreach_report_if_due)
-            except Exception as exc:
-                print("[noytrix_brain] daily report error:", str(exc)[:180])
             await asyncio.sleep(60)
         except asyncio.CancelledError:
             raise

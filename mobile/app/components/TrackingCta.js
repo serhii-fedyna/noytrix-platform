@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
 import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
+import { logEvent } from "../lib/analytics";
 
 const COPY = {
   en: {
@@ -76,6 +77,7 @@ export default function TrackingCta({ result, target, source = "scan", compact =
 
   async function startTracking() {
     if (!object || busy) return;
+    logEvent("tracking_object_add_started", { screen: source, source, kind: result?.kind || "unknown" });
     setBusy(true);
     try {
       const response = await authenticatedFetch(`${BACKEND}/workspace/watches?lang=${encodeURIComponent(lang)}`, {
@@ -102,9 +104,11 @@ export default function TrackingCta({ result, target, source = "scan", compact =
         return;
       }
       if (!response.ok || !payload?.ok) throw new Error(message || text.errorText);
+      logEvent("tracking_object_added", { screen: source, source, kind: payload?.item?.kind || result?.kind || "unknown" });
       showAppAlert(text.readyTitle, payload?.message || text.readyText);
       router.push({ pathname: "/tracking", params: { watchId: String(payload?.item?.id || "") } });
     } catch (error) {
+      logEvent("tracking_object_add_failed", { screen: source, source, reason: String(error?.message || "error").slice(0, 120) });
       showAppAlert(text.errorTitle, error?.message || text.errorText);
     } finally {
       setBusy(false);

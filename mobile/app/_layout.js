@@ -534,7 +534,19 @@ export default function RootLayout() {
               const watchId = String(data?.watch_id || data?.watchId || "").trim();
               const scamSignalId = String(data?.scamSignalId || data?.scam_signal_id || "").trim();
 
+              if (screen === "profile") {
+                logEvent("achievement_notification_opened", {
+                  screen: "profile",
+                  achievement_code: String(data?.achievement_code || ""),
+                });
+                router.push("/profile");
+                return;
+              }
+
               if (screen === "tracking" || watchId) {
+                if (data?.type === "monthly_security_report") {
+                  logEvent("tracking_monthly_report_opened", { screen: "tracking", period: String(data?.period || "") });
+                }
                 try {
                   await AsyncStorage.setItem(PENDING_SCAM_SIGNAL_KEY, JSON.stringify({
                     screen: "tracking",

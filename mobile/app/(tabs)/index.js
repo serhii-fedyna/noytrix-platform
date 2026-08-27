@@ -822,7 +822,10 @@ export default function Home() {
       const response = await safeFetchRaw(`${BACKEND}/workspace/platform-impact`);
       if (!response.ok) return;
       const data = await response.json();
-      if (data?.ok) setProtection(data);
+      if (data?.ok) {
+        setProtection(data);
+        logEvent("platform_impact_viewed", { screen: "home", completed_checks: Number(data?.completedChecks || 0) });
+      }
     } catch {}
   }, []);
 
