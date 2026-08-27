@@ -1,0 +1,56 @@
+name: Promote existing Android build to Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful Internal Testing workflow run ID
+        required: true
+        type: string
+      artifact_name:
+        description: Exact signed AAB artifact name
+        required: true
+        type: string
+      confirm_version_code:
+        description: Version code that must be promoted
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: noytrix-android-production-promotion
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Promote signed AAB to Google Play Production
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Validate explicit production target
+        run: |
+          test "${{ inputs.source_run_id }}" = "33097597798"
+          test "${{ inputs.artifact_name }}" = "noytrix-android-internal-test-aab-47"
+          test "${{ inputs.confirm_version_code }}" = "399"
+
+      - name: Download signed build 399 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p release
+          gh run download "${{ inputs.source_run_id }}" \
+            --repo "${{ github.repository }}" \
+            --name "${{ inputs.artifact_name }}" \
+            --dir release
+          test -s release/noytrix-internal-test.aab
+
+      - name: Publish build 399 to Google Play Production
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.noytrix.app
+          releaseFiles: release/noytrix-internal-test.aab
+          tracks: production
+          status: completed
