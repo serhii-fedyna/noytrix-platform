@@ -46,11 +46,44 @@ jobs:
             --dir release
           test -s release/noytrix-internal-test.aab
 
-      - name: Publish build 399 to Google Play Production
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: com.noytrix.app
-          releaseFiles: release/noytrix-internal-test.aab
-          tracks: production
-          status: completed
+      - name: Promote existing versionCode 399 to Google Play Production
+        env:
+          GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: |
+          npm install --no-save googleapis@144
+          node <<'NODE'
+          const { google } = require('googleapis');
+
+          async function promote() {
+            const credentials = JSON.parse(process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON);
+            const auth = new google.auth.GoogleAuth({
+              credentials,
+              scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+            });
+            const publisher = google.androidpublisher({ version: 'v3', auth });
+            const packageName = 'com.noytrix.app';
+            const edit = await publisher.edits.insert({ packageName });
+            const editId = edit.data.id;
+            if (!editId) throw new Error('Google Play edit ID was not returned');
+            await publisher.edits.tracks.update({
+              packageName,
+              editId,
+              track: 'production',
+              requestBody: {
+                track: 'production',
+                releases: [{
+                  name: 'Noytrix 1.0.82 (399)',
+                  status: 'completed',
+                  versionCodes: ['399'],
+                }],
+              },
+            });
+            await publisher.edits.commit({ packageName, editId });
+            console.log('PROMOTED_VERSION_CODE=399 TRACK=production STATUS=completed');
+          }
+
+          promote().catch((error) => {
+            console.error(error?.response?.data || error);
+            process.exit(1);
+          });
+          NODE
