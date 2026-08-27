@@ -604,6 +604,28 @@ def create_workspace_router(
             return "attention", max(score, 30)
         return "low", max(score, 0)
 
+    @router.get("/workspace/platform-impact")
+    async def get_platform_impact():
+        """Public platform counter backed by completed backend scan events."""
+        total_checks = 0
+        try:
+            analytics_conn = sqlite3.connect(str(ANALYTICS_DB_PATH))
+            total_checks = int(
+                analytics_conn.execute(
+                    "SELECT COUNT(*) FROM product_events WHERE event_name='scan_completed'"
+                ).fetchone()[0]
+                or 0
+            )
+            analytics_conn.close()
+        except sqlite3.Error:
+            total_checks = 0
+        return {
+            "ok": True,
+            "savedUsd": _network_protected_value_usd(),
+            "completedChecks": total_checks,
+            "updatedAt": _now(),
+        }
+
     @router.get("/workspace/analytics")
     async def get_workspace_analytics(request: Request, days: int = 30):
         days = min(max(int(days), 7), 90)

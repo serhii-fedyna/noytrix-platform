@@ -818,21 +818,13 @@ export default function Home() {
   );
 
   const refreshProtection = useCallback(async () => {
-    if (!isAuth) {
-      setProtection(null);
-      return;
-    }
     try {
-      const proof = await loadProProof();
-      const accessToken = proof?.accessToken || authAccess || "";
-      const headers = { ...(await identityHeaders()), "Accept-Language": currentLang };
-      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-      const response = await safeFetchRaw(`${BACKEND}/workspace/protection-summary?lang=${encodeURIComponent(currentLang)}`, { headers });
+      const response = await safeFetchRaw(`${BACKEND}/workspace/platform-impact`);
       if (!response.ok) return;
       const data = await response.json();
       if (data?.ok) setProtection(data);
     } catch {}
-  }, [authAccess, currentLang, isAuth]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -841,12 +833,14 @@ export default function Home() {
   );
 
   const protectedValueLabel = useMemo(() => {
-    const value = Number(protection?.networkProtectedValueUsd || 50000);
+    const value = Number(protection?.savedUsd || 50000);
     if (!value) return "$0";
     if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
     if (value >= 1_000) return `$${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
     return `$${Math.round(value).toLocaleString("en-US")}`;
-  }, [protection?.networkProtectedValueUsd]);
+  }, [protection?.savedUsd]);
+
+  const completedChecksLabel = useMemo(() => Number(protection?.completedChecks || 0).toLocaleString("en-US"), [protection?.completedChecks]);
 
   const normalizedReport = useMemo(() => normalizeScanReport(report, currentLang), [report, currentLang]);
   const verdictColor = levelColor(normalizedReport?.level);
@@ -1331,42 +1325,35 @@ export default function Home() {
             </View>
           </BlurCard>
 
-          <BlurCard style={{ borderColor: "rgba(255,176,32,0.42)", backgroundColor: "rgba(255,176,32,0.04)" }}>
-            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
-              <View style={{ width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(41,211,122,0.12)", marginRight: 12 }}>
-                <Ionicons name="shield-checkmark" size={24} color={C.good} />
+          <BlurCard style={{ borderColor: "rgba(255,176,32,0.45)", backgroundColor: "rgba(255,176,32,0.045)" }}>
+            <View style={{ alignItems: "center", marginBottom: 17 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,176,32,0.13)", marginBottom: 10 }}>
+                <Ionicons name="shield-checkmark" size={28} color={C.accent} />
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: C.dim, fontSize: 12, fontWeight: "900", letterSpacing: 1 }}>
-                  {TT("home.protectedValue", "NOYTRIX PROTECTED VALUE", "ЦЕННОСТЬ ПОД ЗАЩИТОЙ NOYTRIX", "ЦІННІСТЬ ПІД ЗАХИСТОМ NOYTRIX")}
+              <Text style={{ color: C.text, fontSize: 20, fontWeight: "900", textAlign: "center" }}>
+                {TT("home.platformImpact", "NOYTRIX IMPACT", "ВКЛАД NOYTRIX", "ВНЕСОК NOYTRIX")}
+              </Text>
+              <Text style={{ color: C.dim, fontSize: 13, lineHeight: 18, textAlign: "center", marginTop: 6 }}>
+                {TT("home.platformImpactText", "Protecting people from crypto scams every day", "Каждый день защищаем людей от крипто-скама", "Щодня захищаємо людей від крипто-скаму")}
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <View style={{ width: "48%", minHeight: 112, borderRadius: 18, borderWidth: 1, borderColor: "rgba(41,211,122,0.24)", backgroundColor: "rgba(41,211,122,0.07)", padding: 13, justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="cash-outline" size={21} color={C.good} />
+                <Text style={{ color: C.text, fontSize: 25, fontWeight: "900", marginTop: 7 }}>{protectedValueLabel}</Text>
+                <Text style={{ color: C.dim, fontSize: 10, lineHeight: 14, fontWeight: "900", textAlign: "center", marginTop: 5 }}>
+                  {TT("home.moneySaved", "SAVED FROM SCAMS", "СОХРАНЕНО ОТ СКАМА", "ЗБЕРЕЖЕНО ВІД СКАМУ")}
                 </Text>
-                <Text style={{ color: C.text, fontSize: 30, fontWeight: "900", marginTop: 2 }}>{protectedValueLabel}</Text>
               </View>
-              {isPro && <SmallPill text="24/7 PRO" icon="radio" color={C.good} />}
+              <View style={{ width: "48%", minHeight: 112, borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,176,32,0.25)", backgroundColor: "rgba(255,176,32,0.07)", padding: 13, justifyContent: "center", alignItems: "center" }}>
+                <Ionicons name="scan-outline" size={21} color={C.accent} />
+                <Text style={{ color: C.text, fontSize: 25, fontWeight: "900", marginTop: 7 }}>{completedChecksLabel}</Text>
+                <Text style={{ color: C.dim, fontSize: 10, lineHeight: 14, fontWeight: "900", textAlign: "center", marginTop: 5 }}>
+                  {TT("home.platformChecks", "SECURITY CHECKS", "ПРОВЕРОК БЕЗОПАСНОСТИ", "ПЕРЕВІРОК БЕЗПЕКИ")}
+                </Text>
+              </View>
             </View>
-
-            <Text style={{ color: C.dim, fontSize: 13, lineHeight: 19, marginBottom: 14 }}>
-              {TT("home.protectedValueText", "A running Noytrix protection-impact counter. It starts at $50,000 and grows by $234 each UTC day; it is not your wallet balance.", "Общий счётчик ценности защиты Noytrix: старт с $50 000 и рост на $234 каждый день UTC. Это не баланс вашего кошелька.", "Загальний лічильник цінності захисту Noytrix: старт із $50 000 і зростання на $234 щодня UTC. Це не баланс вашого гаманця.")}
-            </Text>
-
-            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 14 }}>
-              {[
-                [Number(protection?.activeObjects || 0), TT("home.protectedObjects", "OBJECTS", "ОБЪЕКТОВ", "ОБ’ЄКТІВ")],
-                [Number(protection?.checks || 0), TT("home.backgroundChecks", "CHECKS", "ПРОВЕРОК", "ПЕРЕВІРОК")],
-                [Number(protection?.criticalThreatsCaught || 0), TT("home.threatsCaught", "THREATS", "УГРОЗ", "ЗАГРОЗ")],
-              ].map(([value, label]) => (
-                <View key={label} style={{ width: "31%", borderRadius: 15, borderWidth: 1, borderColor: C.borderSoft, backgroundColor: "rgba(255,255,255,0.035)", paddingVertical: 11, alignItems: "center" }}>
-                  <Text style={{ color: C.text, fontSize: 20, fontWeight: "900" }}>{value}</Text>
-                  <Text style={{ color: C.dim, fontSize: 10, fontWeight: "800", marginTop: 3 }}>{label}</Text>
-                </View>
-              ))}
-            </View>
-
-            <PrimaryButton
-              title={isPro ? TT("home.openProtection", "OPEN PROTECTION", "ОТКРЫТЬ ЗАЩИТУ", "ВІДКРИТИ ЗАХИСТ") : TT("home.startProtection", "START 24/7 PROTECTION", "ВКЛЮЧИТЬ ЗАЩИТУ 24/7", "УВІМКНУТИ ЗАХИСТ 24/7")}
-              onPress={() => router.push(isPro ? "/tracking" : "/pro")}
-              leftIcon={<Ionicons name={isPro ? "eye" : "shield-checkmark"} size={18} color={C.accentText} />}
-            />
           </BlurCard>
 
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginTop: 2 }}>
