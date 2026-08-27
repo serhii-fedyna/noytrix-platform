@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+﻿import React, { useMemo, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { BACKEND } from "../lib/backend";
 import { authenticatedFetch } from "../lib/authApi";
 import { showAppAlert } from "../lib/appAlert";
+import { useAuthStore } from "../lib/store.auth";
 
 const COPY = {
   en: {

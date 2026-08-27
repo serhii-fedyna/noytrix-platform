@@ -92,8 +92,8 @@ android {
         applicationId 'com.noytrix.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 395
-        versionName "1.0.81"
+        versionCode 396
+        versionName "1.0.82"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
         buildConfigField "String", "TIKTOK_APP_ID", "\"7661341234656493588\""

@@ -958,6 +958,8 @@ def create_workspace_router(
         user_id = identity_for_request(request)
         if not user_id:
             raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        if not entitlement_active(user_id):
+            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
         conn = connect()
         try:
             rows = conn.execute(
@@ -974,6 +976,8 @@ def create_workspace_router(
         user_id = identity_for_request(request)
         if not user_id:
             raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        if not entitlement_active(user_id):
+            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
         conn = connect()
         try:
             row = conn.execute(
@@ -1000,6 +1004,8 @@ def create_workspace_router(
         user_id = identity_for_request(request)
         if not user_id:
             raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        if not entitlement_active(user_id):
+            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
         conn = connect()
         try:
             row = conn.execute("SELECT id FROM workspace_watches WHERE id=? AND user_id=? AND active=1", (watch_id, user_id)).fetchone()
@@ -1031,6 +1037,8 @@ def create_workspace_router(
         user_id = identity_for_request(request)
         if not user_id:
             raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        if not entitlement_active(user_id):
+            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
         updates: list[str] = []
         values: list[Any] = []
         if "paused" in payload:
@@ -1066,6 +1074,8 @@ def create_workspace_router(
         user_id = identity_for_request(request)
         if not user_id:
             raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        if not entitlement_active(user_id):
+            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
         conn = connect()
         try:
             result = conn.execute(
