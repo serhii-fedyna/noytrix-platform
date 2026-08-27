@@ -51,6 +51,7 @@ from readability import Document
 from dotenv import load_dotenv
 from fastapi.responses import JSONResponse
 from fastapi.responses import Response
+from fastapi.responses import FileResponse
 from scan_card_renderer import render_scan_card
 from fastapi import FastAPI, Query, Body, HTTPException, Request
 from scamshield.intelligence.anti_false_positive import apply_anti_false_positive_layer
@@ -211,6 +212,33 @@ print("[ENV] HONEYPOT base =", HONEYPOT_API_BASE)
 # APP + CORS + ROUTERS
 # =========================================================
 app = FastAPI()
+
+_AUTOMATION_MEDIA_ROOT = _p.Path(
+    os.getenv(
+        "NOYTRIX_AUTOMATION_MEDIA_ROOT",
+        "/root/backend/data/automation_os/runtime",
+    )
+).resolve()
+_AUTOMATION_MEDIA_EXTENSIONS = {".mp4", ".webm", ".jpg", ".jpeg", ".png"}
+
+
+@app.get("/automation-media/{asset_path:path}", include_in_schema=False)
+async def automation_media(asset_path: str):
+    """Serve generated publishing assets without exposing arbitrary server files."""
+    candidate = (_AUTOMATION_MEDIA_ROOT / asset_path).resolve()
+    try:
+        candidate.relative_to(_AUTOMATION_MEDIA_ROOT)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="media_not_found") from exc
+    if (
+        not candidate.is_file()
+        or candidate.suffix.lower() not in _AUTOMATION_MEDIA_EXTENSIONS
+    ):
+        raise HTTPException(status_code=404, detail="media_not_found")
+    return FileResponse(
+        candidate,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 app.add_middleware(
     CORSMiddleware,
@@ -7262,7 +7290,10 @@ async def _workspace_background_scan(target: str, language: str, user_id: str) -
 workspace_router = create_workspace_router(
     scan_fn=scan,
     authenticated_identity=_authenticated_account_identity,
-    entitlement_active=lambda user_id: bool(entitlement_status_for_user(user_id, "pro").get("active")),
+    # Use the same account PRO resolver as /iap/account-status.
+    # It synchronizes verified Google Play purchases and resolves the
+    # entitlement before deciding whether the signed-in account has PRO.
+    entitlement_active=lambda user_id: bool(_iap_status_payload(user_id).get("active")),
     billing_snapshot=billing_snapshot_for_user,
     watch_db_path=DATA_DIR / "workspace_watches.sqlite3",
     background_scan_fn=_workspace_background_scan,
@@ -8206,6 +8237,19 @@ async def workspace_tracking_loop():
         except Exception as exc:
             print("[tracking] worker error:", exc)
         await asyncio.sleep(5 * 60)
+
+
+async def workspace_monthly_report_loop():
+    await asyncio.sleep(90)
+    print("[tracking] monthly report worker started")
+    while True:
+        try:
+            stats = await workspace_router.run_monthly_security_reports()
+            if stats.get("sent") or stats.get("failed"):
+                print("[tracking] monthly reports", stats)
+        except Exception as exc:
+            print("[tracking] monthly report worker error:", exc)
+        await asyncio.sleep(6 * 60 * 60)
 # =========================================================
 # STARTUP
 # =========================================================
@@ -8221,6 +8265,7 @@ async def startup_event():
         asyncio.create_task(reddit_scam_monitor_loop())
         asyncio.create_task(daily_scan_summary_loop())
         asyncio.create_task(workspace_tracking_loop())
+        asyncio.create_task(workspace_monthly_report_loop())
         asyncio.create_task(brain_scheduler_loop())
         asyncio.create_task(brain_telegram_actions_loop())
         asyncio.create_task(brain_delivery_monitor_loop())

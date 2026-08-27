@@ -720,6 +720,8 @@ export default function Home() {
   const [quotaMsg, setQuotaMsg] = useState("");
 
   const [showSamples, setShowSamples] = useState(false);
+  const [showMoreTools, setShowMoreTools] = useState(false);
+  const [protection, setProtection] = useState(null);
 
   const shareShotRef = useRef(null);
   const [sharingNow, setSharingNow] = useState(false);
@@ -814,6 +816,37 @@ export default function Home() {
       refreshCanonicalQuota().catch(() => {});
     }, [refreshCanonicalQuota])
   );
+
+  const refreshProtection = useCallback(async () => {
+    if (!isAuth) {
+      setProtection(null);
+      return;
+    }
+    try {
+      const proof = await loadProProof();
+      const accessToken = proof?.accessToken || authAccess || "";
+      const headers = { ...(await identityHeaders()), "Accept-Language": currentLang };
+      if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+      const response = await safeFetchRaw(`${BACKEND}/workspace/protection-summary?lang=${encodeURIComponent(currentLang)}`, { headers });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.ok) setProtection(data);
+    } catch {}
+  }, [authAccess, currentLang, isAuth]);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshProtection();
+    }, [refreshProtection])
+  );
+
+  const protectedValueLabel = useMemo(() => {
+    const value = Number(protection?.networkProtectedValueUsd || 50000);
+    if (!value) return "$0";
+    if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`;
+    if (value >= 1_000) return `$${(value / 1_000).toFixed(value >= 100_000 ? 0 : 1)}K`;
+    return `$${Math.round(value).toLocaleString("en-US")}`;
+  }, [protection?.networkProtectedValueUsd]);
 
   const normalizedReport = useMemo(() => normalizeScanReport(report, currentLang), [report, currentLang]);
   const verdictColor = levelColor(normalizedReport?.level);
@@ -1298,6 +1331,44 @@ export default function Home() {
             </View>
           </BlurCard>
 
+          <BlurCard style={{ borderColor: "rgba(255,176,32,0.42)", backgroundColor: "rgba(255,176,32,0.04)" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+              <View style={{ width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(41,211,122,0.12)", marginRight: 12 }}>
+                <Ionicons name="shield-checkmark" size={24} color={C.good} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: C.dim, fontSize: 12, fontWeight: "900", letterSpacing: 1 }}>
+                  {TT("home.protectedValue", "NOYTRIX PROTECTED VALUE", "ЦЕННОСТЬ ПОД ЗАЩИТОЙ NOYTRIX", "ЦІННІСТЬ ПІД ЗАХИСТОМ NOYTRIX")}
+                </Text>
+                <Text style={{ color: C.text, fontSize: 30, fontWeight: "900", marginTop: 2 }}>{protectedValueLabel}</Text>
+              </View>
+              {isPro && <SmallPill text="24/7 PRO" icon="radio" color={C.good} />}
+            </View>
+
+            <Text style={{ color: C.dim, fontSize: 13, lineHeight: 19, marginBottom: 14 }}>
+              {TT("home.protectedValueText", "A running Noytrix protection-impact counter. It starts at $50,000 and grows by $234 each UTC day; it is not your wallet balance.", "Общий счётчик ценности защиты Noytrix: старт с $50 000 и рост на $234 каждый день UTC. Это не баланс вашего кошелька.", "Загальний лічильник цінності захисту Noytrix: старт із $50 000 і зростання на $234 щодня UTC. Це не баланс вашого гаманця.")}
+            </Text>
+
+            <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 14 }}>
+              {[
+                [Number(protection?.activeObjects || 0), TT("home.protectedObjects", "OBJECTS", "ОБЪЕКТОВ", "ОБ’ЄКТІВ")],
+                [Number(protection?.checks || 0), TT("home.backgroundChecks", "CHECKS", "ПРОВЕРОК", "ПЕРЕВІРОК")],
+                [Number(protection?.criticalThreatsCaught || 0), TT("home.threatsCaught", "THREATS", "УГРОЗ", "ЗАГРОЗ")],
+              ].map(([value, label]) => (
+                <View key={label} style={{ width: "31%", borderRadius: 15, borderWidth: 1, borderColor: C.borderSoft, backgroundColor: "rgba(255,255,255,0.035)", paddingVertical: 11, alignItems: "center" }}>
+                  <Text style={{ color: C.text, fontSize: 20, fontWeight: "900" }}>{value}</Text>
+                  <Text style={{ color: C.dim, fontSize: 10, fontWeight: "800", marginTop: 3 }}>{label}</Text>
+                </View>
+              ))}
+            </View>
+
+            <PrimaryButton
+              title={isPro ? TT("home.openProtection", "OPEN PROTECTION", "ОТКРЫТЬ ЗАЩИТУ", "ВІДКРИТИ ЗАХИСТ") : TT("home.startProtection", "START 24/7 PROTECTION", "ВКЛЮЧИТЬ ЗАЩИТУ 24/7", "УВІМКНУТИ ЗАХИСТ 24/7")}
+              onPress={() => router.push(isPro ? "/tracking" : "/pro")}
+              leftIcon={<Ionicons name={isPro ? "eye" : "shield-checkmark"} size={18} color={C.accentText} />}
+            />
+          </BlurCard>
+
           <BlurCard style={{ borderColor: "rgba(255,176,32,0.28)" }}>
             <Text style={{ color: C.text, fontWeight: "900", fontSize: 20, marginBottom: 8, textAlign: "center" }}>
               {isPro
@@ -1307,8 +1378,8 @@ export default function Home() {
 
             <Text style={{ color: C.dim, lineHeight: 21, fontSize: 15, marginBottom: 14, textAlign: "center" }}>
               {isPro
-                ? TT("home.new.proActiveText", "Open ScamShield PRO for deeper analysis.", "Открой ScamShield PRO для более глубокого анализа.", "Відкрий ScamShield PRO для глибшого аналізу.")
-                : TT("home.new.proText", "PRO removes daily limits and unlocks deeper source details.", "PRO убирает дневные лимиты и открывает более глубокие детали источников.", "PRO прибирає денні ліміти й відкриває глибші деталі джерел.")}
+                ? TT("home.new.proActiveText", "Your objects are rechecked every 6 hours. Important risk changes trigger a private alert.", "Ваши объекты перепроверяются каждые 6 часов. При важных изменениях риска приходит личное уведомление.", "Ваші об’єкти перевіряються кожні 6 годин. Про важливі зміни ризику надходить особисте сповіщення.")
+                : TT("home.new.proText", "A free scan is a snapshot. PRO keeps watching after you close the app and alerts you when risk changes.", "Бесплатная проверка — это снимок сейчас. PRO продолжает следить после закрытия приложения и сообщает, когда риск меняется.", "Безкоштовна перевірка — це знімок зараз. PRO продовжує стежити після закриття застосунку та повідомляє про зміни ризику.")}
             </Text>
 
             <PrimaryButton
@@ -1333,19 +1404,18 @@ export default function Home() {
               icon="eye"
               onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "tracking" }); router.push("/tracking"); }}
             />
-            <ToolCard
-              title={TT("home.tileExplain", "EXPLAIN", "EXPLAIN", "ПОЯСНЕННЯ")}
-              sub={TT("home.tileExplainSub", "Understand the risk", "Понять риск простыми словами", "Зрозуміти ризик простими словами")}
-              icon="book"
-              onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "explain" }); router.push("/explain"); }}
-            />
-            <ToolCard
-              title={TT("home.tileCalendar", "CALENDAR", "КАЛЕНДАРЬ", "КАЛЕНДАР")}
-              sub={TT("home.tileCalendarSub", "Events that move market", "События, которые двигают рынок", "Події, які рухають ринок")}
-              icon="calendar"
-              onPress={() => { logEvent("home_tool_click", { screen: "home", tool: "calendar" }); router.push("/calendar"); }}
-            />
           </View>
+
+          <TouchableOpacity activeOpacity={0.88} onPress={() => setShowMoreTools((value) => !value)} style={{ borderWidth: 1, borderColor: C.borderSoft, borderRadius: 16, backgroundColor: "rgba(255,255,255,0.025)", padding: 13, flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
+            <Text style={{ color: C.dim, fontWeight: "800", marginRight: 7 }}>{TT("home.moreTools", "More tools", "Дополнительные инструменты", "Додаткові інструменти")}</Text>
+            <Ionicons name={showMoreTools ? "chevron-up" : "chevron-down"} size={17} color={C.dim} />
+          </TouchableOpacity>
+          {showMoreTools && (
+            <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" }}>
+              <ToolCard title={TT("home.tileExplain", "EXPLAIN", "EXPLAIN", "ПОЯСНЕННЯ")} sub={TT("home.tileExplainSub", "Understand the risk", "Понять риск простыми словами", "Зрозуміти ризик простими словами")} icon="book" onPress={() => router.push("/explain")} />
+              <ToolCard title={TT("home.tileCalendar", "CALENDAR", "КАЛЕНДАРЬ", "КАЛЕНДАР")} sub={TT("home.tileCalendarSub", "Events that move market", "События, которые двигают рынок", "Події, які рухають ринок")} icon="calendar" onPress={() => router.push("/calendar")} />
+            </View>
+          )}
 
           <View style={{ alignItems: "center", marginTop: 18, marginBottom: 80 }}>
             <View style={{ flexDirection: "row", marginBottom: 14 }}>

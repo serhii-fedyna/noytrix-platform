@@ -328,6 +328,72 @@ def _meaningful_change(previous: dict[str, Any], current: dict[str, Any], langua
     }
 
 
+def _protected_value_usd(payload: dict[str, Any]) -> float:
+    """Return only explicitly reported USD value; never invent portfolio value."""
+    aggregate_keys = (
+        "portfolio_value_usd", "portfolioValueUsd", "total_value_usd", "totalValueUsd",
+        "balance_usd", "balanceUsd", "net_worth_usd", "netWorthUsd",
+    )
+    item_keys = ("value_usd", "valueUsd", "usd_value", "usdValue")
+
+    def number(value: Any) -> float | None:
+        try:
+            parsed = float(str(value).replace(",", "").replace("$", "").strip())
+            return parsed if 0 <= parsed < 1_000_000_000_000 else None
+        except (TypeError, ValueError):
+            return None
+
+    def find_aggregate(value: Any) -> float | None:
+        if isinstance(value, dict):
+            for key in aggregate_keys:
+                if key in value:
+                    found = number(value.get(key))
+                    if found is not None:
+                        return found
+            for nested in value.values():
+                found = find_aggregate(nested)
+                if found is not None:
+                    return found
+        elif isinstance(value, list):
+            for nested in value[:100]:
+                found = find_aggregate(nested)
+                if found is not None:
+                    return found
+        return None
+
+    aggregate = find_aggregate(payload)
+    if aggregate is not None:
+        return round(aggregate, 2)
+
+    values: list[float] = []
+
+    def collect_items(value: Any) -> None:
+        if isinstance(value, dict):
+            for key in item_keys:
+                if key in value:
+                    found = number(value.get(key))
+                    if found is not None:
+                        values.append(found)
+                        break
+            else:
+                for nested in value.values():
+                    collect_items(nested)
+        elif isinstance(value, list):
+            for nested in value[:200]:
+                collect_items(nested)
+
+    collect_items(payload)
+    return round(sum(values), 2)
+
+
+def _network_protected_value_usd(moment: datetime | None = None) -> float:
+    """Public running impact counter: $50,000 on 2026-08-27, plus $234 per UTC day."""
+    current = (moment or datetime.now(timezone.utc)).astimezone(timezone.utc).date()
+    baseline = datetime(2026, 8, 27, tzinfo=timezone.utc).date()
+    elapsed_days = max(0, (current - baseline).days)
+    return float(50_000 + elapsed_days * 234)
+
+
 DEFAULT_WORKSPACE_SETTINGS: dict[str, Any] = {
     "language": "en",
     "region": "UA",
@@ -424,6 +490,26 @@ def create_workspace_router(
                 settings_json TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS workspace_watch_checks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                watch_id INTEGER NOT NULL,
+                user_id TEXT NOT NULL,
+                checked_at TEXT NOT NULL,
+                success INTEGER NOT NULL,
+                score INTEGER,
+                level TEXT,
+                protected_value_usd REAL NOT NULL DEFAULT 0,
+                changed INTEGER NOT NULL DEFAULT 0,
+                error TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_workspace_checks_user_time ON workspace_watch_checks(user_id, checked_at);
+            CREATE TABLE IF NOT EXISTS workspace_monthly_reports (
+                user_id TEXT NOT NULL,
+                period TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                sent_at TEXT NOT NULL,
+                PRIMARY KEY(user_id, period)
+            );
             """
         )
         migrations = (
@@ -439,6 +525,8 @@ def create_workspace_router(
             "ALTER TABLE workspace_watches ADD COLUMN check_interval_minutes INTEGER NOT NULL DEFAULT 360",
             "ALTER TABLE workspace_watches ADD COLUMN failure_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE workspace_watches ADD COLUMN last_error TEXT",
+            "ALTER TABLE workspace_watches ADD COLUMN check_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE workspace_watches ADD COLUMN protected_value_usd REAL NOT NULL DEFAULT 0",
         )
         for statement in migrations:
             try:
@@ -763,16 +851,20 @@ def create_workspace_router(
         try:
             conn.execute(
                 """
-                INSERT INTO workspace_watches(user_id,target,normalized_target,kind,initial_score,initial_level,snapshot_json,active,paused,alert_settings_json,created_at,updated_at,last_checked_at,language,next_check_at,failure_count,last_error)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(user_id,normalized_target) DO UPDATE SET target=excluded.target,kind=excluded.kind,initial_score=excluded.initial_score,initial_level=excluded.initial_level,snapshot_json=excluded.snapshot_json,active=1,paused=0,alert_settings_json=excluded.alert_settings_json,updated_at=excluded.updated_at,last_checked_at=excluded.last_checked_at,language=excluded.language,next_check_at=excluded.next_check_at,failure_count=0,last_error=NULL
+                INSERT INTO workspace_watches(user_id,target,normalized_target,kind,initial_score,initial_level,snapshot_json,active,paused,alert_settings_json,created_at,updated_at,last_checked_at,language,next_check_at,failure_count,last_error,check_count,protected_value_usd)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(user_id,normalized_target) DO UPDATE SET target=excluded.target,kind=excluded.kind,initial_score=excluded.initial_score,initial_level=excluded.initial_level,snapshot_json=excluded.snapshot_json,active=1,paused=0,alert_settings_json=excluded.alert_settings_json,updated_at=excluded.updated_at,last_checked_at=excluded.last_checked_at,language=excluded.language,next_check_at=excluded.next_check_at,failure_count=0,last_error=NULL,check_count=workspace_watches.check_count+1,protected_value_usd=excluded.protected_value_usd
                 """,
-                (user_id, target, _normalized_target(target), kind, score, level, json.dumps(result, ensure_ascii=False), 1, 0, json.dumps(alert_settings, ensure_ascii=False), now, now, now, language, (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat(), 0, None),
+                (user_id, target, _normalized_target(target), kind, score, level, json.dumps(result, ensure_ascii=False), 1, 0, json.dumps(alert_settings, ensure_ascii=False), now, now, now, language, (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat(), 0, None, 1, _protected_value_usd(result)),
             )
             row = conn.execute(
                 "SELECT * FROM workspace_watches WHERE user_id=? AND normalized_target=? AND active=1",
                 (user_id, _normalized_target(target)),
             ).fetchone()
+            conn.execute(
+                "INSERT INTO workspace_watch_checks(watch_id,user_id,checked_at,success,score,level,protected_value_usd,changed) VALUES(?,?,?,?,?,?,?,0)",
+                (int(row["id"]), user_id, now, 1, score, level, _protected_value_usd(result)),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -816,6 +908,8 @@ def create_workspace_router(
             "checkIntervalMinutes": int(row["check_interval_minutes"] or 360) if "check_interval_minutes" in row.keys() else 360,
             "failureCount": int(row["failure_count"] or 0) if "failure_count" in row.keys() else 0,
             "lastError": (str(row["last_error"] or "") or None) if "last_error" in row.keys() else None,
+            "checkCount": int(row["check_count"] or 0) if "check_count" in row.keys() else 0,
+            "protectedValueUsd": float(row["protected_value_usd"] or 0) if "protected_value_usd" in row.keys() else 0,
         }
 
     async def process_watch(
@@ -869,6 +963,10 @@ def create_workspace_router(
                         watch_id,
                     ),
                 )
+                conn.execute(
+                    "INSERT INTO workspace_watch_checks(watch_id,user_id,checked_at,success,error) VALUES(?,?,?,?,?)",
+                    (watch_id, user_id, _now(), 0, str(exc)[:500]),
+                )
                 updated = conn.execute("SELECT * FROM workspace_watches WHERE id=?", (watch_id,)).fetchone()
                 conn.commit()
             finally:
@@ -887,7 +985,8 @@ def create_workspace_router(
                 """
                 UPDATE workspace_watches
                 SET snapshot_json=?,kind=?,initial_score=?,initial_level=?,updated_at=?,last_checked_at=?,last_change_at=?,
-                    last_event_type=?,last_event_summary=?,last_event_at=?,next_check_at=?,failure_count=0,last_error=NULL
+                    last_event_type=?,last_event_summary=?,last_event_at=?,next_check_at=?,failure_count=0,last_error=NULL,
+                    check_count=check_count+1,protected_value_usd=?
                 WHERE id=? AND user_id=? AND active=1
                 """,
                 (
@@ -902,6 +1001,7 @@ def create_workspace_router(
                     change["summary"] if changed else row["last_event_summary"],
                     now if changed else row["last_event_at"],
                     next_check,
+                    _protected_value_usd(result),
                     watch_id,
                     user_id,
                 ),
@@ -923,6 +1023,10 @@ def create_workspace_router(
                     ),
                 )
                 event_id = int(cursor.lastrowid)
+            conn.execute(
+                "INSERT INTO workspace_watch_checks(watch_id,user_id,checked_at,success,score,level,protected_value_usd,changed) VALUES(?,?,?,?,?,?,?,?)",
+                (watch_id, user_id, now, 1, _score_from_payload(result), _level_from_payload(result), _protected_value_usd(result), 1 if changed else 0),
+            )
             updated = conn.execute("SELECT * FROM workspace_watches WHERE id=?", (watch_id,)).fetchone()
             conn.commit()
         finally:
@@ -967,6 +1071,66 @@ def create_workspace_router(
         finally:
             conn.close()
         return {"ok": True, "items": [watch_item(row) for row in rows]}
+
+    def protection_summary(user_id: str, period_start: str | None = None, period_end: str | None = None) -> dict[str, Any]:
+        conn = connect()
+        try:
+            watches = conn.execute(
+                "SELECT * FROM workspace_watches WHERE user_id=? AND active=1",
+                (user_id,),
+            ).fetchall()
+            where = "c.user_id=? AND c.success=1"
+            values: list[Any] = [user_id]
+            if period_start:
+                where += " AND c.checked_at>=?"
+                values.append(period_start)
+            if period_end:
+                where += " AND c.checked_at<?"
+                values.append(period_end)
+            checks = conn.execute(
+                f"SELECT COUNT(*) AS total, SUM(changed) AS changed FROM workspace_watch_checks c WHERE {where}",
+                tuple(values),
+            ).fetchone()
+            event_where = "w.user_id=?"
+            event_values: list[Any] = [user_id]
+            if period_start:
+                event_where += " AND e.created_at>=?"
+                event_values.append(period_start)
+            if period_end:
+                event_where += " AND e.created_at<?"
+                event_values.append(period_end)
+            threats = conn.execute(
+                f"""
+                SELECT COUNT(*) AS total FROM workspace_watch_events e
+                JOIN workspace_watches w ON w.id=e.watch_id
+                WHERE {event_where} AND LOWER(COALESCE(e.severity,'')) IN ('high','critical','danger','dangerous')
+                """,
+                tuple(event_values),
+            ).fetchone()
+        finally:
+            conn.close()
+        active = [row for row in watches if not bool(row["paused"])]
+        next_checks = sorted(str(row["next_check_at"] or "") for row in active if row["next_check_at"])
+        last_checks = sorted((str(row["last_checked_at"] or "") for row in watches if row["last_checked_at"]), reverse=True)
+        return {
+            "networkProtectedValueUsd": _network_protected_value_usd(),
+            "protectedValueUsd": round(sum(float(row["protected_value_usd"] or 0) for row in active), 2),
+            "activeObjects": len(active),
+            "checks": int(checks["total"] or 0),
+            "importantChanges": int(checks["changed"] or 0),
+            "criticalThreatsCaught": int(threats["total"] or 0),
+            "lastCheckAt": last_checks[0] if last_checks else None,
+            "nextCheckAt": next_checks[0] if next_checks else None,
+        }
+
+    @router.get("/workspace/protection-summary")
+    async def get_protection_summary(request: Request, lang: str = "en"):
+        language = _lang(lang)
+        user_id = identity_for_request(request)
+        if not user_id:
+            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        active = bool(entitlement_active(user_id))
+        return {"ok": True, "pro": active, **protection_summary(user_id)}
 
     @router.post("/workspace/watches/{watch_id}/recheck")
     async def recheck_watch(watch_id: int, request: Request, payload: dict[str, Any] = Body(default={})):
@@ -1111,6 +1275,65 @@ def create_workspace_router(
                 print(f"[tracking] watch failed id={row['id']}: {exc}")
         return stats
 
+    async def run_monthly_security_reports() -> dict[str, int]:
+        """Send one factual report for the previous UTC month; no AI or polling is used."""
+        if send_user_push is None:
+            return {"sent": 0, "failed": 0}
+        today = datetime.now(timezone.utc)
+        if today.day > 3:
+            return {"sent": 0, "failed": 0}
+        current_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        previous_end = current_start
+        previous_start = (current_start - timedelta(days=1)).replace(day=1)
+        period = previous_start.strftime("%Y-%m")
+        conn = connect()
+        try:
+            users = conn.execute(
+                "SELECT user_id, MIN(language) AS language FROM workspace_watches WHERE active=1 GROUP BY user_id"
+            ).fetchall()
+        finally:
+            conn.close()
+        stats = {"sent": 0, "failed": 0}
+        for user in users:
+            user_id = str(user["user_id"])
+            if not entitlement_active(user_id):
+                continue
+            conn = connect()
+            try:
+                exists = conn.execute(
+                    "SELECT 1 FROM workspace_monthly_reports WHERE user_id=? AND period=?",
+                    (user_id, period),
+                ).fetchone()
+            finally:
+                conn.close()
+            if exists:
+                continue
+            summary = protection_summary(user_id, previous_start.isoformat(), previous_end.isoformat())
+            lang = _lang(user["language"])
+            titles = {"en": "Your monthly Noytrix security report", "ru": "Ваш ежемесячный отчёт Noytrix", "uk": "Ваш щомісячний звіт Noytrix"}
+            bodies = {
+                "en": f"{summary['checks']} background checks · {summary['activeObjects']} protected objects · {summary['criticalThreatsCaught']} critical threats caught.",
+                "ru": f"{summary['checks']} фоновых проверок · {summary['activeObjects']} объектов под защитой · {summary['criticalThreatsCaught']} критических угроз обнаружено.",
+                "uk": f"{summary['checks']} фонових перевірок · {summary['activeObjects']} об’єктів під захистом · {summary['criticalThreatsCaught']} критичних загроз виявлено.",
+            }
+            try:
+                await send_user_push(user_id, titles[lang], bodies[lang], {"screen": "tracking", "route": "tracking", "type": "monthly_security_report", "period": period})
+                conn = connect()
+                try:
+                    conn.execute(
+                        "INSERT INTO workspace_monthly_reports(user_id,period,payload_json,sent_at) VALUES(?,?,?,?)",
+                        (user_id, period, json.dumps(summary, ensure_ascii=False), _now()),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
+                stats["sent"] += 1
+            except Exception as exc:
+                stats["failed"] += 1
+                print(f"[tracking] monthly report failed user={user_id}: {exc}")
+        return stats
+
     setattr(router, "run_tracking_batch", run_tracking_batch)
+    setattr(router, "run_monthly_security_reports", run_monthly_security_reports)
 
     return router

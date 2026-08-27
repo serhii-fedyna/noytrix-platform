@@ -79,9 +79,9 @@ const PRO_NUDGE_STATE_KEY = "noytrix.proNudge.v1";
 
 const PAYWALL_COPY = {
   en: {
-    heroTitle: "Protect yourself before connecting, approving, signing or sending",
+    heroTitle: "A scan shows the risk now. PRO keeps protecting you after that.",
     heroSubtitle:
-      "Noytrix checks links, wallets, tokens, contracts and signatures before you act. PRO gives deeper checks, clearer AI explanations and fewer blind decisions.",
+      "Your monitored objects are rechecked every 6 hours. If the risk changes, Noytrix alerts you before your next action.",
     freeTitle: "What you already checked for free",
     freeText:
       "You can already see basic crypto risk signals without paying. PRO is for moments where guessing is not enough.",
@@ -91,27 +91,27 @@ const PAYWALL_COPY = {
     lastRiskLabel: "Last risk",
     opensLabel: "App opens",
     noRiskYet: "none yet",
-    proTitle: "Why PRO matters",
+    proTitle: "From one-time check to 24/7 protection",
     proText:
-      "PRO is built for people who touch crypto regularly and want a second pair of eyes before money leaves a wallet.",
-    proPointOne: "More checks for links, wallets, tokens, contracts and suspicious setups.",
-    proPointTwo: "Deeper risk analysis before connecting, approving, signing or sending.",
-    proPointThree: "A simple AI explanation in human language: what is risky and what to do next.",
-    proPointFour: "Google Play purchase restore if you change phone or reinstall the app.",
+      "Threats change after a scan. PRO keeps checking your wallets, contracts and sites even when the app is closed.",
+    proPointOne: "Automatic security rechecks every 6 hours.",
+    proPointTwo: "Private alerts when risk level or verified danger signals change.",
+    proPointThree: "Protection history and a monthly security report with real check counts.",
+    proPointFour: "Protected portfolio value based only on balances Noytrix can verify.",
     whyWorthTitle: "One bad click can cost more than a year of PRO",
     whyWorthText:
       "Noytrix does not promise profit. It helps you avoid blind actions when a fake link, token, wallet or signature could put funds at risk.",
     noProfitPromise: "This is not financial advice and not a profit promise. It is a risk check before you decide.",
     tariffsTitle: "Choose your protection",
-    tariffsLead: "Choose how long Noytrix should protect you before connecting, approving, signing or sending.",
+    tariffsLead: "Choose how long Noytrix should keep watching after the first scan.",
     tariffsNote:
-      "Free checks are limited. PRO keeps deeper checks, AI explanations and purchase recovery available.",
+      "FREE checks once. PRO rechecks in the background, keeps history and warns you when something changes.",
     planMTitle: "1 month",
     planMSave: "Flexible start",
     planMText: "Full protection for one month. Best if you want to test Noytrix before a longer plan.",
     planHTitle: "6 months",
     planHSave: "Save 33%",
-    planHText: "For active crypto users. Six months of deeper checks for less than paying month by month.",
+    planHText: "For active crypto users. Six months of continuous monitoring for less than paying month by month.",
     planLTitle: "1 year",
     planLSave: "Best value",
     planLText: "A full year of protection for about half the month-by-month price. Best if crypto is part of your routine.",
@@ -120,9 +120,9 @@ const PAYWALL_COPY = {
     joinCtaBuy: "Get full protection",
   },
   ru: {
-    heroTitle: "Защити себя перед подключением, подтверждением, подписанием или отправкой",
+    heroTitle: "Проверка показывает риск сейчас. PRO продолжает защищать после неё.",
     heroSubtitle:
-      "Noytrix проверяет ссылки, кошельки, токены, контракты и подписи до действия. PRO даёт более глубокие проверки, понятные AI-объяснения и меньше слепых решений.",
+      "Объекты под наблюдением перепроверяются каждые 6 часов. Если риск меняется, Noytrix предупреждает до следующего действия.",
     freeTitle: "Что ты уже проверил бесплатно",
     freeText:
       "Ты уже видишь базовые крипто-риски без оплаты. PRO нужен в моменты, когда угадывать уже опасно.",
@@ -132,27 +132,27 @@ const PAYWALL_COPY = {
     lastRiskLabel: "Последний риск",
     opensLabel: "Заходов в приложение",
     noRiskYet: "ещё нет",
-    proTitle: "Почему PRO важен",
+    proTitle: "От разовой проверки к защите 24/7",
     proText:
-      "PRO создан для тех, кто регулярно работает с криптой и хочет вторую проверку до того, как деньги уйдут из кошелька.",
-    proPointOne: "Больше проверок ссылок, кошельков, токенов, контрактов и подозрительных схем.",
-    proPointTwo: "Более глубокий анализ риска перед подключением, подтверждением, подписанием или отправкой.",
-    proPointThree: "Простое AI-объяснение человеческим языком: что опасно и что делать дальше.",
-    proPointFour: "Восстановление покупки через Google Play, если сменил телефон или переустановил приложение.",
+      "Угрозы меняются после проверки. PRO продолжает следить за кошельками, контрактами и сайтами, даже когда приложение закрыто.",
+    proPointOne: "Автоматическая перепроверка безопасности каждые 6 часов.",
+    proPointTwo: "Личные уведомления при изменении риска или подтверждённых опасных сигналов.",
+    proPointThree: "История защиты и ежемесячный отчёт с реальным количеством проверок.",
+    proPointFour: "Стоимость защищённого портфеля только по балансам, которые Noytrix смог подтвердить.",
     whyWorthTitle: "Один плохой клик может стоить дороже года PRO",
     whyWorthText:
       "Noytrix не обещает прибыль. Он помогает не действовать вслепую, когда фейковая ссылка, токен, кошелёк или подпись могут поставить средства под риск.",
     noProfitPromise: "Это не финансовый совет и не обещание прибыли. Это проверка риска перед твоим решением.",
     tariffsTitle: "Выбери защиту",
-    tariffsLead: "Выбери, как долго Noytrix будет защищать тебя перед подключением, подтверждением, подписанием или отправкой.",
+    tariffsLead: "Выбери, как долго Noytrix будет продолжать наблюдение после первой проверки.",
     tariffsNote:
-      "Бесплатные проверки ограничены. PRO открывает глубокие проверки, AI-объяснения и восстановление покупки.",
+      "FREE проверяет один раз. PRO перепроверяет в фоне, хранит историю и предупреждает об изменениях.",
     planMTitle: "1 месяц",
     planMSave: "Гибкий старт",
     planMText: "Полная защита на месяц. Подходит, если хочешь спокойно попробовать Noytrix перед длинным планом.",
     planHTitle: "6 месяцев",
     planHSave: "Экономия 33%",
-    planHText: "Для активных пользователей крипты. Полгода глубоких проверок дешевле, чем платить каждый месяц.",
+    planHText: "Для активных пользователей крипты. Полгода постоянного мониторинга дешевле, чем платить каждый месяц.",
     planLTitle: "1 год",
     planLSave: "Лучший выбор",
     planLText: "Год защиты примерно за половину цены помесячной оплаты. Лучший вариант, если крипта часть твоей рутины.",
@@ -161,9 +161,9 @@ const PAYWALL_COPY = {
     joinCtaBuy: "Открыть полную защиту",
   },
   uk: {
-    heroTitle: "Захисти себе перед підключенням, підтвердженням, підписом або надсиланням",
+    heroTitle: "Перевірка показує ризик зараз. PRO продовжує захищати після неї.",
     heroSubtitle:
-      "Noytrix перевіряє посилання, гаманці, токени, контракти й підписи до дії. PRO дає глибші перевірки, зрозумілі AI-пояснення і менше сліпих рішень.",
+      "Об’єкти під наглядом перевіряються кожні 6 годин. Якщо ризик змінюється, Noytrix попереджає до наступної дії.",
     freeTitle: "Що ти вже перевірив безкоштовно",
     freeText:
       "Ти вже бачиш базові крипто-ризики без оплати. PRO потрібен у моменти, коли вгадувати вже небезпечно.",
@@ -173,27 +173,27 @@ const PAYWALL_COPY = {
     lastRiskLabel: "Останній ризик",
     opensLabel: "Відкриттів застосунку",
     noRiskYet: "ще немає",
-    proTitle: "Чому PRO важливий",
+    proTitle: "Від разової перевірки до захисту 24/7",
     proText:
-      "PRO створений для тих, хто регулярно працює з криптою і хоче другу перевірку до того, як гроші підуть із гаманця.",
-    proPointOne: "Більше перевірок посилань, гаманців, токенів, контрактів і підозрілих схем.",
-    proPointTwo: "Глибший аналіз ризику перед підключенням, дозволом, підписом чи надсиланням.",
-    proPointThree: "Просте AI-пояснення людською мовою: що небезпечно і що робити далі.",
-    proPointFour: "Відновлення покупки через Google Play, якщо змінив телефон або перевстановив застосунок.",
+      "Загрози змінюються після перевірки. PRO продовжує стежити за гаманцями, контрактами й сайтами, навіть коли застосунок закритий.",
+    proPointOne: "Автоматична перевірка безпеки кожні 6 годин.",
+    proPointTwo: "Особисті сповіщення про зміну ризику або підтверджених небезпечних сигналів.",
+    proPointThree: "Історія захисту та щомісячний звіт із реальною кількістю перевірок.",
+    proPointFour: "Вартість захищеного портфеля лише за балансами, які Noytrix зміг підтвердити.",
     whyWorthTitle: "Один поганий клік може коштувати дорожче за рік PRO",
     whyWorthText:
       "Noytrix не обіцяє прибуток. Він допомагає не діяти наосліп, коли фейкове посилання, токен, гаманець або підпис можуть поставити кошти під ризик.",
     noProfitPromise: "Це не фінансова порада і не обіцянка прибутку. Це перевірка ризику перед твоїм рішенням.",
     tariffsTitle: "Обери захист",
-    tariffsLead: "Обери, як довго Noytrix захищатиме тебе перед підключенням, дозволом, підписом чи надсиланням.",
+    tariffsLead: "Обери, як довго Noytrix продовжуватиме нагляд після першої перевірки.",
     tariffsNote:
-      "Безкоштовні перевірки обмежені. PRO відкриває глибші перевірки, AI-пояснення та відновлення покупки.",
+      "FREE перевіряє один раз. PRO перевіряє у фоні, зберігає історію та попереджає про зміни.",
     planMTitle: "1 місяць",
     planMSave: "Гнучкий старт",
     planMText: "Повний захист на місяць. Підійде, якщо хочеш спокійно спробувати Noytrix перед довшим планом.",
     planHTitle: "6 місяців",
     planHSave: "Економія 33%",
-    planHText: "Для активних користувачів крипти. Пів року глибших перевірок дешевше, ніж платити щомісяця.",
+    planHText: "Для активних користувачів крипти. Пів року постійного моніторингу дешевше, ніж платити щомісяця.",
     planLTitle: "1 рік",
     planLSave: "Найкращий вибір",
     planLText: "Рік захисту приблизно за половину ціни помісячної оплати. Найкращий варіант, якщо крипта частина твоєї рутини.",
@@ -531,72 +531,72 @@ export default function ProScreen() {
             </BlurView>
           </View>
 
-          <Text style={s.sectionTitle}>{t("pro.includesSection", "What PRO helps you do")}</Text>
+          <Text style={s.sectionTitle}>{t("pro.protectionIncludesSection", "What keeps working after the scan")}</Text>
 
           <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={24} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
-              <Check text={t("pro.includes.protectTitle", "Check before you trust")} />
+              <Check text={t("pro.protectionIncludes.recheckTitle", "Rechecks every 6 hours")} />
               <Para>
                 {t(
-                  "pro.includes.protectDesc",
-                  "Scan links, domains, wallets and crypto objects before you send funds or connect."
+                  "pro.protectionIncludes.recheckDesc",
+                  "Noytrix runs the security engine again in the background, even when the app is closed."
                 )}
               </Para>
 
               <Spacer />
 
-              <Check text={t("pro.includes.tradeTitle", "Enter trades with more control")} />
+              <Check text={t("pro.protectionIncludes.alertTitle", "Alerts only when something important changes")} />
               <Para>
                 {t(
-                  "pro.includes.tradeDesc",
-                  "Understand risk, volatility and possible danger before opening a position."
+                  "pro.protectionIncludes.alertDesc",
+                  "A higher risk level or a new verified danger signal triggers a private notification."
                 )}
               </Para>
 
               <Spacer />
 
-              <Check text={t("pro.includes.actionTitle", "Get clear actions")} />
+              <Check text={t("pro.protectionIncludes.valueTitle", "See the value under protection")} />
               <Para>
                 {t(
-                  "pro.includes.actionDesc",
-                  "Not just numbers - Noytrix explains what to avoid, what to check and what to do next."
+                  "pro.protectionIncludes.valueDesc",
+                  "The home screen shows verified portfolio value, protected objects, completed checks and threats caught."
                 )}
               </Para>
 
               <Spacer />
 
-              <Check text={t("pro.includes.historyTitle", "Stop repeating bad decisions")} />
+              <Check text={t("pro.protectionIncludes.reportTitle", "Receive a monthly security report")} />
               <Para>
                 {t(
-                  "pro.includes.historyDesc",
-                  "Track checks, mistakes and decisions so you can improve instead of losing blindly."
+                  "pro.protectionIncludes.reportDesc",
+                  "A factual monthly push summarizes background checks, protected objects and critical threats."
                 )}
               </Para>
             </BlurView>
           </View>
 
-          <Text style={s.sectionTitle}>{t("pro.whySection", "Why it is worth it")}</Text>
+          <Text style={s.sectionTitle}>{t("pro.scanVsProtectionSection", "FREE scan vs PRO protection")}</Text>
 
           <View style={[cardChrome(), { marginBottom: 14 }]}>
             <BlurView intensity={24} tint="dark" style={{ borderRadius: 18, padding: 14 }}>
-              <Why icon="cash-outline" title={t("pro.why.money.title", "One mistake can cost more than PRO")}>
+              <Why icon="scan-outline" title={t("pro.scanVsProtection.free.title", "FREE: one verified snapshot")}>
                 {t(
-                  "pro.why.money.text",
-                  "A fake link, bad trade or suspicious token can cost much more than a subscription."
+                  "pro.scanVsProtection.free.text",
+                  "You learn what is known at the moment of the scan. If the object changes tomorrow, the old result cannot warn you."
                 )}
               </Why>
 
-              <Why icon="shield-checkmark-outline" title={t("pro.why.protection.title", "Full protection, not random guessing")}>
+              <Why icon="shield-checkmark-outline" title={t("pro.scanVsProtection.pro.title", "PRO: continuous protection")}>
                 {t(
-                  "pro.why.protection.text",
-                  "PRO gives deeper checks, stronger signals and clearer risk before you act."
+                  "pro.scanVsProtection.pro.text",
+                  "The object stays under observation, is checked repeatedly and produces an alert when meaningful risk changes."
                 )}
               </Why>
 
-              <Why icon="trending-up-outline" title={t("pro.why.smarter.title", "Trade smarter, not emotionally")}>
+              <Why icon="document-text-outline" title={t("pro.scanVsProtection.proof.title", "Proof of ongoing work")}>
                 {t(
-                  "pro.why.smarter.text",
-                  "Use risk signals and decision history to avoid emotional entries and weak setups."
+                  "pro.scanVsProtection.proof.text",
+                  "Real check counters, protection history and the monthly report show what the subscription did."
                 )}
               </Why>
             </BlurView>
@@ -609,7 +609,7 @@ export default function ProScreen() {
               <Text style={s.text}>
                 {t(
                   "pro.join.accessText",
-                  "Get full ScamShield protection, trading risk tools and decision history in one PRO plan."
+                  "Turn a one-time security check into background monitoring, change alerts and measurable protection."
                 )}
               </Text>
 
