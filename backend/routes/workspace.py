@@ -542,6 +542,14 @@ def create_workspace_router(
         except Exception:
             return None
 
+    def require_tracking_pro(request: Request, language: str) -> str:
+        user_id = identity_for_request(request)
+        if not user_id:
+            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        if not entitlement_active(user_id):
+            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
+        return user_id
+
     def analytics_timestamp(value: Any) -> datetime | None:
         if not value:
             return None
@@ -855,11 +863,7 @@ def create_workspace_router(
     @router.post("/workspace/watches")
     async def create_watch(request: Request, payload: dict[str, Any] = Body(...)):
         language = _lang(payload.get("lang"))
-        user_id = identity_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
-        if not entitlement_active(user_id):
-            raise HTTPException(status_code=402, detail={"message": _text(language, "pro_required"), "code": "pro_required"})
+        user_id = require_tracking_pro(request, language)
         target = str(payload.get("target") or "").strip()
         result = _safe_result(payload.get("scan"))
         if not target or len(target) > 5000 or not result:
@@ -1081,9 +1085,7 @@ def create_workspace_router(
     @router.get("/workspace/watches")
     async def list_watches(request: Request, lang: str = "en"):
         language = _lang(lang)
-        user_id = identity_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        user_id = require_tracking_pro(request, language)
         conn = connect()
         try:
             rows = conn.execute(
@@ -1157,9 +1159,7 @@ def create_workspace_router(
     @router.post("/workspace/watches/{watch_id}/recheck")
     async def recheck_watch(watch_id: int, request: Request, payload: dict[str, Any] = Body(default={})):
         language = _lang((payload or {}).get("lang"))
-        user_id = identity_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        user_id = require_tracking_pro(request, language)
         conn = connect()
         try:
             row = conn.execute(
@@ -1183,9 +1183,7 @@ def create_workspace_router(
     @router.get("/workspace/watches/{watch_id}/events")
     async def list_watch_events(watch_id: int, request: Request, lang: str = "en"):
         language = _lang(lang)
-        user_id = identity_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        user_id = require_tracking_pro(request, language)
         conn = connect()
         try:
             row = conn.execute("SELECT id FROM workspace_watches WHERE id=? AND user_id=? AND active=1", (watch_id, user_id)).fetchone()
@@ -1214,9 +1212,7 @@ def create_workspace_router(
     @router.patch("/workspace/watches/{watch_id}")
     async def update_watch(watch_id: int, request: Request, payload: dict[str, Any] = Body(default={})):
         language = _lang((payload or {}).get("lang"))
-        user_id = identity_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        user_id = require_tracking_pro(request, language)
         updates: list[str] = []
         values: list[Any] = []
         if "paused" in payload:
@@ -1249,9 +1245,7 @@ def create_workspace_router(
     @router.delete("/workspace/watches/{watch_id}")
     async def delete_watch(watch_id: int, request: Request, lang: str = "en"):
         language = _lang(lang)
-        user_id = identity_for_request(request)
-        if not user_id:
-            raise HTTPException(status_code=401, detail={"message": _text(language, "auth_required")})
+        user_id = require_tracking_pro(request, language)
         conn = connect()
         try:
             result = conn.execute(

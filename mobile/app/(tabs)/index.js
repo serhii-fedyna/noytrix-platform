@@ -1328,6 +1328,28 @@ export default function Home() {
             </View>
           </BlurCard>
 
+          <BlurCard style={{ borderColor: "rgba(255,176,32,0.58)", backgroundColor: "rgba(255,176,32,0.06)" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 13 }}>
+              <View style={{ width: 52, height: 52, borderRadius: 17, backgroundColor: "rgba(255,176,32,0.15)", alignItems: "center", justifyContent: "center", marginRight: 13 }}>
+                <Ionicons name="shield-checkmark" size={29} color={C.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: C.text, fontSize: 22, fontWeight: "900" }}>SCAMSHIELD PRO</Text>
+                <Text style={{ color: isPro ? C.good : C.accent, fontSize: 12, fontWeight: "900", marginTop: 3 }}>
+                  {isPro ? TT("home.proActive", "PRO ACTIVE", "PRO АКТИВЕН", "PRO АКТИВНИЙ") : TT("home.proProtection", "24/7 PROTECTION", "ЗАЩИТА 24/7", "ЗАХИСТ 24/7")}
+                </Text>
+              </View>
+            </View>
+            <Text style={{ color: C.dim, fontSize: 15, lineHeight: 22, marginBottom: 15 }}>
+              {TT("home.proCardRestored", "Open the complete ScamShield PRO analysis, unlimited checks and background protection.", "Откройте полный анализ ScamShield PRO, безлимитные проверки и фоновую защиту.", "Відкрийте повний аналіз ScamShield PRO, безлімітні перевірки та фоновий захист.")}
+            </Text>
+            <PrimaryButton
+              title={isPro ? TT("home.openScamShieldPro", "OPEN SCAMSHIELD PRO", "ОТКРЫТЬ SCAMSHIELD PRO", "ВІДКРИТИ SCAMSHIELD PRO") : TT("home.unlockScamShieldPro", "UNLOCK SCAMSHIELD PRO", "ОТКРЫТЬ SCAMSHIELD PRO", "ВІДКРИТИ SCAMSHIELD PRO")}
+              onPress={openPro}
+              leftIcon={<Ionicons name={isPro ? "shield-checkmark" : "lock-closed"} size={18} color={C.accentText} />}
+            />
+          </BlurCard>
+
           <BlurCard style={{ borderColor: "rgba(255,176,32,0.45)", backgroundColor: "rgba(255,176,32,0.045)" }}>
             <View style={{ alignItems: "center", marginBottom: 17 }}>
               <View style={{ width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,176,32,0.13)", marginBottom: 10 }}>

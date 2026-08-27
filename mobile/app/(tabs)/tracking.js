@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -56,6 +57,15 @@ const COPY = {
     removed: "Removed from tracking",
     error: "Tracking error",
     eventsEmpty: "No security events yet.",
+    search: "Search objects",
+    filters: "Filters",
+    all: "All",
+    wallets: "Wallets",
+    contracts: "Contracts",
+    sites: "Sites",
+    transactions: "Transactions",
+    checksDone: "Checks completed",
+    addObject: "Add object to tracking",
   },
   ru: {
     title: "Наблюдение",
@@ -93,6 +103,15 @@ const COPY = {
     removed: "Удалено из отслеживания",
     error: "Ошибка отслеживания",
     eventsEmpty: "Событий безопасности пока нет.",
+    search: "Поиск по объектам",
+    filters: "Фильтры",
+    all: "Все",
+    wallets: "Кошельки",
+    contracts: "Контракты",
+    sites: "Сайты",
+    transactions: "Транзакции",
+    checksDone: "Проверок завершено",
+    addObject: "Добавить объект для отслеживания",
   },
   uk: {
     title: "Спостереження",
@@ -130,6 +149,15 @@ const COPY = {
     removed: "Видалено з відстеження",
     error: "Помилка відстеження",
     eventsEmpty: "Подій безпеки поки немає.",
+    search: "Пошук за об'єктами",
+    filters: "Фільтри",
+    all: "Усі",
+    wallets: "Гаманці",
+    contracts: "Контракти",
+    sites: "Сайти",
+    transactions: "Транзакції",
+    checksDone: "Перевірок завершено",
+    addObject: "Додати об'єкт для відстеження",
   },
 };
 
@@ -176,6 +204,23 @@ function shortTarget(value) {
   return text.length > 34 ? `${text.slice(0, 18)}...${text.slice(-12)}` : text;
 }
 
+function objectTitle(item, lang) {
+  const raw = String(item?.target || item?.normalizedTarget || "").trim();
+  if (item?.kind === "url") {
+    try { return new URL(raw.startsWith("http") ? raw : `https://${raw}`).hostname.replace(/^www\./, ""); } catch {}
+  }
+  return kindLabel(item?.kind, lang);
+}
+
+function relativeTime(value, fallback) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return fallback;
+  const minutes = Math.max(0, Math.round((Date.now() - date.getTime()) / 60000));
+  if (minutes < 60) return `${minutes || 1} min`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} h`;
+}
+
 export default function TrackingScreen() {
   const { watchId } = useLocalSearchParams();
   const { i18n } = useTranslation();
@@ -189,6 +234,8 @@ export default function TrackingScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [gate, setGate] = useState(null);
+  const [query, setQuery] = useState("");
+  const [kindFilter, setKindFilter] = useState("all");
 
   const load = useCallback(async (soft = false) => {
     if (!soft) setLoading(true);
@@ -204,7 +251,7 @@ export default function TrackingScreen() {
       }
       const payload = await response.json().catch(() => ({}));
       if (response.status === 401) {
-        setGate("pro");
+        setGate("auth");
         setItems([]);
         return;
       }
@@ -243,8 +290,19 @@ export default function TrackingScreen() {
       .sort()
       .pop();
     const changes = items.filter((item) => item.lastEventType || item.lastEventSummary).length;
-    return { active: active.length, last, changes };
+    const checks = items.reduce((sum, item) => sum + Number(item?.checkCount || 0), 0);
+    return { active: active.length, last, changes, checks };
   }, [items]);
+
+  const filteredItems = useMemo(() => items.filter((item) => {
+    const kind = String(item?.kind || "");
+    if (kindFilter !== "all") {
+      if (kindFilter === "sites" && kind !== "url") return false;
+      if (kindFilter !== "sites" && kind !== kindFilter) return false;
+    }
+    const needle = query.trim().toLowerCase();
+    return !needle || `${item?.target || ""} ${objectTitle(item, lang)}`.toLowerCase().includes(needle);
+  }), [items, kindFilter, query, lang]);
 
   async function mutate(item, path, options, successText, eventName = "") {
     setBusyId(item.id);
@@ -352,7 +410,7 @@ export default function TrackingScreen() {
           </View>
         ))}
       </View>
-      <Pressable style={styles.primary} onPress={() => router.push("/pro")}>
+      <Pressable style={styles.primary} onPress={() => router.push(gate === "auth" ? "/profile" : "/pro")}>
         <Text style={styles.primaryText}>{t.openPro}</Text>
       </Pressable>
     </View>
@@ -365,15 +423,49 @@ export default function TrackingScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(true); }} tintColor={C.gold} />}
       >
         <View style={styles.header}>
-          <Text style={styles.title}>{t.title}</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>{t.title}</Text>
+            <Pressable style={styles.settingsButton} onPress={() => router.push("/profile")}>
+              <Ionicons name="settings-outline" size={23} color={C.dim} />
+            </Pressable>
+          </View>
           <Text style={styles.subtitle}>{t.subtitle}</Text>
+        </View>
+
+        <View style={styles.searchRow}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search-outline" size={21} color={C.dim} />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={t.search}
+              placeholderTextColor="#7F8BA9"
+              style={styles.searchInput}
+            />
+          </View>
+          <Pressable style={styles.filterButton} onPress={() => setKindFilter((value) => value === "all" ? "wallet" : "all")}>
+            <Ionicons name="filter-outline" size={20} color={kindFilter === "all" ? C.dim : C.gold} />
+            <Text style={styles.filterText}>{t.filters}</Text>
+          </Pressable>
         </View>
 
         <View style={styles.stats}>
           <Stat icon="shield-checkmark" label={t.protected} value={stats.active} color={C.green} />
-          <Stat icon="time-outline" label={t.lastCheck} value={formatTime(stats.last, t.noCheck)} color={C.gold} small />
+          <Stat icon="time-outline" label={t.checksDone} value={stats.checks} color={C.gold} />
           <Stat icon="warning-outline" label={t.changes} value={stats.changes} color={stats.changes ? C.red : C.green} />
         </View>
+
+        {!gate && !loading && items.length > 0 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsScroll} contentContainerStyle={styles.tabs}>
+            {[
+              ["all", t.all], ["wallet", t.wallets], ["contract", t.contracts], ["sites", t.sites], ["transaction", t.transactions],
+            ].map(([value, label]) => (
+              <Pressable key={value} style={[styles.tab, kindFilter === value && styles.tabActive]} onPress={() => setKindFilter(value)}>
+                <Text style={[styles.tabText, kindFilter === value && styles.tabTextActive]}>{label}</Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
 
         {loading ? (
           <View style={styles.loading}><ActivityIndicator color={C.gold} /></View>
@@ -388,61 +480,54 @@ export default function TrackingScreen() {
           </View>
         ) : (
           <View style={styles.list}>
-            {items.map((item) => {
+            {filteredItems.map((item) => {
               const score = Number(item.score || 0);
               const itemEvents = events[item.id] || [];
               const alertSettings = item.alertSettings || item.alert_settings || {};
               const alertsOn = alertSettings.risk_change !== false;
               const criticalOnly = Boolean(alertSettings.critical_only);
+              const danger = score >= 70 || String(item.level || "").toLowerCase().match(/danger|critical|scam/);
+              const attention = !danger && score >= 35;
+              const statusColor = danger ? C.red : attention ? C.gold : C.green;
               return (
-                <View key={item.id} style={styles.card}>
-                  <View style={styles.cardTop}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.target}>{shortTarget(item.target)}</Text>
-                      <Text style={styles.meta}>{t.type}: {kindLabel(item.kind, lang)}</Text>
+                <Pressable key={item.id} style={styles.card} onPress={() => loadEvents(item)}>
+                  <View style={styles.compactTop}>
+                    <View style={[styles.objectIcon, { borderColor: `${statusColor}66`, backgroundColor: `${statusColor}12` }]}>
+                      <Ionicons name={item.kind === "wallet" ? "wallet-outline" : item.kind === "contract" ? "code-slash" : item.kind === "transaction" ? "swap-horizontal" : "globe-outline"} size={25} color={statusColor} />
                     </View>
-                    <View style={[styles.score, { borderColor: riskColor(score) }]}>
-                      <Text style={[styles.scoreText, { color: riskColor(score) }]}>{score}/100</Text>
+                    <View style={styles.objectCopy}>
+                      <Text style={styles.target} numberOfLines={1}>{objectTitle(item, lang)}</Text>
+                      <Text style={styles.meta} numberOfLines={1}>{shortTarget(item.target)}</Text>
+                      <View style={[styles.statusBadge, { borderColor: `${statusColor}99` }]}>
+                        <Text style={[styles.statusBadgeText, { color: statusColor }]}>{item.paused ? t.pausedStatus : danger ? t.changes : attention ? t.recheck : t.protectedStatus}</Text>
+                      </View>
                     </View>
+                    <View style={styles.cardSignal}>
+                      {attention ? (
+                        <View style={[styles.scoreRing, { borderColor: statusColor }]}><Text style={[styles.scoreRingText, { color: statusColor }]}>{score}%</Text></View>
+                      ) : (
+                        <Ionicons name={danger ? "trending-down" : "trending-up"} size={38} color={statusColor} />
+                      )}
+                      <Text style={styles.timeAgo}>{relativeTime(item.lastCheckedAt || item.last_checked_at, t.noCheck)}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={22} color="#7F8BA9" />
                   </View>
 
-                  <View style={styles.row}>
-                    <Info label={t.status} value={item.paused ? t.pausedStatus : t.protectedStatus} color={item.paused ? C.gold : C.green} />
-                    <Info label={t.lastCheck} value={formatTime(item.lastCheckedAt || item.last_checked_at, t.noCheck)} />
-                  </View>
-                  <Info label={t.lastChange} value={item.lastEventSummary || t.noChange} color={item.lastEventSummary ? C.red : C.dim} />
-                  <Info label={t.nextCheck} value={formatTime(item.nextCheckAt, t.noCheck)} />
-
-                  <View style={styles.switchRow}>
-                    <Text style={styles.switchText}>{t.alerts}</Text>
-                    <Switch
-                      value={alertsOn}
-                      onValueChange={() => toggleAlerts(item)}
-                      trackColor={{ false: "#1c2744", true: "rgba(54,214,107,0.45)" }}
-                      thumbColor={alertsOn ? C.green : C.dim}
-                    />
-                  </View>
-
-                  <View style={styles.switchRow}>
-                    <Text style={styles.switchText}>{t.criticalOnly}</Text>
-                    <Switch
-                      value={criticalOnly}
-                      onValueChange={() => toggleCriticalOnly(item)}
-                      disabled={!alertsOn}
-                      trackColor={{ false: "#1c2744", true: "rgba(255,178,30,0.45)" }}
-                      thumbColor={criticalOnly ? C.gold : C.dim}
-                    />
-                  </View>
-
-                  <View style={styles.actions}>
-                    <Action label={t.activity} icon="list" onPress={() => loadEvents(item)} />
-                    <Action label={item.paused ? t.resume : t.pause} icon={item.paused ? "play" : "pause"} onPress={() => togglePause(item)} />
-                    <Action label={t.recheck} icon="refresh" onPress={() => recheck(item)} busy={busyId === item.id} />
-                    <Action label={t.remove} icon="trash-outline" danger onPress={() => remove(item)} />
+                  <View style={styles.metricStrip}>
+                    <View style={styles.stripMetric}><Ionicons name="ellipse" size={8} color={statusColor} /><Text style={styles.stripText}>{item.lastEventSummary || t.noChange}</Text></View>
+                    <View style={styles.stripMetric}><Ionicons name="scan-outline" size={14} color={C.dim} /><Text style={styles.stripText}>{Number(item.checkCount || 0)} {t.checksDone.toLowerCase()}</Text></View>
+                    <View style={styles.stripMetric}><Ionicons name="notifications-outline" size={14} color={danger ? C.red : C.dim} /><Text style={styles.stripText}>{item.lastEventSummary ? "1" : "0"}</Text></View>
                   </View>
 
                   {expanded === item.id && (
                     <View style={styles.events}>
+                      <View style={styles.switchRow}><Text style={styles.switchText}>{t.alerts}</Text><Switch value={alertsOn} onValueChange={() => toggleAlerts(item)} trackColor={{ false: "#1c2744", true: "rgba(54,214,107,0.45)" }} thumbColor={alertsOn ? C.green : C.dim} /></View>
+                      <View style={styles.switchRow}><Text style={styles.switchText}>{t.criticalOnly}</Text><Switch value={criticalOnly} onValueChange={() => toggleCriticalOnly(item)} disabled={!alertsOn} trackColor={{ false: "#1c2744", true: "rgba(255,178,30,0.45)" }} thumbColor={criticalOnly ? C.gold : C.dim} /></View>
+                      <View style={styles.actions}>
+                        <Action label={item.paused ? t.resume : t.pause} icon={item.paused ? "play" : "pause"} onPress={() => togglePause(item)} />
+                        <Action label={t.recheck} icon="refresh" onPress={() => recheck(item)} busy={busyId === item.id} />
+                        <Action label={t.remove} icon="trash-outline" danger onPress={() => remove(item)} />
+                      </View>
                       {itemEvents.length === 0 ? (
                         <Text style={styles.eventText}>{t.eventsEmpty}</Text>
                       ) : itemEvents.map((event) => (
@@ -452,9 +537,13 @@ export default function TrackingScreen() {
                       ))}
                     </View>
                   )}
-                </View>
+                </Pressable>
               );
             })}
+            <Pressable style={styles.addObjectButton} onPress={() => router.push("/")}>
+              <Ionicons name="add-circle-outline" size={23} color={C.gold} />
+              <Text style={styles.addObjectText}>{t.addObject}</Text>
+            </Pressable>
           </View>
         ))}
       </ScrollView>
@@ -492,14 +581,27 @@ function Action({ label, icon, onPress, danger, busy }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: C.bg },
-  container: { padding: 22, paddingBottom: 110 },
-  header: { marginTop: 16, marginBottom: 18 },
+  container: { padding: 18, paddingBottom: 110 },
+  header: { marginTop: 10, marginBottom: 16 },
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  settingsButton: { width: 48, height: 48, borderRadius: 14, borderWidth: 1, borderColor: C.border, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(11,24,58,0.6)" },
   title: { color: C.gold, fontSize: 42, fontWeight: "900" },
   subtitle: { color: C.dim, fontSize: 17, lineHeight: 25, fontWeight: "700", marginTop: 8 },
+  searchRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  searchBox: { flex: 1, minHeight: 54, borderWidth: 1, borderColor: C.border, borderRadius: 16, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, backgroundColor: "rgba(4,14,36,0.75)" },
+  searchInput: { flex: 1, color: C.text, fontSize: 15, fontWeight: "700", paddingVertical: 0 },
+  filterButton: { minWidth: 124, minHeight: 54, borderWidth: 1, borderColor: C.border, borderRadius: 16, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: C.panel },
+  filterText: { color: C.dim, fontWeight: "800", fontSize: 14 },
   stats: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },
-  stat: { flexGrow: 1, flexBasis: "30%", minHeight: 118, borderWidth: 1, borderColor: C.border, backgroundColor: C.panel, borderRadius: 18, padding: 14, justifyContent: "space-between" },
-  statValue: { color: C.text, fontSize: 22, fontWeight: "900" },
+  stat: { flexGrow: 1, flexBasis: "30%", minHeight: 132, borderWidth: 1, borderColor: C.border, backgroundColor: C.panel, borderRadius: 18, padding: 15, justifyContent: "space-between" },
+  statValue: { color: C.text, fontSize: 30, fontWeight: "900" },
   statLabel: { color: C.dim, fontSize: 12, fontWeight: "800", textTransform: "uppercase" },
+  tabsScroll: { marginBottom: 12, backgroundColor: "rgba(5,15,39,0.72)", borderRadius: 15, borderWidth: 1, borderColor: "rgba(126,154,210,0.12)" },
+  tabs: { padding: 4, gap: 5 },
+  tab: { minHeight: 42, minWidth: 92, paddingHorizontal: 14, borderRadius: 12, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "transparent" },
+  tabActive: { borderColor: C.gold, backgroundColor: "rgba(255,178,30,0.06)" },
+  tabText: { color: C.dim, fontSize: 13, fontWeight: "800" },
+  tabTextActive: { color: C.gold },
   loading: { minHeight: 260, alignItems: "center", justifyContent: "center" },
   empty: { borderWidth: 1, borderColor: "rgba(255,178,30,0.35)", backgroundColor: C.panel, borderRadius: 22, padding: 22, gap: 12 },
   emptyTitle: { color: C.text, fontSize: 24, fontWeight: "900" },
@@ -509,10 +611,22 @@ const styles = StyleSheet.create({
   benefitText: { color: C.text, flex: 1, fontSize: 15, fontWeight: "800", lineHeight: 21 },
   primary: { marginTop: 8, minHeight: 54, borderRadius: 16, backgroundColor: C.gold, alignItems: "center", justifyContent: "center" },
   primaryText: { color: "#071025", fontSize: 16, fontWeight: "900" },
-  list: { gap: 14 },
-  card: { borderWidth: 1, borderColor: C.border, backgroundColor: C.panel, borderRadius: 22, padding: 18, gap: 14 },
+  list: { gap: 12 },
+  card: { borderWidth: 1, borderColor: C.border, backgroundColor: C.panel, borderRadius: 19, overflow: "hidden" },
+  compactTop: { minHeight: 116, padding: 15, flexDirection: "row", alignItems: "center", gap: 12 },
+  objectIcon: { width: 52, height: 52, borderRadius: 26, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  objectCopy: { flex: 1, minWidth: 0 },
+  statusBadge: { alignSelf: "flex-start", borderWidth: 1, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, marginTop: 7 },
+  statusBadgeText: { fontSize: 10, fontWeight: "900", textTransform: "uppercase" },
+  cardSignal: { minWidth: 70, alignItems: "center", gap: 5 },
+  scoreRing: { width: 54, height: 54, borderRadius: 27, borderWidth: 6, alignItems: "center", justifyContent: "center" },
+  scoreRingText: { fontSize: 13, fontWeight: "900" },
+  timeAgo: { color: C.dim, fontSize: 11, fontWeight: "700" },
+  metricStrip: { minHeight: 54, borderTopWidth: 1, borderTopColor: "rgba(126,154,210,0.14)", flexDirection: "row" },
+  stripMetric: { flex: 1, paddingHorizontal: 9, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRightWidth: 1, borderRightColor: "rgba(126,154,210,0.12)" },
+  stripText: { color: C.dim, fontSize: 10, lineHeight: 13, fontWeight: "700", textAlign: "center", flexShrink: 1 },
   cardTop: { flexDirection: "row", alignItems: "center", gap: 12 },
-  target: { color: C.text, fontSize: 18, fontWeight: "900" },
+  target: { color: C.text, fontSize: 17, fontWeight: "900" },
   meta: { color: C.dim, marginTop: 4, fontSize: 13, fontWeight: "700" },
   score: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 },
   scoreText: { fontSize: 15, fontWeight: "900" },
@@ -520,13 +634,15 @@ const styles = StyleSheet.create({
   info: { flex: 1, borderWidth: 1, borderColor: "rgba(255,255,255,0.08)", borderRadius: 14, padding: 12, backgroundColor: "rgba(255,255,255,0.03)" },
   infoLabel: { color: C.dim, fontSize: 11, fontWeight: "800", textTransform: "uppercase" },
   infoValue: { marginTop: 5, fontSize: 15, lineHeight: 21, fontWeight: "900" },
-  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  switchRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14 },
   switchText: { color: C.text, fontSize: 15, fontWeight: "900" },
   actions: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   action: { minHeight: 42, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,178,30,0.34)", paddingHorizontal: 12, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 7 },
   dangerAction: { borderColor: "rgba(255,93,108,0.34)" },
   actionText: { color: C.text, fontWeight: "900", fontSize: 13 },
-  events: { borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)", paddingTop: 12, gap: 8 },
+  events: { borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.08)", paddingVertical: 14, gap: 10 },
   eventText: { color: C.dim, fontSize: 13, lineHeight: 19, fontWeight: "700" },
+  addObjectButton: { minHeight: 58, borderRadius: 18, borderWidth: 1, borderColor: "rgba(255,178,30,0.65)", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, marginTop: 4 },
+  addObjectText: { color: C.gold, fontSize: 16, fontWeight: "900" },
   pressed: { opacity: 0.82 },
 });
