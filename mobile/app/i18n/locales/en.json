@@ -1454,6 +1454,32 @@
       }
     },
     "includesSection": "What PRO helps you do",
+    "protectionIncludesSection": "What keeps working after the scan",
+    "protectionIncludes": {
+      "recheckTitle": "Rechecks every 6 hours",
+      "recheckDesc": "Noytrix runs the security engine again in the background, even when the app is closed.",
+      "alertTitle": "Alerts only when something important changes",
+      "alertDesc": "A higher risk level or a new verified danger signal triggers a private notification.",
+      "valueTitle": "See the value under protection",
+      "valueDesc": "The home screen shows protected value, monitored objects, completed checks and threats caught.",
+      "reportTitle": "Receive a monthly security report",
+      "reportDesc": "A factual monthly push summarizes background checks, protected objects and critical threats."
+    },
+    "scanVsProtectionSection": "FREE scan vs PRO protection",
+    "scanVsProtection": {
+      "free": {
+        "title": "FREE: one verified snapshot",
+        "text": "You learn what is known at the moment of the scan. If the object changes tomorrow, the old result cannot warn you."
+      },
+      "pro": {
+        "title": "PRO: continuous protection",
+        "text": "The object stays under observation, is checked repeatedly and produces an alert when meaningful risk changes."
+      },
+      "proof": {
+        "title": "Proof of ongoing work",
+        "text": "Real check counters, protection history and the monthly report show what the subscription did."
+      }
+    },
     "includes": {
       "protectTitle": "Check before you trust",
       "protectDesc": "Scan links, domains, wallets and crypto objects before you send funds or connect.",
@@ -1483,7 +1509,7 @@
     "join": {
       "proLabel": "Noytrix PRO",
       "fullAccess": "Full access",
-      "accessText": "Get full ScamShield protection, trading risk tools and decision history in one PRO plan.",
+      "accessText": "Turn a one-time security check into background monitoring, change alerts and measurable protection.",
       "ctaBuy": "Get full protection",
       "ctaActive": "PRO active",
       "startPriceLabel": "Starts from",

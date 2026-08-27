@@ -1369,28 +1369,6 @@ export default function Home() {
             />
           </BlurCard>
 
-          <BlurCard style={{ borderColor: "rgba(255,176,32,0.28)" }}>
-            <Text style={{ color: C.text, fontWeight: "900", fontSize: 20, marginBottom: 8, textAlign: "center" }}>
-              {isPro
-                ? TT("home.new.proActiveTitle", "PRO IS ACTIVE", "PRO АКТИВЕН", "PRO АКТИВНИЙ")
-                : TT("home.new.proTitle", "NEED UNLIMITED PROTECTION?", "НУЖНА ЗАЩИТА БЕЗ ЛИМИТОВ?", "ПОТРІБЕН ЗАХИСТ БЕЗ ЛІМІТІВ?")}
-            </Text>
-
-            <Text style={{ color: C.dim, lineHeight: 21, fontSize: 15, marginBottom: 14, textAlign: "center" }}>
-              {isPro
-                ? TT("home.new.proActiveText", "Your objects are rechecked every 6 hours. Important risk changes trigger a private alert.", "Ваши объекты перепроверяются каждые 6 часов. При важных изменениях риска приходит личное уведомление.", "Ваші об’єкти перевіряються кожні 6 годин. Про важливі зміни ризику надходить особисте сповіщення.")
-                : TT("home.new.proText", "A free scan is a snapshot. PRO keeps watching after you close the app and alerts you when risk changes.", "Бесплатная проверка — это снимок сейчас. PRO продолжает следить после закрытия приложения и сообщает, когда риск меняется.", "Безкоштовна перевірка — це знімок зараз. PRO продовжує стежити після закриття застосунку та повідомляє про зміни ризику.")}
-            </Text>
-
-            <PrimaryButton
-              title={isPro
-                ? TT("home.new.openPro", "OPEN SCAMSHIELD PRO", "ОТКРЫТЬ SCAMSHIELD PRO", "ВІДКРИТИ SCAMSHIELD PRO")
-                : TT("home.new.upgradePro", "OPEN PRO", "ОТКРЫТЬ PRO", "ВІДКРИТИ PRO")}
-              onPress={openPro}
-              leftIcon={<Ionicons name={isPro ? "shield-checkmark" : "flash"} size={18} color={C.accentText} />}
-            />
-          </BlurCard>
-
           <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginTop: 2 }}>
             <ToolCard
               title={TT("home.tileShield", "SCAMSHIELD", "СКАМ ШИЛД", "СКАМ ШИЛД")}
