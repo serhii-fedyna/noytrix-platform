@@ -1,0 +1,39 @@
+{
+  "name": "noytrix-trading-center",
+  "version": "0.2.0",
+  "description": "Noytrix Trading Center desktop client",
+  "main": "main.cjs",
+  "author": "Noytrix",
+  "license": "UNLICENSED",
+  "scripts": {
+    "start": "electron .",
+    "build:mac": "electron-builder --mac zip --publish never",
+    "build:win": "electron-builder --win nsis --publish never"
+  },
+  "devDependencies": {
+    "electron": "35.2.1",
+    "electron-builder": "26.0.12"
+  },
+  "build": {
+    "appId": "com.noytrix.tradingcenter",
+    "productName": "Noytrix Trading Center",
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": ["zip"],
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "identity": null
+    },
+    "win": {
+      "target": ["nsis"],
+      "signAndEditExecutable": false,
+      "verifyUpdateCodeSignature": false
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "renderer/**"
+    ]
+  }
+}
