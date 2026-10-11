@@ -65,6 +65,7 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
     signature_simulation = verdict.get("signature_simulation") or {}
     multi_chain = verdict.get("multi_chain_intelligence") or {}
     ai_investigation = verdict.get("ai_investigation") or {}
+    onchain_simulation = verdict.get("onchain_simulation") or {}
 
     score = int(verdict.get("score") or verdict.get("runtime_severity") or 0)
     level = str(verdict.get("level") or "unknown").lower()
@@ -75,12 +76,12 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
     should_block = (
         level in {"critical", "danger", "high"}
         or score >= 70
-        or unlimited_unknown
         or spender_risk in {"high", "critical", "malicious"}
     )
     should_warn = (
         should_block
         or unlimited_trusted
+        or unlimited_unknown
         or level in {"suspicious", "warning", "medium"}
         or score >= 30
     )
@@ -119,6 +120,7 @@ def build_runtime_contract(payload: Dict[str, Any], verdict: Dict[str, Any]) -> 
             "recommended_actions": simulation.get("recommended_actions") or [],
         },
         "runtime_behavior": behavior,
+        "onchain_simulation": onchain_simulation,
         "signature_simulation": signature_simulation,
         "execution_graph": {
             "available": bool(execution_graph) or bool(recursive_graph),

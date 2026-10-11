@@ -9,6 +9,7 @@ from scamshield.runtime.behavior import analyze_transaction_behavior
 from scamshield.runtime.contract import build_runtime_contract, normalize_runtime_payload
 from scamshield.runtime.drain_simulator import simulate_wallet_drain
 from scamshield.runtime.execution_graph import build_execution_graph, build_recursive_execution_graph
+from scamshield.runtime.evm_simulation import simulate_evm_transaction
 
 
 def _is_signature_runtime_method(method: str) -> bool:
@@ -51,7 +52,11 @@ def create_runtime_router(
             or ""
         ).strip()
 
+        runtime_tx = runtime_payload.get("transaction") or {}
+        runtime_to = str(runtime_tx.get("to") or payload.get("to") or "").strip()
         target = runtime_data if runtime_data.startswith("0x") or "|" in runtime_data else runtime_input
+        if runtime_to and runtime_data.startswith("0x"):
+            target = f"{runtime_to}|{runtime_data}"
         lang = normalize_lang(str(payload.get("lang") or "en"))
         method = str(payload.get("method") or "").lower()
 
@@ -90,23 +95,38 @@ def create_runtime_router(
             permissions.setdefault("summary", "This wallet action can grant unlimited token spending permission.")
             data["permissions_summary"] = permissions
             spender_trust = str(permissions.get("spender_trust") or permissions.get("spender_trust_level") or "").lower()
-            if spender_trust not in {"trusted", "verified", "safe"} and int(data.get("score") or 0) < 85:
-                data["score"] = 92
-                data["runtime_severity"] = 92
-                data["heuristics_score"] = max(92, int(data.get("heuristics_score") or 0))
-                data["level"] = "critical"
-                data["normalized_level"] = "critical"
-                data["risk_type"] = data.get("risk_type") or "unlimited_approval_to_unknown_spender"
-                data["confirmed_red_flag"] = True
+            if spender_trust not in {"trusted", "verified", "safe"}:
                 evidence = data.setdefault("evidence", [])
                 if isinstance(evidence, list):
                     evidence.append({
                         "source": "runtime_extension",
                         "code": "unlimited_approval_to_unknown_spender",
-                        "severity": 92,
+                        "severity": 55,
                         "text": "The wallet request can grant unlimited token spending permission to an unverified spender.",
-                        "hard_evidence": True,
+                        "hard_evidence": False,
+                        "polarity": "neutral",
                     })
+
+        if runtime_to and runtime_data.startswith("0x"):
+            data["onchain_simulation"] = await simulate_evm_transaction(payload)
+            if data["onchain_simulation"].get("status") in {"observed", "reverted"}:
+                capabilities = data.setdefault("analysis_capabilities", [])
+                for capability in ("chain_state", "transaction_simulation"):
+                    if capability not in capabilities:
+                        capabilities.append(capability)
+                evidence = data.setdefault("evidence", [])
+                evidence.extend(data["onchain_simulation"].get("evidence") or [])
+                data["kind"] = "transaction"
+                # Execution success only proves that the node accepted the
+                # read-only call. Without independent reputation evidence it
+                # must not be translated into a safe verdict.
+                if int(data.get("score") or 0) == 0 and not data.get("confirmed_red_flag"):
+                    data["level"] = "unknown"
+                    data["normalized_level"] = "unknown"
+                    data["assessment_status"] = "partial"
+                    data["verdict_en"] = "Transaction simulated; no threat was confirmed"
+                    data["verdict_ru"] = "Транзакция смоделирована, подтверждённая угроза не найдена"
+                    data["verdict_localized"] = data["verdict_ru"] if lang == "ru" else data["verdict_en"]
 
         try:
             raw_data = data.get("raw") or {}

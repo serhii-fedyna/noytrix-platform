@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import os
 import re
@@ -11,7 +12,7 @@ from typing import Any, Dict
 
 
 CACHE_DB_PATH = Path("data/ai_explanations_cache.sqlite3")
-EXPLANATION_FORMAT_VERSION = "concise-evidence-v2"
+EXPLANATION_FORMAT_VERSION = "evidence-first-gemini-v5-single-language"
 
 
 def _cache_connect() -> sqlite3.Connection:
@@ -115,6 +116,12 @@ def build_threat_specific_prompt(ctx: Dict[str, Any]) -> str:
     elif kind == "contract":
         parts.append(
             "This is a smart contract check. Explain contract identity, spender role, token permissions, honeypot or contract-specific risks if present."
+        )
+    elif kind in {"token", "ticker"}:
+        parts.append(
+            "This is a token lookup. State clearly whether the input was an exact contract/mint address or only a ticker. "
+            "For an exact token, explain only the supplied market cap, liquidity, holder, sell-simulation, tax, ownership and code-verification facts. "
+            "For a ticker-only lookup, do not call it a token safety result: explain that the ticker identifies an asset and that an exact contract or mint is required for holder, honeypot, liquidity and sellability checks."
         )
     elif kind == "transaction":
         parts.append(
@@ -222,11 +229,19 @@ def build_ai_explanation_context(verdict: Dict[str, Any]) -> Dict[str, Any]:
         "score": verdict.get("score"),
         "confidence": verdict.get("confidence_score") or verdict.get("confidence"),
         "level": verdict.get("level"),
+        "assessment_status": verdict.get("assessment_status"),
+        "confirmed_red_flag": bool(verdict.get("confirmed_red_flag")),
         "risk_type": verdict.get("risk_type"),
         "summary": verdict.get("summary"),
         "what_can_happen": verdict.get("what_can_happen"),
         "what_can_be_stolen": verdict.get("what_can_be_stolen"),
         "recommended_action": verdict.get("recommended_action"),
+        # Object-specific facts are deliberately included before the generic
+        # source list.  This lets the explanation speak about actual token,
+        # contract, wallet and domain findings instead of producing a generic
+        # disclaimer when the scan has usable enrichment.
+        "details": verdict.get("details") or raw.get("details") or {},
+        "inspection": verdict.get("inspection") or raw.get("inspection") or {},
 
         "permissions_summary": verdict.get("permissions_summary") or {},
         "runtime_behavior": verdict.get("runtime_behavior") or {},
@@ -307,32 +322,42 @@ async def generate_ai_security_explanation(
     lang: str = "en",
     mode: str = "detailed",
 ) -> Dict[str, Any]:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        return _ai_explanation_unavailable(
-            lang,
-            mode if "mode" in locals() else "detailed",
-            "openai_api_key_missing",
-            None,
-        )
+    """Turn a verified scan into a full, evidence-grounded explanation.
 
-    try:
-        from openai import AsyncOpenAI
-    except Exception:
-        return _ai_explanation_unavailable(
-            lang,
-            mode if "mode" in locals() else "detailed",
-            "openai_package_missing",
-            None,
-        )
-
+    Vertex Gemini is the production AI provider for Noytrix.  The old OpenAI
+    implementation silently broke whenever an OpenAI key was absent, even
+    though the project already had a working Vertex service account.  Keep the
+    response deterministic and evidence-first if Vertex has a transient issue:
+    a completed scan must never degrade into a blank AI card.
+    """
     ctx = build_ai_explanation_context(verdict)
     context_json = _compact_context(ctx)
 
+    # An unavailable source is neither a clean result nor proof of a threat.
+    # Do not give a model room to turn missing Solana/EVM/URL data into an
+    # invented attack story. Confirmed evidence still wins during an outage.
+    if (
+        str(ctx.get("assessment_status") or "").lower() == "insufficient_data"
+        and not bool(ctx.get("confirmed_red_flag"))
+    ):
+        structured = _insufficient_evidence_explanation(ctx, lang)
+        return {
+            "available": True,
+            "degraded": False,
+            "reason": "insufficient_verified_evidence",
+            "model": "noytrix_evidence_formatter",
+            "language": lang,
+            "mode": mode if mode in {"short", "detailed"} else "detailed",
+            "cache_hit": False,
+            "text": structured["details"],
+            "structured": structured,
+            "_cache": {"hit": False, "provider": "none"},
+        }
+
     language_rule = {
-        "ru": "Answer in Russian.",
-        "uk": "Answer in Ukrainian.",
-        "en": "Answer in English.",
+        "ru": "Answer only in Russian. Every user-facing word must be Russian, except a proper name, domain, wallet address, token symbol, or unavoidable product name. Never insert English sentences, headings, or mixed-language fragments.",
+        "uk": "Answer only in Ukrainian. Every user-facing word must be Ukrainian, except a proper name, domain, wallet address, token symbol, or unavoidable product name. Never insert English sentences, headings, or mixed-language fragments.",
+        "en": "Answer only in English.",
     }.get(str(lang or "en").lower(), "Answer in English.")
 
     threat_specific_prompt = build_threat_specific_prompt(ctx)
@@ -383,6 +408,7 @@ async def generate_ai_security_explanation(
         "Do not just list risks — connect them into a believable attack narrative. "
         "If evidence suggests phishing or wallet draining, explain the likely real-world consequence to the user in practical terms. "
         "Prioritize clarity over technical jargon, but explain dangerous blockchain behavior accurately when necessary. "
+        "Produce a complete, helpful explanation that a normal user can act on. "
         "Return ONLY valid JSON with this exact shape: "
         "{\"short\":string,\"details\":string,\"risks\":[string],\"actions\":[string],\"confidence_note\":string,\"severity_label\":string,\"next_step_priority\":string,\"attack_scenario\":string,\"hidden_danger\":string,\"attacker_intent\":string,\"loss_scenario\":string}. "
         "No markdown. No extra text. "
@@ -395,12 +421,10 @@ async def generate_ai_security_explanation(
         mode = "detailed"
 
     mode_rule = (
-        "Use short mode for the Free result. Return only one factual sentence in short and details. "
-        "Keep every other field empty and both lists empty. Do not describe the investigation, sources, hidden behavior, or next steps here. "
-        if mode == "short"
-        else "Use detailed PRO mode. short must be one factual sentence. details must contain at most two short, non-repeating sentences about the strongest confirmed findings. "
+        "Use the supplied evidence only. short must be a one-sentence bottom line. "
+        "details must be at most four short sentences: conclusion, strongest evidence, limitation, next action. "
         "Only fill attack_scenario, hidden_danger, attacker_intent, and loss_scenario when the backend contains direct evidence for that field; otherwise return an empty string. "
-        "Return at most three risks and three actions. Each item must be a specific fact or action, not advice repeated in different words. "
+        "Return at most four concrete risks and three concrete actions. Each item must be tied to evidence or a practical protective step. Never repeat the same fact. "
     )
 
     user = (
@@ -427,47 +451,40 @@ async def generate_ai_security_explanation(
         f"{context_json}"
     )
 
-    model = os.getenv("NOYTRIX_AI_EXPLAINER_MODEL", "gpt-4o-mini")
+    model = os.getenv("NOYTRIX_GEMINI_TEXT_MODEL", "gemini-2.5-flash")
     cache_key = _cache_key(context_json, str(lang or "en").lower(), mode, model)
     cached = get_cached_ai_explanation(cache_key)
 
     if cached:
         return cached
 
+    schema = {
+        "type": "OBJECT",
+        "properties": {
+            "short": {"type": "STRING"}, "details": {"type": "STRING"},
+            "risks": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "actions": {"type": "ARRAY", "items": {"type": "STRING"}},
+            "confidence_note": {"type": "STRING"}, "severity_label": {"type": "STRING"},
+            "next_step_priority": {"type": "STRING"}, "attack_scenario": {"type": "STRING"},
+            "hidden_danger": {"type": "STRING"}, "attacker_intent": {"type": "STRING"},
+            "loss_scenario": {"type": "STRING"},
+        },
+        "required": ["short", "details", "risks", "actions", "confidence_note", "severity_label", "next_step_priority", "attack_scenario", "hidden_danger", "attacker_intent", "loss_scenario"],
+    }
+
     try:
-        client = AsyncOpenAI(api_key=api_key)
-        resp = await client.chat.completions.create(
-            model=model,
-            temperature=0.2,
-            max_tokens=520 if mode == "detailed" else 180,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+        # GeminiClient is synchronous because it is also used by scheduled
+        # workers. Offload it so a live scan does not block FastAPI's event loop.
+        from automation_os.gemini_client import GeminiClient
+        raw = await asyncio.to_thread(
+            GeminiClient().generate_json,
+            system,
+            user,
+            schema,
+            operation="security_explanation",
+            max_tokens=2600,
         )
-
-        text = (resp.choices[0].message.content or "").strip()
-
-        structured = None
-        try:
-            structured = json.loads(text)
-        except Exception:
-            fallback_note = {
-                "ru": "Модель вернула обычный текст вместо структурированного ответа.",
-                "uk": "Модель повернула звичайний текст замість структурованої відповіді.",
-                "en": "The model returned plain text instead of structured JSON.",
-            }.get(str(lang or "en").lower(), "The model returned plain text instead of structured JSON.")
-
-            structured = {
-                "short": text[:300],
-                "details": text,
-                "risks": [],
-                "actions": [],
-                "confidence_note": fallback_note,
-            }
-
-        structured = validate_ai_explanation_output(structured, ctx, mode)
-
+        structured = validate_ai_explanation_output(raw, ctx, mode)
         result = {
             "available": True,
             "reason": None,
@@ -475,24 +492,144 @@ async def generate_ai_security_explanation(
             "language": lang,
             "mode": mode,
             "cache_hit": False,
-            "text": structured.get("details") or structured.get("short") or text,
+            "text": structured.get("details") or structured.get("short"),
             "structured": structured,
-            "_cache": {
-                "hit": False,
-                "provider": "sqlite",
-            },
+            "_cache": {"hit": False, "provider": "sqlite"},
         }
-
         save_cached_ai_explanation(cache_key, str(lang or "en").lower(), mode, model, result)
-
         return result
-    except Exception as e:
-        return _ai_explanation_unavailable(
-            lang,
-            mode if "mode" in locals() else "detailed",
-            str(e)[:300],
-            model,
-        )
+    except Exception as exc:
+        # Keep the already-provisioned OpenAI route as a compatibility fallback
+        # while Vertex is retried or its service account is rotated. This is
+        # still a real model response, not a canned security conclusion.
+        legacy_key = (os.getenv("OPENAI_API_KEY") or "").strip()
+        if legacy_key:
+            try:
+                from openai import AsyncOpenAI
+                legacy_model = (os.getenv("NOYTRIX_AI_EXPLAINER_MODEL") or "gpt-4o-mini").strip()
+                legacy_response = await AsyncOpenAI(api_key=legacy_key).chat.completions.create(
+                    model=legacy_model,
+                    temperature=0.2,
+                    max_tokens=1800,
+                    messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                )
+                raw_text = str(legacy_response.choices[0].message.content or "").strip()
+                structured = validate_ai_explanation_output(json.loads(raw_text), ctx, mode)
+                result = {
+                    "available": True, "reason": None, "model": legacy_model, "language": lang, "mode": mode,
+                    "cache_hit": False, "text": structured.get("details") or structured.get("short"), "structured": structured,
+                    "_cache": {"hit": False, "provider": "sqlite"},
+                }
+                save_cached_ai_explanation(cache_key, str(lang or "en").lower(), mode, legacy_model, result)
+                return result
+            except Exception:
+                pass
+        # A live provider error must not erase a completed security result. This
+        # fallback is constructed solely from the scan's own evidence, rather
+        # than a generic fixed "unavailable" message.
+        structured = _evidence_grounded_fallback(ctx, lang)
+        result = {
+            "available": True,
+            "degraded": True,
+            "reason": str(exc)[:300],
+            "model": "noytrix_evidence_formatter",
+            "language": lang,
+            "mode": mode,
+            "cache_hit": False,
+            "text": structured["details"],
+            "structured": structured,
+            "_cache": {"hit": False, "provider": "none"},
+        }
+        return result
+
+
+def _evidence_grounded_fallback(ctx: Dict[str, Any], lang: str) -> Dict[str, Any]:
+    """Build a truthful readable result from the current scan only.
+
+    This is a resilience path, not a canned answer: every finding comes from
+    the actual structured evidence returned for this object.
+    """
+    language = str(lang or "en").lower()
+    language = "uk" if language.startswith(("uk", "ua")) else "ru" if language.startswith("ru") else "en"
+    level = str(ctx.get("level") or "suspicious").lower()
+    score = ctx.get("score")
+    evidence = ctx.get("evidence") or []
+    findings = []
+    for item in evidence:
+        if isinstance(item, dict):
+            text = " ".join(str(item.get(key) or "").strip() for key in ("text", "label", "code")).strip()
+            if text and text not in findings:
+                findings.append(text[:300])
+    source_count = len([item for item in (ctx.get("sources") or []) if isinstance(item, dict)])
+    copies = {
+        "en": {
+            "short": f"Current result: {level} (risk score {score if score is not None else 'not available'}).",
+            "details": (f"Noytrix found {len(findings)} verified signal(s) across {source_count} completed checks." if findings else f"Noytrix completed {source_count} checks but found no verified threat signal.") + " This is a point-in-time result, not a guarantee.",
+            "action": "Do not connect, sign, approve, or send funds until the object is independently verified." if level in {"danger", "critical", "high"} else "Treat this as one point-in-time check and verify every future wallet request separately.",
+            "confidence": "The conclusion reflects the evidence available at scan time; missing evidence is not proof of safety.",
+        },
+        "ru": {
+            "short": f"Текущий результат: {level} (оценка риска {score if score is not None else 'недоступна'}).",
+            "details": (f"Noytrix нашёл {len(findings)} подтверждённых сигналов в {source_count} завершённых проверках." if findings else f"Noytrix выполнил {source_count} проверок, но не нашёл подтверждённых сигналов угрозы.") + " Это оценка на момент проверки, а не гарантия.",
+            "action": "Не подключай кошелёк, не подписывай и не отправляй средства, пока объект не будет проверен независимо." if level in {"danger", "critical", "high"} else "Считай это проверкой на конкретный момент и отдельно проверяй каждый будущий запрос кошелька.",
+            "confidence": "Вывод отражает данные на момент проверки; отсутствие сигнала не доказывает безопасность.",
+        },
+        "uk": {
+            "short": f"Поточний результат: {level} (оцінка ризику {score if score is not None else 'недоступна'}).",
+            "details": (f"Noytrix виявив {len(findings)} підтверджених сигналів у {source_count} завершених перевірках." if findings else f"Noytrix виконав {source_count} перевірок, але не виявив підтверджених сигналів загрози.") + " Це оцінка на момент перевірки, а не гарантія.",
+            "action": "Не підключай гаманець, не підписуй і не надсилай кошти, доки об’єкт не буде перевірено незалежно." if level in {"danger", "critical", "high"} else "Вважай це перевіркою на конкретний момент і окремо перевіряй кожен майбутній запит гаманця.",
+            "confidence": "Висновок відображає дані на момент перевірки; відсутність сигналу не доводить безпеку.",
+        },
+    }
+    copy = copies[language]
+    return validate_ai_explanation_output({
+        "short": copy["short"], "details": copy["details"], "risks": findings[:6], "actions": [copy["action"]],
+        "confidence_note": copy["confidence"], "severity_label": level.title(), "next_step_priority": copy["action"],
+        "attack_scenario": "", "hidden_danger": "", "attacker_intent": "", "loss_scenario": "",
+    }, ctx, "detailed")
+
+
+def _insufficient_evidence_explanation(ctx: Dict[str, Any], lang: str) -> Dict[str, Any]:
+    """Return a short, neutral report when required checks did not complete.
+
+    This deliberately contains no hypothesised attack mechanism. A failed RPC
+    must never be translated into claims about minting, freezing, draining, or
+    a token being safe.
+    """
+    language = str(lang or "en").lower()
+    language = "uk" if language.startswith(("uk", "ua")) else "ru" if language.startswith("ru") else "en"
+    copy = {
+        "en": {
+            "short": "Verification is incomplete: this is not a safety verdict.",
+            "details": "Required security data was unavailable during this check. Noytrix could not confirm either a threat or safety from the completed sources. Recheck before connecting a wallet, signing, or sending funds.",
+            "risk": "The unavailable check can hide important token or transaction controls.",
+            "action": "Do not connect, sign, approve, or send funds until the check completes.",
+            "confidence": "A missing source is not proof of safety or proof of a scam.",
+            "label": "Verification incomplete",
+        },
+        "ru": {
+            "short": "Проверка не завершена: это не вердикт безопасности.",
+            "details": "Во время проверки были недоступны необходимые данные безопасности. Noytrix не может подтвердить ни угрозу, ни безопасность только по завершённым источникам. Повтори проверку до подключения кошелька, подписи или отправки средств.",
+            "risk": "Недоступная проверка может скрывать важные настройки токена или транзакции.",
+            "action": "Не подключай кошелёк, не подписывай и не отправляй средства, пока проверка не завершится.",
+            "confidence": "Недоступный источник не доказывает ни безопасность, ни мошенничество.",
+            "label": "Проверка не завершена",
+        },
+        "uk": {
+            "short": "Перевірка не завершена: це не вердикт безпеки.",
+            "details": "Під час перевірки були недоступні необхідні дані безпеки. Noytrix не може підтвердити ані загрозу, ані безпеку лише за завершеними джерелами. Повтори перевірку до підключення гаманця, підпису або надсилання коштів.",
+            "risk": "Недоступна перевірка може приховувати важливі налаштування токена або транзакції.",
+            "action": "Не підключай гаманець, не підписуй і не надсилай кошти, доки перевірка не завершиться.",
+            "confidence": "Недоступне джерело не доводить ані безпеку, ані шахрайство.",
+            "label": "Перевірка не завершена",
+        },
+    }[language]
+    return validate_ai_explanation_output({
+        "short": copy["short"], "details": copy["details"], "risks": [copy["risk"]],
+        "actions": [copy["action"]], "confidence_note": copy["confidence"],
+        "severity_label": copy["label"], "next_step_priority": copy["action"],
+        "attack_scenario": "", "hidden_danger": "", "attacker_intent": "", "loss_scenario": "",
+    }, ctx, "detailed")
 
 
 def validate_ai_explanation_output(
@@ -507,35 +644,51 @@ def validate_ai_explanation_output(
         (context.get("wallet_drain_simulation") or {}).get("estimated_loss_usd")
     )
 
+    def plain_text(value) -> str:
+        """Keep model prose readable even when a provider ignores the no-Markdown rule.
+
+        The UI renders risks, actions and report sections itself. Passing through
+        Markdown markers here produces literal asterisks/backticks on mobile,
+        web and bot surfaces instead of a security report a person can scan.
+        """
+        text = str(value or "").replace("\\*", "*").replace("\\`", "`")
+        text = re.sub(r"```(?:[A-Za-z0-9_-]+)?\s*", "", text)
+        text = re.sub(r"`([^`]*)`", r"\1", text)
+        text = re.sub(r"(\*\*|__|~~)", "", text)
+        text = re.sub(r"(?m)^\s{0,3}#{1,6}\s+", "", text)
+        text = re.sub(r"(?m)^\s*(?:[-*+•]|\d+[.)])\s+", "", text)
+        text = re.sub(r"\[([^\]\n]+)\]\([^\)]+\)", r"\1", text)
+        return " ".join(text.split()).strip()
+
     def concise_text(value, max_sentences: int, max_chars: int) -> str:
-        text = " ".join(str(value or "").split()).strip()
+        text = plain_text(value)
         if not text:
             return ""
         sentences = re.split(r"(?<=[.!?])\s+", text)
         compact = " ".join(sentences[:max_sentences]).strip()
         return compact[:max_chars].rstrip()
 
-    def clean_list(value, max_items: int = 3, max_chars: int = 220):
+    def clean_list(value, max_items: int = 6, max_chars: int = 420):
         if not isinstance(value, list):
             return []
         return [concise_text(x, 1, max_chars) for x in value if str(x or "").strip()][:max_items]
 
     is_short = str(mode or "detailed").lower() == "short"
     short_text = concise_text(structured.get("short"), 1, 320)
-    details = short_text if is_short else concise_text(structured.get("details"), 2, 700)
+    details = short_text if is_short else concise_text(structured.get("details"), 8, 2400)
 
     cleaned = {
         "short": short_text,
         "details": details,
         "risks": [] if is_short else clean_list(structured.get("risks")),
         "actions": [] if is_short else clean_list(structured.get("actions")),
-        "confidence_note": "" if is_short else concise_text(structured.get("confidence_note"), 1, 240),
-        "severity_label": concise_text(structured.get("severity_label"), 1, 120),
-        "next_step_priority": "" if is_short else concise_text(structured.get("next_step_priority"), 1, 220),
-        "attack_scenario": "" if is_short else concise_text(structured.get("attack_scenario"), 1, 420),
-        "hidden_danger": "" if is_short else concise_text(structured.get("hidden_danger"), 1, 420),
-        "attacker_intent": "" if is_short else concise_text(structured.get("attacker_intent"), 1, 420),
-        "loss_scenario": "" if is_short else concise_text(structured.get("loss_scenario"), 1, 420),
+        "confidence_note": "" if is_short else concise_text(structured.get("confidence_note"), 3, 700),
+        "severity_label": concise_text(structured.get("severity_label"), 1, 160),
+        "next_step_priority": "" if is_short else concise_text(structured.get("next_step_priority"), 2, 480),
+        "attack_scenario": "" if is_short else concise_text(structured.get("attack_scenario"), 4, 1100),
+        "hidden_danger": "" if is_short else concise_text(structured.get("hidden_danger"), 4, 1100),
+        "attacker_intent": "" if is_short else concise_text(structured.get("attacker_intent"), 3, 850),
+        "loss_scenario": "" if is_short else concise_text(structured.get("loss_scenario"), 4, 1100),
     }
 
     combined = " ".join([

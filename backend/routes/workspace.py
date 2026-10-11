@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from scamshield.ai.followup import answer_security_followup
 from product_analytics import ANALYTICS_DB_PATH
+from tracking_intelligence import canonical_entity, extract_observations, typed_deltas
 
 
 def _now() -> str:
@@ -113,6 +114,11 @@ def _safe_result(value: Any) -> dict[str, Any]:
     blocked = {"api_key", "token", "authorization", "password", "private_key", "seed", "access_token", "refresh_token"}
     safe: dict[str, Any] = {}
     for key, item in value.items():
+        # The website consumes the structured report contract only. Do not
+        # expose generated narrative fields for any legacy renderer to turn
+        # into a customer-facing wall of text.
+        if str(key).lower() in {"ai_explanation", "ai_explanation_result"}:
+            continue
         if str(key).lower() in blocked:
             continue
         if isinstance(item, str):
@@ -235,47 +241,70 @@ def _object_kind(target: str, payload: dict[str, Any]) -> str:
 
 
 def _collect_risk_flags(payload: dict[str, Any]) -> list[str]:
-    watched = {
-        "malicious",
-        "blacklist",
-        "phishing",
-        "malware",
-        "honeypot",
-        "owner",
-        "ownership",
-        "upgrade",
-        "upgradeable",
-        "permission",
-        "approval",
-        "sell_tax",
-        "buy_tax",
-        "liquidity",
-        "whale",
-        "holder",
-        "dangerous",
-        "scam",
-        "reputation",
-        "drain",
-        "drainer",
-    }
+    """Return stable IDs for explicit, actionable risk evidence only.
+
+    Scan responses contain many neutral field names and explanatory strings such
+    as ``holder_count`` or ``honeypot_checked``.  Treating arbitrary JSON text as
+    evidence creates false monitoring events.  A monitoring signal therefore
+    needs a structured evidence record with a code and an explicit positive
+    severity/confirmation marker, or an explicit malicious source.
+    """
     found: set[str] = set()
 
-    def visit(value: Any) -> None:
+    def severity(value: Any) -> int:
+        if isinstance(value, bool):
+            return 0
+        try:
+            return max(0, min(100, int(float(value))))
+        except (TypeError, ValueError):
+            return {
+                "info": 0,
+                "low": 10,
+                "medium": 20,
+                "warning": 20,
+                "high": 35,
+                "danger": 45,
+                "critical": 50,
+                "malicious": 50,
+            }.get(str(value or "").strip().lower(), 0)
+
+    def normalized_code(value: Any) -> str:
+        return re.sub(r"[^a-z0-9_.:-]+", "_", str(value or "").strip().lower()).strip("_")[:120]
+
+    def visit(value: Any, *, evidence_context: bool = False) -> None:
         if isinstance(value, dict):
+            code = normalized_code(value.get("code") or value.get("signal_code") or value.get("id"))
+            explicitly_confirmed = any(
+                value.get(key) is True
+                for key in ("hard_evidence", "confirmed", "malicious", "is_malicious", "detected", "matched")
+            )
+            explicit_severity = severity(value.get("severity") or value.get("risk_score") or value.get("score"))
+            # Low-severity informational findings remain visible in scan details,
+            # but do not wake users as monitoring incidents.
+            if evidence_context and code and (explicitly_confirmed or explicit_severity >= 20):
+                found.add(code)
+
             for key, item in value.items():
-                haystack = f"{key} {item}".lower()
-                for token in watched:
-                    if token in haystack:
-                        found.add(token)
-                visit(item)
+                normalized_key = str(key).lower().replace("-", "_")
+                if normalized_key in {"malicious_sources", "internal_malicious_sources", "external_malicious_sources"}:
+                    if isinstance(item, list):
+                        for source in item:
+                            source_code = normalized_code(source)
+                            if source_code:
+                                found.add(f"source:{source_code}")
+                    continue
+                child_is_evidence = evidence_context or normalized_key in {
+                    "evidence", "signals", "findings", "risk_signals", "hard_evidence_codes"
+                }
+                visit(item, evidence_context=child_is_evidence)
         elif isinstance(value, list):
-            for item in value[:40]:
-                visit(item)
-        elif isinstance(value, str):
-            haystack = value.lower()
-            for token in watched:
-                if token in haystack:
-                    found.add(token)
+            for item in value[:100]:
+                if evidence_context and isinstance(item, str):
+                    code = normalized_code(item)
+                    if code:
+                        found.add(code)
+                else:
+                    visit(item, evidence_context=evidence_context)
 
     visit(payload)
     return sorted(found)
@@ -292,7 +321,8 @@ def _meaningful_change(previous: dict[str, Any], current: dict[str, Any], langua
     score_crossed = (before_score < 70 <= after_score) or (before_score < 85 <= after_score)
     level_increased = _risk_rank(after_level) > _risk_rank(before_level)
     score_jump = abs(after_score - before_score) >= 25
-    changed = bool(score_crossed or level_increased or score_jump or new_flags)
+    metric_changes = typed_deltas(extract_observations(previous), extract_observations(current))
+    changed = bool(score_crossed or level_increased or score_jump or new_flags or metric_changes)
     copy = {
         "en": {
             "score": "Risk score changed from {before} to {after}.",
@@ -313,6 +343,33 @@ def _meaningful_change(previous: dict[str, Any], current: dict[str, Any], langua
             "stable": "Значущих змін безпеки не виявлено.",
         },
     }.get(_lang(language), {})
+
+    metric_labels = {
+        "price_usd": ("Price", "Цена", "Ціна"),
+        "market_cap_usd": ("Market cap", "Капитализация", "Капіталізація"),
+        "liquidity_usd": ("Liquidity", "Ликвидность", "Ліквідність"),
+        "holder_count": ("Holder count", "Количество держателей", "Кількість власників"),
+        "top_holder_concentration_pct": ("Top-holder concentration", "Концентрация у крупных держателей", "Концентрація у великих власників"),
+        "buy_tax_pct": ("Buy tax", "Налог на покупку", "Податок на купівлю"),
+        "sell_tax_pct": ("Sell tax", "Налог на продажу", "Податок на продаж"),
+        "sellability": ("Ability to sell", "Возможность продать", "Можливість продати"),
+        "mint_authority": ("Token mint control", "Контроль выпуска токенов", "Контроль випуску токенів"),
+        "freeze_authority": ("Token freeze control", "Контроль заморозки токенов", "Контроль заморожування токенів"),
+        "proxy_implementation": ("Contract implementation", "Реализация контракта", "Реалізація контракту"),
+        "contract_owner": ("Contract owner", "Владелец контракта", "Власник контракту"),
+    }
+    language_index = {"en": 0, "ru": 1, "uk": 2}.get(_lang(language), 0)
+
+    def human_metric_change(item: dict[str, Any]) -> str:
+        label = metric_labels.get(str(item.get("metric") or ""), ("Security data", "Данные безопасности", "Дані безпеки"))[language_index]
+        previous_value, current_value = item.get("previous"), item.get("current")
+        if isinstance(previous_value, (dict, list)) or isinstance(current_value, (dict, list)):
+            return {
+                "en": f"{label}: verified security data was updated.",
+                "ru": f"{label}: обновлены подтверждённые данные безопасности.",
+                "uk": f"{label}: оновлено підтверджені дані безпеки.",
+            }[_lang(language)]
+        return f"{label}: {previous_value} → {current_value}."
     pieces: list[str] = []
     if before_score != after_score:
         pieces.append(copy["score"].format(before=before_score, after=after_score))
@@ -320,11 +377,23 @@ def _meaningful_change(previous: dict[str, Any], current: dict[str, Any], langua
         pieces.append(copy["level"].format(before=before_level, after=after_level))
     if new_flags:
         pieces.append(copy["signals"].format(signals=", ".join(new_flags[:6])))
+    if metric_changes:
+        pieces.extend(human_metric_change(item) for item in metric_changes[:6])
+    metric_severity = "info"
+    severity_rank = {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+    for item in metric_changes:
+        candidate = str(item.get("severity") or "info").lower()
+        if severity_rank.get(candidate, 0) > severity_rank.get(metric_severity, 0):
+            metric_severity = candidate
+    overall_severity = after_level
+    if severity_rank.get(metric_severity, 0) > severity_rank.get(str(after_level).lower(), 0):
+        overall_severity = metric_severity
     return {
         "changed": changed,
         "event_type": "risk_status_changed" if changed else "risk_status_stable",
-        "severity": after_level if changed else "info",
+        "severity": overall_severity if changed else "info",
         "summary": " ".join(pieces) if pieces else copy["stable"],
+        "metric_changes": metric_changes,
     }
 
 
@@ -509,6 +578,23 @@ def create_workspace_router(
                 payload_json TEXT NOT NULL,
                 sent_at TEXT NOT NULL,
                 PRIMARY KEY(user_id, period)
+            );
+            CREATE TABLE IF NOT EXISTS workspace_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, watch_id INTEGER NOT NULL, user_id TEXT NOT NULL,
+                canonical_entity TEXT NOT NULL, observed_at TEXT NOT NULL, score INTEGER, level TEXT,
+                payload_json TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workspace_snapshots_watch_time ON workspace_snapshots(watch_id, observed_at);
+            CREATE TABLE IF NOT EXISTS workspace_observations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, snapshot_id INTEGER NOT NULL, watch_id INTEGER NOT NULL,
+                metric TEXT NOT NULL, value_json TEXT, unit TEXT, source TEXT NOT NULL,
+                status TEXT NOT NULL, confidence REAL, observed_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_workspace_observations_metric_time ON workspace_observations(watch_id, metric, observed_at);
+            CREATE TABLE IF NOT EXISTS workspace_metric_changes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, watch_id INTEGER NOT NULL, event_id INTEGER,
+                metric TEXT NOT NULL, event_type TEXT NOT NULL, previous_json TEXT, current_json TEXT,
+                relative_change REAL, severity TEXT NOT NULL, source TEXT, created_at TEXT NOT NULL
             );
             """
         )
@@ -798,7 +884,6 @@ def create_workspace_router(
                 ("input", _text(language, "accepted")),
                 ("engine", _text(language, "engine")),
                 ("evidence", _text(language, "evidence")),
-                ("ai", _text(language, "ai")),
                 ("verdict", _text(language, "verdict")),
             ]
             yield _sse("analysis_started", {"stages": [{"id": stage, "text": text, "status": "pending"} for stage, text in stages]})
@@ -817,8 +902,6 @@ def create_workspace_router(
             safe_result = _safe_result(result)
             yield _sse("stage", {"id": "engine", "status": "done", "text": _text(language, "engine")})
             yield _sse("stage", {"id": "evidence", "status": "done", "text": _text(language, "evidence")})
-            ai_text = str(safe_result.get("ai_explanation") or "").strip()
-            yield _sse("stage", {"id": "ai", "status": "done" if ai_text else "skipped", "text": _text(language, "ai") if ai_text else _text(language, "ai_skip")})
             yield _sse("stage", {"id": "verdict", "status": "done", "text": _text(language, "verdict")})
             yield _sse("verdict", {"result": safe_result})
 
@@ -831,33 +914,10 @@ def create_workspace_router(
         verdict = _safe_result(payload.get("scan"))
         if not question or len(question) > 1200 or not verdict:
             raise HTTPException(status_code=422, detail="invalid_followup")
-        subject, pro_active = chat_subject(request)
-        scan_hash = hashlib.sha256(str(verdict.get("input") or "").strip().lower().encode("utf-8")).hexdigest()
-        usage_day = datetime.now(timezone.utc).date().isoformat()
-        used = 0
-        if not pro_active:
-            conn = connect()
-            try:
-                row = conn.execute("SELECT used FROM workspace_chat_usage WHERE subject=? AND scan_hash=? AND usage_day=?", (subject, scan_hash, usage_day)).fetchone()
-                used = int(row["used"] if row else 0)
-                if used >= 4:
-                    return {"ok": False, "upgrade_required": True, "limit": 4, "used": used, "remaining": 0, "answer": _text(language, "chat_limit")}
-            finally:
-                conn.close()
-
         answer = await answer_security_followup(question, verdict, language)
-        if answer.get("ok") and not pro_active:
-            conn = connect()
-            try:
-                conn.execute(
-                    "INSERT INTO workspace_chat_usage(subject,scan_hash,usage_day,used,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(subject,scan_hash,usage_day) DO UPDATE SET used=used+1,updated_at=excluded.updated_at",
-                    (subject, scan_hash, usage_day, 1, _now()),
-                )
-                conn.commit()
-                used += 1
-            finally:
-                conn.close()
-        answer.update({"pro": pro_active, "limit": None if pro_active else 4, "used": None if pro_active else used, "remaining": None if pro_active else max(0, 4 - used)})
+        # Follow-up questions are not a paid-content gate. Abuse protections
+        # belong at the edge/rate-limit layer, not in the product conversation.
+        answer.update({"pro": True, "limit": None, "used": None, "remaining": None})
         return answer
 
     @router.post("/workspace/watches")
@@ -1049,6 +1109,21 @@ def create_workspace_router(
                     ),
                 )
                 event_id = int(cursor.lastrowid)
+            entity_id = canonical_entity(str(row["target"]), _object_kind(str(row["target"]), result), str(result.get("network") or result.get("chain") or "unknown"))
+            snapshot_cursor = conn.execute(
+                "INSERT INTO workspace_snapshots(watch_id,user_id,canonical_entity,observed_at,score,level,payload_json) VALUES(?,?,?,?,?,?,?)",
+                (watch_id, user_id, entity_id, now, _score_from_payload(result), _level_from_payload(result), json.dumps(result, ensure_ascii=False)),
+            )
+            snapshot_id = int(snapshot_cursor.lastrowid)
+            observations = extract_observations(result, now)
+            conn.executemany(
+                "INSERT INTO workspace_observations(snapshot_id,watch_id,metric,value_json,unit,source,status,confidence,observed_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                [(snapshot_id, watch_id, item["metric"], json.dumps(item.get("value"), ensure_ascii=False), item.get("unit"), item.get("source") or "scan_core", item.get("status") or "unknown", item.get("confidence"), now) for item in observations],
+            )
+            conn.executemany(
+                "INSERT INTO workspace_metric_changes(watch_id,event_id,metric,event_type,previous_json,current_json,relative_change,severity,source,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
+                [(watch_id, event_id, item["metric"], item["event_type"], json.dumps(item.get("previous"), ensure_ascii=False), json.dumps(item.get("current"), ensure_ascii=False), item.get("relative_change"), item["severity"], item.get("source"), now) for item in change.get("metric_changes", [])],
+            )
             conn.execute(
                 "INSERT INTO workspace_watch_checks(watch_id,user_id,checked_at,success,score,level,protected_value_usd,changed) VALUES(?,?,?,?,?,?,?,?)",
                 (watch_id, user_id, now, 1, _score_from_payload(result), _level_from_payload(result), _protected_value_usd(result), 1 if changed else 0),
@@ -1281,6 +1356,22 @@ def create_workspace_router(
         for row in rows:
             user_id = str(row["user_id"])
             if not entitlement_active(user_id):
+                # Do not hot-loop an expired subscription every five minutes.
+                # A bounded defer preserves automatic recovery after renewal.
+                retry_at = (datetime.now(timezone.utc) + timedelta(hours=6)).isoformat()
+                conn = connect()
+                try:
+                    conn.execute(
+                        """
+                        UPDATE workspace_watches
+                        SET next_check_at=?,last_error='pro_inactive',updated_at=?
+                        WHERE id=? AND active=1
+                        """,
+                        (retry_at, _now(), int(row["id"])),
+                    )
+                    conn.commit()
+                finally:
+                    conn.close()
                 continue
             try:
                 _updated, _result, change = await process_watch(row)
@@ -1296,8 +1387,6 @@ def create_workspace_router(
         if send_user_push is None:
             return {"sent": 0, "failed": 0}
         today = datetime.now(timezone.utc)
-        if today.day > 3:
-            return {"sent": 0, "failed": 0}
         current_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         previous_end = current_start
         previous_start = (current_start - timedelta(days=1)).replace(day=1)
@@ -1305,7 +1394,18 @@ def create_workspace_router(
         conn = connect()
         try:
             users = conn.execute(
-                "SELECT user_id, MIN(language) AS language FROM workspace_watches WHERE active=1 GROUP BY user_id"
+                """
+                SELECT w.user_id, MIN(w.language) AS language
+                FROM workspace_watches w
+                WHERE w.active=1
+                  AND EXISTS (
+                    SELECT 1 FROM workspace_watch_checks c
+                    WHERE c.user_id=w.user_id AND c.success=1
+                      AND c.checked_at>=? AND c.checked_at<?
+                  )
+                GROUP BY w.user_id
+                """,
+                (previous_start.isoformat(), previous_end.isoformat()),
             ).fetchall()
         finally:
             conn.close()

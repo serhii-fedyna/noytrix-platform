@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Dict, List
+from urllib.parse import urlsplit
 
 from .js_behavior import analyze_js_behavior
+from .safe_http import UnsafeTargetError, validate_public_url
 
 
 HEADLESS_SANDBOX_VERSION = "1.0"
@@ -65,7 +68,22 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
             "version": HEADLESS_SANDBOX_VERSION,
             "reason": "disabled_by_env",
             "score": 0,
-            "level": "safe",
+            "level": "unknown",
+            "assessment_status": "insufficient_data",
+            "signals": [],
+        }
+
+    try:
+        await asyncio.to_thread(validate_public_url, url)
+    except UnsafeTargetError as e:
+        return {
+            "available": False,
+            "version": HEADLESS_SANDBOX_VERSION,
+            "reason": e.code,
+            "error": str(e)[:300],
+            "score": 0,
+            "level": "unknown",
+            "assessment_status": "insufficient_data",
             "signals": [],
         }
 
@@ -78,7 +96,8 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
             "reason": "playwright_unavailable",
             "error": str(e)[:200],
             "score": 0,
-            "level": "safe",
+            "level": "unknown",
+            "assessment_status": "insufficient_data",
             "signals": [],
         }
 
@@ -89,6 +108,7 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
     script_urls: List[str] = []
     html = ""
     final_url = url
+    blocked_requests: List[Dict[str, str]] = []
 
     init_script = """
 (() => {
@@ -118,7 +138,6 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=True, args=[
                 "--disable-dev-shm-usage",
-                "--no-sandbox",
                 "--disable-gpu",
             ])
             context = await browser.new_context(
@@ -126,6 +145,22 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
                 ignore_https_errors=True,
                 viewport={"width": 1366, "height": 900},
             )
+
+            async def network_guard(route: Any) -> None:
+                request_url = str(route.request.url or "")
+                scheme = urlsplit(request_url).scheme.lower()
+                if scheme in {"data", "blob", "about"}:
+                    await route.continue_()
+                    return
+                try:
+                    await asyncio.to_thread(validate_public_url, request_url)
+                except UnsafeTargetError as exc:
+                    blocked_requests.append({"url": request_url[:500], "reason": exc.code})
+                    await route.abort("blockedbyclient")
+                    return
+                await route.continue_()
+
+            await context.route("**/*", network_guard)
             page = await context.new_page()
             await page.add_init_script(init_script)
 
@@ -156,7 +191,8 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
             "reason": "sandbox_runtime_error",
             "error": str(e)[:300],
             "score": 0,
-            "level": "safe",
+            "level": "unknown",
+            "assessment_status": "insufficient_data",
             "signals": [],
         }
 
@@ -187,11 +223,13 @@ async def analyze_headless_sandbox(url: str, timeout_ms: int | None = None) -> D
         "final_url": final_url,
         "score": score,
         "level": level,
+        "assessment_status": "available",
         "signals": sorted(signals, key=lambda x: int(x.get("severity") or 0), reverse=True)[:30],
         "wallet_calls": wallet_calls[:30],
         "console_messages": console_messages[:20],
         "page_errors": page_errors[:20],
         "script_urls": sorted(dict.fromkeys(script_urls))[:50],
+        "blocked_requests": blocked_requests[:50],
         "summary": (
             "Runtime browser sandbox detected wallet-drainer behavior."
             if score >= 90 else

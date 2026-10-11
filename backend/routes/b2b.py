@@ -235,8 +235,11 @@ def create_b2b_router(
             )
             raise HTTPException(status_code=500, detail={"error": "scan_failed", "message": "Scan failed."})
 
-    @router.post("/v1/security/analyze")
+    @router.post("/v1/security/analyze", include_in_schema=False)
     async def security_analyze(request: Request, payload: dict = Body(...)):
-        return await security_analyze_core(payload)
+        # Legacy alias must follow the same authentication, quota, usage and
+        # audit path as the public B2B endpoint.  Never trust caller-supplied
+        # is_pro/internal flags on an unauthenticated route.
+        return await b2b_v1_scan(request, B2BScanIn(**payload))
 
     return router

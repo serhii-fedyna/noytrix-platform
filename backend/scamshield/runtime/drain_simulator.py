@@ -95,25 +95,22 @@ def simulate_wallet_drain(
     if graph_score >= 90:
         exposure_level = "critical"
 
-    drain_probability = min(
-        100,
-        max(
-            graph_score,
-            behavior_score,
-            85 if unlimited else 35,
-        )
+    confirmed_reputation = bool(
+        permissions.get("threat_confirmed")
+        or permissions.get("spender_trust") == "malicious"
+        or permissions.get("spender_risk") in {"critical", "malicious"}
     )
+    drain_probability = max(graph_score, behavior_score) if confirmed_reputation else 0
 
     summary = (
-        "Critical wallet drain risk detected."
-        if drain_probability >= 90
-        else "High wallet drain risk detected."
-        if drain_probability >= 70
-        else "Potential wallet risk detected."
+        "Confirmed malicious context can put wallet assets at risk."
+        if confirmed_reputation
+        else "The action has wallet impact, but no attack probability was established."
     )
 
     explanation_context = {
         "drain_probability": drain_probability,
+        "drain_probability_basis": "confirmed_reputation" if confirmed_reputation else "not_measured",
         "estimated_loss_type": estimated_loss_type,
         "exposure_level": exposure_level,
         "spender": spender,
@@ -135,6 +132,7 @@ def simulate_wallet_drain(
     return {
         "available": True,
         "drain_probability": drain_probability,
+        "drain_probability_basis": "confirmed_reputation" if confirmed_reputation else "not_measured",
         "estimated_loss_usd": estimated_loss_usd,
         "estimated_loss_type": estimated_loss_type,
         "exposure_level": exposure_level,

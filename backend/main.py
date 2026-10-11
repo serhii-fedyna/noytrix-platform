@@ -57,8 +57,21 @@ from fastapi import FastAPI, Query, Body, HTTPException, Request
 from scamshield.intelligence.anti_false_positive import apply_anti_false_positive_layer
 from scamshield.intelligence.noytrix_scam_database import lookup_noytrix_scam_database
 from scamshield.intelligence.verdict_core import build_internal_verdict
+from scamshield.core.sources import capability_coverage, normalize_source_status, safe_verdict_coverage, scan_coverage
+from scamshield.core.entities import canonical_entity_id, resolve_input_syntax
 from scamshield.intelligence.scam_family import classify_scam_family
 from scamshield.intelligence.multichain import build_multichain_intelligence
+from scamshield.intelligence.evm_rpc import analyze_evm_contract, analyze_verified_abi
+from scamshield.intelligence.goplus import check_goplus_token
+from scamshield.intelligence.evm_history import fetch_evm_history
+from scamshield.intelligence.wallet_exposure import check_counterparty_reputation, check_wallet_approvals, correlate_counterparties
+from scamshield.intelligence.wallet_graph import investigate_wallet_graph
+from scamshield.intelligence.token_analysis import (
+    build_token_snapshot,
+    evm_platform_candidates,
+    normalize_honeypot_payload,
+    select_dex_pairs,
+)
 from scamshield.intelligence.threat_collectors import autonomous_collector_loop
 from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2 import service_account
@@ -66,15 +79,22 @@ from google.auth.transport.requests import Request as GoogleAuthRequest
 from scamshield.compatibility.legacy_fields import attach_legacy_fields
 from scamshield.core.levels import normalize_level, legacy_level, normalize_score, enforce_risk_floor
 from scamshield.core.scoring import score_scan
+from scamshield.core.report_cards import build_report_cards
 from scamshield.runtime.approve import build_approve_runtime_fields
 from scamshield.runtime.signature_simulator import simulate_signature
 from scamshield.ai.explainer import build_ai_explanation_context, generate_ai_security_explanation, _cache_connect
 from scamshield.ai.investigation import build_ai_investigation
 from scamshield.url_intel.domain_age import analyze_domain_age
 from scamshield.url_intel.redirect_chain import analyze_redirect_chain
+from scamshield.url_intel.safe_http import UnsafeTargetError, fetch_public_url
 from scamshield.url_intel.wallet_trap import analyze_wallet_trap
 from scamshield.url_intel.crypto_lure import analyze_crypto_lure
 from scamshield.url_intel.js_behavior import analyze_js_behavior
+
+# Solana is resolved on-chain before a generic address is classified as a
+# wallet, mint, program, or transaction signature.
+from scamshield.intelligence.solana_rpc import analyze_solana_address
+from scamshield.intelligence.solana_risk import build_solana_risk_summary
 from scamshield.url_intel.headless_sandbox import analyze_headless_sandbox
 from scamshield.url_intel.obfuscation import analyze_obfuscated_javascript
 from scamshield.url_intel.compromised_site import analyze_compromised_legitimate_site
@@ -143,6 +163,8 @@ from brain.router import router as brain_router
 from brain.scheduler import brain_scheduler_loop
 from brain.telegram_actions import brain_telegram_actions_loop
 from brain.monitoring import brain_delivery_monitor_loop
+from qantova_buyer_monitor.router import router as qantova_buyer_monitor_router
+from qantova_buyer_monitor.scheduler import buyer_monitor_loop
 
 # Optional legacy module helpers (kept for compatibility / fallback only)
 try:
@@ -178,7 +200,9 @@ COINMARKETCAL_API_KEY = os.getenv("COINMARKETCAL_API_KEY", "").strip()
 VT_API_KEY = (os.getenv("VT_API_KEY") or "").strip()
 GOOGLE_SAFE_BROWSING_KEY = (os.getenv("GOOGLE_SAFE_BROWSING_KEY") or "").strip()
 URLSCAN_API_KEY = (os.getenv("URLSCAN_API_KEY") or "").strip()
-NOYTRIX_INTERNAL_MODE = str(os.getenv("NOYTRIX_INTERNAL_MODE") or "true").strip().lower() in {"1", "true", "yes", "on"}
+# Full analysis is the production default.  Internal-only remains an explicit
+# emergency/diagnostic switch, but must never silently downgrade user scans.
+NOYTRIX_INTERNAL_MODE = str(os.getenv("NOYTRIX_INTERNAL_MODE") or "false").strip().lower() in {"1", "true", "yes", "on"}
 ETHERSCAN_API_KEY = (os.getenv("ETHERSCAN_API_KEY") or "").strip()
 BSCSCAN_API_KEY = (os.getenv("BSCSCAN_API_KEY") or "").strip()
 HONEYPOT_API_BASE = (os.getenv("HONEYPOT_API_BASE") or "https://api.honeypot.is").strip().rstrip("/")
@@ -255,6 +279,7 @@ app.include_router(platform_router)
 app.include_router(feedback_router)
 app.include_router(system_router)
 app.include_router(brain_router)
+app.include_router(qantova_buyer_monitor_router)
 
 # =========================================================
 # I18N
@@ -396,7 +421,7 @@ def tr(lang: str, key: str) -> str:
 # SIMPLE MEMORY CACHE
 # =========================================================
 _cache: Dict[str, Dict[str, Any]] = {}
-SCAN_URL_CACHE_VERSION = "v8-hard-evidence"
+SCAN_URL_CACHE_VERSION = "v9-brand-memory-fp-guard"
 
 def cache_get(key: str):
     rec = _cache.get(key)
@@ -2135,6 +2160,127 @@ def _has_confirmed_hard_evidence(data: dict) -> bool:
 
     return False
 
+def _client_object_inspection(data: dict, lang: str) -> dict:
+    """Expose concise, non-secret facts that were actually obtained for this object.
+
+    A verdict score alone is not a report.  The UI needs to show the real
+    object-specific observations (for example liquidity or a sell simulation),
+    and to show when a capability was unavailable instead of replacing it with
+    a generic safety sentence.
+    """
+    kind = str(data.get("kind") or "text").lower()
+    details = data.get("details") if isinstance(data.get("details"), dict) else {}
+    sources = [item for item in (data.get("sources") or []) if isinstance(item, dict)]
+    source_by_name = {str(item.get("name") or item.get("source") or "").lower(): item for item in sources}
+    ru = str(lang).startswith("ru")
+    uk = str(lang).startswith(("uk", "ua"))
+    labels = {
+        "market_cap": ("Market cap", "Капитализация", "Капіталізація"),
+        "liquidity": ("Liquidity", "Ликвидность", "Ліквідність"),
+        "holders": ("Holders", "Холдеры", "Холдери"),
+        "honeypot": ("Honeypot sell simulation", "Проверка honeypot / продажи", "Перевірка honeypot / продажу"),
+        "buy_tax": ("Buy tax", "Налог на покупку", "Податок на купівлю"),
+        "sell_tax": ("Sell tax", "Налог на продажу", "Податок на продаж"),
+        "verified_source": ("Verified source code", "Верифицированный исходный код", "Верифікований вихідний код"),
+        "proxy": ("Proxy contract", "Прокси-контракт", "Проксі-контракт"),
+        "contract": ("Resolved contract / mint", "Определённый контракт / mint", "Визначений контракт / mint"),
+        "chain": ("Network", "Сеть", "Мережа"),
+        "domain_age": ("Domain age", "Возраст домена", "Вік домену"),
+        "registered": ("Registered", "Дата регистрации", "Дата реєстрації"),
+        "expires": ("Registration expires", "Регистрация истекает", "Реєстрація спливає"),
+        "redirects": ("Redirect hops", "Редиректы", "Редіректи"),
+        "final_host": ("Final destination", "Конечный домен", "Кінцевий домен"),
+        "dns": ("DNS records observed", "Найдены DNS-записи", "Знайдені DNS-записи"),
+        "contract_name": ("Contract name", "Название контракта", "Назва контракту"),
+        "identity": ("Known identity", "Известная идентификация", "Відома ідентифікація"),
+        "wallet_activity": ("Observed wallet activity", "Наблюдаемая активность кошелька", "Спостережувана активність гаманця"),
+    }
+    def label(key: str) -> str:
+        values = labels[key]
+        return values[1] if ru else values[2] if uk else values[0]
+    def text(value: object) -> str:
+        if isinstance(value, bool):
+            return ("Да" if ru else "Так" if uk else "Yes") if value else ("Нет" if ru else "Ні" if uk else "No")
+        if isinstance(value, (int, float)):
+            return f"{value:,.8f}".rstrip("0").rstrip(".")
+        raw = str(value or "").strip()
+        # ISO timestamps are useful evidence, but an API timestamp is not a
+        # customer-facing sentence. Keep the date only in a readable format.
+        if re.match(r"^\d{4}-\d{2}-\d{2}T", raw):
+            return raw[:10].split("-")[2] + "." + raw[:10].split("-")[1] + "." + raw[:10].split("-")[0]
+        return raw
+    facts: list[dict[str, str]] = []
+    def add(key: str, value: object, prefix: str = "", suffix: str = "") -> None:
+        rendered = text(value)
+        if rendered:
+            facts.append({"label": label(key), "value": prefix + rendered + suffix})
+    def src_details(name: str) -> dict:
+        item = source_by_name.get(name, {})
+        return item.get("details") if isinstance(item.get("details"), dict) else {}
+
+    token = details.get("token") if isinstance(details.get("token"), dict) else {}
+    honeypot = token.get("honeypot") if isinstance(token.get("honeypot"), dict) else src_details("honeypot")
+    market = token.get("market_data") if isinstance(token.get("market_data"), dict) else {}
+    if kind in {"token", "ticker", "contract"}:
+        resolved_contract = token.get("contract") or token.get("address")
+        if kind != "ticker":
+            resolved_contract = resolved_contract or data.get("normalized_input")
+        add("contract", resolved_contract)
+        selected_platform = token.get("selected_platform") if isinstance(token.get("selected_platform"), dict) else {}
+        add("chain", data.get("chain") or data.get("chain_label") or selected_platform.get("chain_id"))
+        add("market_cap", market.get("market_cap") or market.get("market_cap_usd"), "$" if market.get("market_cap") or market.get("market_cap_usd") else "")
+        add("liquidity", honeypot.get("liquidity") or market.get("liquidity"), "$" if honeypot.get("liquidity") or market.get("liquidity") else "")
+        add("holders", token.get("holders") or honeypot.get("total_holders"))
+        if honeypot:
+            add("honeypot", honeypot.get("is_honeypot"))
+            add("buy_tax", honeypot.get("buy_tax") or honeypot.get("buyTax"), "%")
+            add("sell_tax", honeypot.get("sell_tax") or honeypot.get("sellTax"), "%")
+            add("verified_source", honeypot.get("open_source") or honeypot.get("openSource"))
+            add("proxy", honeypot.get("is_proxy") or honeypot.get("isProxy"))
+    if kind in {"wallet", "contract"}:
+        contract_state = details.get("contract_state") if isinstance(details.get("contract_state"), dict) else {}
+        identity = details.get("contract_identity") if isinstance(details.get("contract_identity"), dict) else {}
+        wallet_security = details.get("wallet_security") if isinstance(details.get("wallet_security"), dict) else {}
+        add("contract_name", contract_state.get("contract_name") or contract_state.get("name"))
+        add("verified_source", contract_state.get("verified_contract") or contract_state.get("verified"))
+        add("identity", identity.get("label") or identity.get("category"))
+        add("wallet_activity", wallet_security.get("transaction_count") or wallet_security.get("history_count"))
+    if kind in {"url", "domain"}:
+        age = src_details("domain_age")
+        redirects = src_details("redirect_chain")
+        infrastructure = src_details("infrastructure")
+        add("domain_age", age.get("age_days"), suffix=(" дней" if ru else " днів" if uk else " days"))
+        add("registered", age.get("created_at"))
+        add("expires", age.get("expires_at"))
+        add("redirects", redirects.get("hop_count"))
+        add("final_host", redirects.get("final_host"))
+        dns_count = sum(len(infrastructure.get(key) or []) for key in ("a_records", "aaaa_records", "ns_records", "mx_records", "cname_records"))
+        add("dns", dns_count)
+    coverage = data.get("source_coverage") if isinstance(data.get("source_coverage"), dict) else {}
+    capabilities = coverage.get("capabilities") if isinstance(coverage.get("capabilities"), dict) else {}
+    capability_labels = {
+        "holder_distribution": ("holder distribution", "распределение держателей", "розподіл власників"),
+        "liquidity": ("liquidity", "ликвидность", "ліквідність"),
+        "sellability": ("ability to sell", "возможность продать", "можливість продати"),
+        "threat_reputation": ("threat reputation", "репутация по угрозам", "репутація за загрозами"),
+        "token_controls": ("token control settings", "настройки контроля токена", "налаштування контролю токена"),
+        "chain_state": ("current on-chain state", "текущее состояние сети", "поточний стан мережі"),
+        "transaction_history": ("transaction history", "история транзакций", "історія транзакцій"),
+    }
+    language_index = 1 if ru else 2 if uk else 0
+    missing = [capability_labels.get(str(item), (str(item).replace("_", " "),) * 3)[language_index] for item in (capabilities.get("missing_capabilities") or []) if str(item)]
+    checks = [
+        {"name": str(item.get("name") or item.get("source") or "source"), "status": str(item.get("status") or "unknown")}
+        for item in sources[:8]
+    ]
+    title = (
+        "Что проверено по этому объекту" if ru else
+        "Що перевірено для цього об’єкта" if uk else
+        "What was checked for this object"
+    )
+    return {"title": title, "facts": facts[:12], "checks": checks, "missing_capabilities": missing[:8]}
+
+
 def _scan_client_safe_response(data: dict) -> dict:
     if not isinstance(data, dict):
         return data
@@ -2147,14 +2293,6 @@ def _scan_client_safe_response(data: dict) -> dict:
             if isinstance(value, str) and value.strip():
                 return value.strip()
         return ""
-
-    def public_verdict_text(value, max_chars=320):
-        """Keep the Free explanation to one readable conclusion, never a PRO report."""
-        text = " ".join(str(value or "").split()).strip()
-        if not text:
-            return ""
-        sentence = re.split(r"(?<=[.!?])\s+", text)[0].strip()
-        return sentence[:max_chars].rstrip()
 
     score = int(data.get("score") or 0)
     level = text_value(data.get("level"), data.get("verdict"), "safe").lower()
@@ -2177,6 +2315,19 @@ def _scan_client_safe_response(data: dict) -> dict:
         level,
     )
 
+    assessment_status = text_value(data.get("assessment_status"), "insufficient_data")
+    score_is_available = bool(confirmed_red_flag) or assessment_status not in {"insufficient_data", "unavailable"}
+    # An unavailable assessment is neither safe nor suspicious.  Give every
+    # client the same explicit state instead of allowing a zero to be styled
+    # as a green result by a caller that does not know the coverage details.
+    if not score_is_available:
+        level = "unknown"
+        verdict = {
+            "en": "Insufficient data",
+            "ru": "Недостаточно данных",
+            "uk": "Недостатньо даних",
+        }[lang]
+
     safe = {
         "ok": True,
         "version": "v1",
@@ -2184,7 +2335,10 @@ def _scan_client_safe_response(data: dict) -> dict:
         "input": text_value(data.get("input"), data.get("normalized_input")),
         "normalized_input": text_value(data.get("normalized_input"), data.get("input")),
         "kind": kind,
-        "score": score,
+        # Zero is a valid internal calculation but it is not a user-facing
+        # safety score when the required checks never completed.
+        "score": score if score_is_available else None,
+        "risk_score_available": score_is_available,
         "level": level,
         "verdict": verdict or level,
         "risk_type": kind,
@@ -2200,48 +2354,128 @@ def _scan_client_safe_response(data: dict) -> dict:
         "what_can_happen": text_value(data.get("what_can_happen")),
         "worst_case": text_value(data.get("worst_case")),
         "summary": text_value(data.get("summary")),
+        "assessment_status": assessment_status,
+        "source_coverage": data.get("source_coverage") if isinstance(data.get("source_coverage"), dict) else {},
+        "sources": [
+            {
+                "name": text_value(item.get("name"), item.get("source")),
+                "status": text_value(item.get("status"), "unknown"),
+                "observed_at": text_value(item.get("observed_at")),
+                "fresh_until": text_value(item.get("fresh_until")),
+            }
+            for item in (data.get("sources") or [])
+            if isinstance(item, dict)
+        ],
     }
 
     basis = {
         "en": {
+            "unknown": "The check did not finish: there is not enough available data to call this object safe or dangerous. Do not connect a wallet, sign, or send funds until you run the check again.",
             "safe": "Noytrix did not find confirmed threat signals in this check. This does not guarantee that future signatures or wallet requests are safe.",
             "suspicious": "Noytrix found warning signals, but the evidence is not strong enough to call this a confirmed scam. Do not connect or sign until you verify the object.",
             "danger": "Noytrix marked this as dangerous because the analysis found confirmed threat signals or a high-risk action pattern. Do not connect, approve, sign, or send funds.",
             "critical": "Noytrix marked this as critical because the analysis found confirmed threat signals or a high-risk action pattern. Do not connect, approve, sign, or send funds.",
         },
         "ru": {
+            "unknown": "Проверка не завершена: доступных данных недостаточно, чтобы назвать объект безопасным или опасным. Не подключай кошелёк, не подписывай и не отправляй средства до повторной проверки.",
             "safe": "Noytrix не нашёл подтверждённых признаков угрозы в этой проверке. Это не гарантирует безопасность будущих подписей или запросов кошелька.",
             "suspicious": "Noytrix нашёл предупреждающие признаки, но их недостаточно для подтверждённого скама. Не подключай кошелёк и не подписывай, пока не проверишь объект.",
-            "danger": "Noytrix отметил объект как опасный, потому что анализ нашёл подтверждённые признаки угрозы или опасный сценарий действия. Не подключай кошелёк, не выдавай approve, не подписывай и не отправляй средства.",
-            "critical": "Noytrix отметил объект как критически опасный, потому что анализ нашёл подтверждённые признаки угрозы или опасный сценарий действия. Не подключай кошелёк, не выдавай approve, не подписывай и не отправляй средства.",
+            "danger": "Noytrix отметил объект как опасный, потому что анализ нашёл подтверждённые признаки угрозы или опасный сценарий действия. Не подключай кошелёк, не давай разрешений, не подписывай и не отправляй средства.",
+            "critical": "Noytrix отметил объект как критически опасный, потому что анализ нашёл подтверждённые признаки угрозы или опасный сценарий действия. Не подключай кошелёк, не давай разрешений, не подписывай и не отправляй средства.",
         },
         "uk": {
+            "unknown": "Перевірка не завершена: доступних даних недостатньо, щоб назвати об’єкт безпечним або небезпечним. Не підключай гаманець, не підписуй і не надсилай кошти до повторної перевірки.",
             "safe": "Noytrix не знайшов підтверджених ознак загрози під час цієї перевірки. Це не гарантує безпеку майбутніх підписів або запитів гаманця.",
             "suspicious": "Noytrix знайшов попереджувальні ознаки, але їх недостатньо для підтвердженого скаму. Не підключай гаманець і не підписуй, доки не перевіриш об’єкт.",
-            "danger": "Noytrix позначив об’єкт як небезпечний, бо аналіз знайшов підтверджені ознаки загрози або небезпечний сценарій дії. Не підключай гаманець, не надавай approve, не підписуй і не надсилай кошти.",
-            "critical": "Noytrix позначив об’єкт як критично небезпечний, бо аналіз знайшов підтверджені ознаки загрози або небезпечний сценарій дії. Не підключай гаманець, не надавай approve, не підписуй і не надсилай кошти.",
+            "danger": "Noytrix позначив об’єкт як небезпечний, бо аналіз знайшов підтверджені ознаки загрози або небезпечний сценарій дії. Не підключай гаманець, не надавай дозволів, не підписуй і не надсилай кошти.",
+            "critical": "Noytrix позначив об’єкт як критично небезпечний, бо аналіз знайшов підтверджені ознаки загрози або небезпечний сценарій дії. Не підключай гаманець, не надавай дозволів, не підписуй і не надсилай кошти.",
         },
     }
     safe["verdict_basis"] = basis[lang].get(level, basis[lang]["suspicious"])
 
+    # Public reports are a product contract, not a dump of an LLM answer or
+    # provider prose.  Keep only short, evidence-linked items that the web,
+    # mobile app and extension can render as cards.  This also prevents a
+    # newly generated explanation from silently becoming a customer-facing
+    # wall of text.
+    evidence_copy = {
+        "documented_incident_exact_match": {
+            "en": "Exact match in Noytrix’s reviewed documented-incident registry.",
+            "ru": "Точное совпадение в проверенном реестре документированных инцидентов Noytrix.",
+            "uk": "Точний збіг у перевіреному реєстрі документованих інцидентів Noytrix.",
+        },
+        "noytrix_scam_database_exact_match": {
+            "en": "Exact match in the Noytrix scam intelligence registry.",
+            "ru": "Точное совпадение в реестре угроз Noytrix.",
+            "uk": "Точний збіг у реєстрі загроз Noytrix.",
+        },
+        "gsb_match": {
+            "en": "Google Safe Browsing classified the URL as a known threat.",
+            "ru": "Google Safe Browsing классифицировал URL как известную угрозу.",
+            "uk": "Google Safe Browsing класифікував URL як відому загрозу.",
+        },
+        "vt_detection": {
+            "en": "Independent malware scanners reported a malicious detection.",
+            "ru": "Независимые сканеры вредоносного ПО сообщили о вредоносном обнаружении.",
+            "uk": "Незалежні сканери шкідливого ПЗ повідомили про шкідливе виявлення.",
+        },
+        "honeypot_detected": {
+            "en": "The token showed a sell or exit restriction consistent with honeypot risk.",
+            "ru": "У токена выявлено ограничение продажи или выхода, характерное для honeypot-риска.",
+            "uk": "У токена виявлено обмеження продажу або виходу, характерне для honeypot-ризику.",
+        },
+        "known_malicious_contract_identity": {
+            "en": "Noytrix intelligence identifies this contract or spender as malicious.",
+            "ru": "Разведка Noytrix определяет этот контракт или spender как вредоносный.",
+            "uk": "Розвідка Noytrix визначає цей контракт або spender як шкідливий.",
+        },
+        "seed_phrase_request": {
+            "en": "The page requests a seed or recovery phrase.",
+            "ru": "Страница запрашивает seed- или recovery-фразу.",
+            "uk": "Сторінка запитує seed- або recovery-фразу.",
+        },
+        "private_key_request": {
+            "en": "The page requests a private key.",
+            "ru": "Страница запрашивает приватный ключ.",
+            "uk": "Сторінка запитує приватний ключ.",
+        },
+    }
+
+    evidence_items = []
+    for item in data.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        code = text_value(item.get("code")).lower()
+        try:
+            severity = int(item.get("severity") or 0)
+        except (TypeError, ValueError):
+            severity = 0
+        if not code or severity <= 0:
+            continue
+        localized = (evidence_copy.get(code) or {}).get(lang)
+        if localized and localized not in evidence_items:
+            evidence_items.append(localized)
+        if len(evidence_items) == 4:
+            break
+
     ai_result = data.get("ai_explanation_result")
     if isinstance(ai_result, dict):
         structured = ai_result.get("structured") if isinstance(ai_result.get("structured"), dict) else {}
-        short_text = text_value(structured.get("short"), ai_result.get("text"), structured.get("details"), data.get("ai_explanation"))
-        if not is_pro:
-            short_text = public_verdict_text(short_text)
+        # AI content stays available for an explicitly requested follow-up,
+        # but is not the public verdict/report payload.
+        short_text = text_value(structured.get("short"))
         visible_structured = {
             "short": short_text,
-            "details": short_text if not is_pro else text_value(structured.get("details")),
-            "risks": [] if not is_pro else [text_value(x) for x in (structured.get("risks") or []) if text_value(x)],
-            "actions": [] if not is_pro else [text_value(x) for x in (structured.get("actions") or []) if text_value(x)],
-            "confidence_note": "" if not is_pro else text_value(structured.get("confidence_note")),
+            "details": text_value(structured.get("details"), ai_result.get("text"), short_text),
+            "risks": [text_value(x) for x in (structured.get("risks") or []) if text_value(x)],
+            "actions": [text_value(x) for x in (structured.get("actions") or []) if text_value(x)],
+            "confidence_note": text_value(structured.get("confidence_note")),
             "severity_label": text_value(structured.get("severity_label")),
             "next_step_priority": text_value(structured.get("next_step_priority")),
-            "attack_scenario": "" if not is_pro else text_value(structured.get("attack_scenario")),
-            "hidden_danger": "" if not is_pro else text_value(structured.get("hidden_danger")),
-            "attacker_intent": "" if not is_pro else text_value(structured.get("attacker_intent")),
-            "loss_scenario": "" if not is_pro else text_value(structured.get("loss_scenario")),
+            "attack_scenario": text_value(structured.get("attack_scenario")),
+            "hidden_danger": text_value(structured.get("hidden_danger")),
+            "attacker_intent": text_value(structured.get("attacker_intent")),
+            "loss_scenario": text_value(structured.get("loss_scenario")),
         }
         safe["ai_explanation_result"] = {
             "available": bool(ai_result.get("available")),
@@ -2249,12 +2483,48 @@ def _scan_client_safe_response(data: dict) -> dict:
             "model": text_value(ai_result.get("model")),
             "language": text_value(ai_result.get("language")),
             "mode": text_value(ai_result.get("mode")),
-            "text": short_text if not is_pro else text_value(ai_result.get("text"), structured.get("details"), short_text),
+            "text": short_text,
             "structured": visible_structured,
         }
         safe["ai_explanation"] = safe["ai_explanation_result"]["text"]
     else:
         safe["ai_explanation"] = text_value(data.get("ai_explanation"), data.get("explanation"))
+
+    # The client receives a deliberately small, evidence-led report model.
+    # It must not render raw provider prose or every individual source check.
+    # `build_report_cards` accepts coded detector facts only; model prose can
+    # never become a customer-facing verdict or decide an action.
+    card_report = build_report_cards(data, lang)
+    safe["report"] = {
+        **card_report,
+        "summary": safe.get("verdict_basis"),
+        # Kept for older clients while they move to evidence_cards. These are
+        # localized short strings derived from the same coded facts.
+        "evidence": evidence_items,
+        "actions": [card["detail"] for card in card_report["action_cards"]],
+        "limit": "",
+        "next_step": "",
+        "score_is_available": score_is_available,
+    }
+    solana_security = data.get("solana_security")
+    if isinstance(solana_security, dict):
+        safe["solana_security"] = {
+            "available": bool(solana_security.get("available")),
+            "control_score": solana_security.get("control_score"),
+            "headline": text_value(solana_security.get("headline")),
+            "summary": text_value(solana_security.get("summary")),
+            "recommended_action": text_value(solana_security.get("recommended_action")),
+            "findings": [
+                {
+                    "code": text_value(item.get("code")),
+                    "weight": int(item.get("weight") or 0),
+                    "title": text_value(item.get("title")),
+                    "detail": text_value(item.get("detail")),
+                }
+                for item in (solana_security.get("findings") or [])
+                if isinstance(item, dict)
+            ][:3],
+        }
 
     quota = data.get("quota") if isinstance(data.get("quota"), dict) else {}
     quota_is_pro = bool(quota.get("is_pro")) or is_pro
@@ -2322,8 +2592,12 @@ def _scan_client_safe_response(data: dict) -> dict:
                 "status": text_value(src.get("status"), "no_data"),
                 "verdict": text_value(src.get("verdict"), "unknown"),
                 "status_text": text_value(src.get("status_text")),
+                "observed_at": text_value(src.get("observed_at")),
+                "fresh_until": text_value(src.get("fresh_until")),
             })
-    safe["sources"] = sources if is_pro else []
+    # Source execution status is part of verdict honesty, not a paid feature.
+    safe["sources"] = sources
+    safe["inspection"] = _client_object_inspection(data, lang)
     safe["pro_locked"] = not is_pro
 
     return safe
@@ -2707,6 +2981,7 @@ def _looks_url(x: str) -> bool:
 
 def _detect_input_kind(raw: str) -> dict:
     x = (raw or "").strip()
+    resolution = resolve_input_syntax(x)
     out = {
         "kind": "text",
         "normalized": x,
@@ -2716,6 +2991,8 @@ def _detect_input_kind(raw: str) -> dict:
         "symbol": None,
         "address": None,
         "chain": None,
+        "entity_resolution": resolution,
+        "canonical_entity": canonical_entity_id(resolution),
     }
     if not x:
         return out
@@ -2727,11 +3004,15 @@ def _detect_input_kind(raw: str) -> dict:
         return out
 
     if RE_EVM_ADDR.match(x):
-        out.update({"kind": "wallet", "display_kind": "wallet", "normalized": x, "address": x, "chain": "evm"})
+        out.update({"kind": "wallet", "display_kind": "address", "normalized": x.lower(), "address": x.lower(), "chain": "evm"})
         return out
 
     if RE_TRON.match(x):
         out.update({"kind": "wallet", "display_kind": "wallet", "normalized": x, "address": x, "chain": "tron"})
+        return out
+
+    if resolution.get("syntax") == "cross_chain_address":
+        out.update({"kind": "address", "display_kind": "address", "normalized": x, "address": x, "chain": None})
         return out
 
     if RE_BTC.match(x):
@@ -2743,7 +3024,7 @@ def _detect_input_kind(raw: str) -> dict:
         return out
 
     if RE_SOL.match(x) and len(x) >= 32:
-        out.update({"kind": "wallet", "display_kind": "wallet", "normalized": x, "address": x, "chain": "sol"})
+        out.update({"kind": "wallet", "display_kind": "address", "normalized": x, "address": x, "chain": "sol"})
     if RE_DOMAIN.match(x) and " " not in x and len(x) < 255:
         domain = _normalize_domain(x)
         url = _normalize_url(domain)
@@ -2774,6 +3055,7 @@ def _normalize_kind_for_vote(kind: str | None, obj: str) -> str:
 SOURCE_STATUSES = {
     "malicious",
     "clean",
+    "observed",
     "no_data",
     "timeout",
     "invalid_key",
@@ -2785,6 +3067,7 @@ def _source_status_text(status: str, lang: str) -> str:
     key = {
         "malicious": "source_malicious",
         "clean": "source_clean",
+        "observed": "source_no_data",
         "no_data": "source_no_data",
         "timeout": "source_timeout",
         "invalid_key": "source_invalid_key",
@@ -2834,7 +3117,13 @@ def _localize_sources(sources: list[dict], lang: str) -> list[dict]:
     out = []
     for s in sources or []:
         x = dict(s)
-        x["status_text"] = _source_status_text(str(s.get("status") or "error"), lang)
+        status = normalize_source_status(str(s.get("status") or "unknown"))
+        if status == "unavailable":
+            status = "source_unavailable"
+        x["status"] = status
+        x["observed_at"] = x.get("observed_at") or datetime.now(timezone.utc).isoformat()
+        x["fresh_until"] = x.get("fresh_until")
+        x["status_text"] = _source_status_text(status, lang)
         out.append(x)
     return out
 
@@ -2947,6 +3236,7 @@ def _analyze_typed_signature_payload(payload: dict) -> dict:
     return {
         "ok": True,
         "kind": "typed_signature",
+        "analysis_capabilities": ["signature_decode", "permission_analysis"],
         "method": signature.get("method"),
         "score": runtime_severity,
         "level": level,
@@ -2955,7 +3245,7 @@ def _analyze_typed_signature_payload(payload: dict) -> dict:
         "verdict_en": "Signature can authorize asset movement" if permissions.get("can_spend") else "Wallet signature detected",
         "verdict_ru": "Signature can authorize asset movement" if permissions.get("can_spend") else "Wallet signature detected",
         "verdict_localized": "Signature can authorize asset movement" if permissions.get("can_spend") else "Wallet signature detected",
-        "confirmed_red_flag": level in {"danger", "critical"},
+        "confirmed_red_flag": bool(permissions.get("threat_confirmed")),
         "typed_signature": {
             "domain": simulation.get("domain") or {},
             "primaryType": simulation.get("primary_type"),
@@ -3041,6 +3331,7 @@ def _analyze_typed_signature_payload(payload: dict) -> dict:
     return {
         "ok": True,
         "kind": "typed_signature",
+        "analysis_capabilities": ["signature_decode", "permission_analysis"],
         "method": method,
         "score": runtime_severity,
         "level": level,
@@ -3415,6 +3706,10 @@ def _looks_like_brand_spoof(host: str) -> Tuple[bool, list[dict]]:
     for trusted in TRUSTED_BRANDS:
         root_trusted = _host_root_domain(trusted)
         base = root_trusted.split(".")[0]
+        # Very short brands (notably x.com) are not safe substring signals:
+        # the letter "x" appears in ordinary domains such as example.com.
+        if len(base) < 4:
+            continue
         if base in host and root != root_trusted:
             evidence.append(
                 {
@@ -3493,19 +3788,26 @@ async def _fetch_page(url: str) -> dict:
         "Accept": "text/html,application/xhtml+xml",
     }
     try:
-        async with httpx.AsyncClient(timeout=SCAN_TIMEOUT, follow_redirects=True, max_redirects=MAX_REDIRECTS, verify=False) as cl:
-            r = await cl.get(url, headers=headers)
-            final_url = str(r.url)
-            content_type = (r.headers.get("content-type") or "").lower()
-            body = r.text[:SCAN_MAX_BYTES]
-            return {
-                "ok": True,
-                "status_code": r.status_code,
-                "final_url": final_url,
-                "content_type": content_type,
-                "headers": dict(r.headers),
-                "html": body,
-            }
+        result = await fetch_public_url(
+            url,
+            timeout=SCAN_TIMEOUT,
+            max_redirects=MAX_REDIRECTS,
+            max_bytes=SCAN_MAX_BYTES,
+            headers=headers,
+        )
+        return {
+            "ok": True,
+            "status_code": result["status_code"],
+            "final_url": result["final_url"],
+            "content_type": result["content_type"],
+            "headers": result["headers"],
+            "html": result["text"],
+            "hops": result["hops"],
+            "peer_ip": result["peer_ip"],
+            "tls_verified": result["tls_verified"],
+        }
+    except UnsafeTargetError as exc:
+        return {"ok": False, "status": "blocked", "error": exc.code, "detail": str(exc)}
     except httpx.TimeoutException:
         return {"ok": False, "status": "timeout", "error": "timeout"}
     except Exception as e:
@@ -3823,30 +4125,13 @@ async def _check_etherscan_or_bscscan(address: str, chain: str) -> dict:
             contract_name = str(row.get("ContractName") or "").strip()
             implementation = str(row.get("Implementation") or "").strip()
             proxy = str(row.get("Proxy") or "").strip()
+            abi_analysis = analyze_verified_abi(row.get("ABI"))
 
-            tx_count = None
+            history = None
             try:
-                r2 = await cl.get(
-                    base,
-                    params={
-                        "chainid": chain_id,
-                        "module": "account",
-                        "action": "txlist",
-                        "address": address,
-                        "startblock": 0,
-                        "endblock": 99999999,
-                        "page": 1,
-                        "offset": 5,
-                        "sort": "desc",
-                        "apikey": api_key,
-                    },
-                )
-                if r2.status_code == 200:
-                    d2 = r2.json()
-                    if isinstance(d2.get("result"), list):
-                        tx_count = len(d2["result"])
+                history = await fetch_evm_history(cl, base, chain_id, address, api_key)
             except Exception:
-                pass
+                history = {"assessment_status": "unavailable", "history_found": False, "failed_queries": ["all"]}
 
             is_verified_contract = bool(source_code)
             details = {
@@ -3854,7 +4139,8 @@ async def _check_etherscan_or_bscscan(address: str, chain: str) -> dict:
                 "verified_contract": is_verified_contract,
                 "implementation": implementation,
                 "is_proxy": proxy == "1",
-                "recent_tx_sample_count": tx_count,
+                "abi_analysis": abi_analysis,
+                "history": history,
                 "chain_id": chain_id,
                 "raw": data,
             }
@@ -3862,17 +4148,18 @@ async def _check_etherscan_or_bscscan(address: str, chain: str) -> dict:
             if is_verified_contract:
                 return _mk_source(
                     source_name,
-                    "clean",
-                    verdict="clean",
+                    "observed",
+                    verdict="unknown",
                     details=details,
                     evidence=[{"code": "verified_contract", "severity": 0, "text": f"{source_name} shows verified contract source."}],
                 )
 
             return _mk_source(
                 source_name,
-                "no_data",
+                "observed" if (history or {}).get("history_found") else "no_data",
+                verdict="unknown",
                 details=details,
-                evidence=[{"code": "unverified_or_wallet", "severity": 0, "text": f"{source_name} did not confirm verified source for this address."}],
+                evidence=[{"code": "wallet_history_observed" if (history or {}).get("history_found") else "unverified_or_wallet", "severity": 0, "text": f"{source_name} returned sampled wallet history." if (history or {}).get("history_found") else f"{source_name} did not confirm contract code or wallet history for this address."}],
             )
     except httpx.TimeoutException:
         return _mk_source(source_name, "timeout")
@@ -3893,8 +4180,17 @@ async def _check_dexscreener_address(address: str) -> dict:
             if not pairs:
                 return _mk_source("dexscreener", "no_data", details={"pairs": 0})
 
-            pair = pairs[0] or {}
-            base_token = pair.get("baseToken") or {}
+            selection = select_dex_pairs(pairs, address)
+            pair = selection.get("primary_pair") or {}
+            if not pair:
+                return _mk_source(
+                    "dexscreener",
+                    "no_data",
+                    details={"pairs_returned": len(pairs), "matching_pairs": 0, "address": address},
+                )
+            token_role = selection.get("token_role")
+            token = pair.get("baseToken") if token_role == "base" else pair.get("quoteToken")
+            token = token or {}
             labels = pair.get("labels") or []
             websites = ((pair.get("info") or {}).get("websites") or [])
             socials = ((pair.get("info") or {}).get("socials") or [])
@@ -3904,13 +4200,19 @@ async def _check_dexscreener_address(address: str) -> dict:
                 "clean",
                 verdict="clean",
                 details={
-                    "pair_count": len(pairs),
-                    "baseToken": base_token,
+                    "pair_count": selection.get("pair_count"),
+                    "pairs_returned": len(pairs),
+                    "token": token,
+                    "token_role": token_role,
+                    "baseToken": pair.get("baseToken") or {},
+                    "quoteToken": pair.get("quoteToken") or {},
                     "liquidity": pair.get("liquidity"),
+                    "max_liquidity_usd": selection.get("max_liquidity_usd"),
                     "fdv": pair.get("fdv"),
                     "marketCap": pair.get("marketCap"),
                     "dexId": pair.get("dexId"),
                     "chainId": pair.get("chainId"),
+                    "pairAddress": pair.get("pairAddress"),
                     "labels": labels,
                     "websites": websites,
                     "socials": socials,
@@ -4000,25 +4302,20 @@ async def _check_honeypot_contract(address: str, chain_id: str | None = None) ->
             r.raise_for_status()
             data = r.json() if r.text else {}
 
-            summary = data.get("summary") or {}
-            hp_res = data.get("honeypotResult") or {}
+            normalized = normalize_honeypot_payload(data)
             sim_res = data.get("simulationResult") or {}
             contract_code = data.get("contractCode") or {}
             pair = data.get("pair") or {}
 
-            is_honeypot = bool(hp_res.get("isHoneypot") is True)
-            risk = str(summary.get("risk") or "").strip().lower()
-            risk_level = int(summary.get("riskLevel") or 0)
-
             details = {
-                "raw": data,
-                "risk": risk or None,
-                "riskLevel": risk_level,
-                "is_honeypot": is_honeypot,
-                "buy_tax": sim_res.get("buyTax"),
-                "sell_tax": sim_res.get("sellTax"),
-                "transfer_tax": sim_res.get("transferTax"),
-                "simulation_success": data.get("simulationSuccess"),
+                "risk": normalized.get("risk"),
+                "riskLevel": normalized.get("risk_level"),
+                "is_honeypot": normalized.get("is_honeypot"),
+                "buy_tax": normalized.get("buy_tax"),
+                "sell_tax": normalized.get("sell_tax"),
+                "transfer_tax": normalized.get("transfer_tax"),
+                "simulation_success": normalized.get("simulation_success"),
+                "assessment_status": normalized.get("assessment_status"),
                 "max_buy": (data.get("maxBuy") or {}).get("token"),
                 "max_sell": (data.get("maxSell") or {}).get("token"),
                 "liquidity": pair.get("liquidity"),
@@ -4026,26 +4323,31 @@ async def _check_honeypot_contract(address: str, chain_id: str | None = None) ->
                 "router": data.get("router"),
                 "open_source": contract_code.get("openSource"),
                 "is_proxy": contract_code.get("isProxy"),
+                "total_holders": normalized.get("total_holders"),
                 "address": address,
                 "chain_id": chain_id,
             }
 
-            if is_honeypot or risk in {"high", "very_high"} or risk_level >= 3:
+            if normalized.get("status") == "malicious":
                 return _mk_source(
                     "honeypot",
                     "malicious",
                     verdict="danger",
                     details=details,
-                    evidence=[{"code": "honeypot_detected", "severity": 45, "text": "Honeypot API indicates token may be a honeypot."}],
+                    evidence=normalized.get("findings") or [],
                 )
 
-            if risk in {"medium"}:
+            if normalized.get("status") == "observed":
                 return _mk_source(
                     "honeypot",
-                    "no_data",
+                    "observed",
                     verdict="unknown",
                     details=details,
-                    evidence=[{"code": "honeypot_medium_risk", "severity": 18, "text": "Honeypot API indicates medium token risk."}],
+                    evidence=normalized.get("findings") or [{
+                        "code": "honeypot_simulation_incomplete",
+                        "severity": 0,
+                        "text": "Honeypot provider returned no conclusive sell simulation.",
+                    }],
                 )
 
             return _mk_source(
@@ -4053,7 +4355,13 @@ async def _check_honeypot_contract(address: str, chain_id: str | None = None) ->
                 "clean",
                 verdict="clean",
                 details=details,
-                evidence=[{"code": "honeypot_checked", "severity": 0, "text": "Honeypot check completed without critical findings."}],
+                evidence=[{
+                    "code": "honeypot_sell_simulation_clean",
+                    "severity": 0,
+                    "clean": True,
+                    "method": "sell_simulation",
+                    "text": "A successful sell simulation found no honeypot restriction or material sell tax.",
+                }],
             )
     except httpx.TimeoutException:
         return _mk_source("honeypot", "timeout", details={"address": address, "chain_id": chain_id})
@@ -4324,15 +4632,19 @@ def _source_from_noytrix_scam_database(match: dict) -> dict:
     code = "noytrix_scam_database_match" if source_status == "malicious" else "noytrix_scam_database_safe_match" if source_status == "clean" else "noytrix_scam_database_observed"
     if source_status == "observed" and status in {"malicious", "scam", "danger", "critical", "high", "blocked"}:
         code = "noytrix_scam_database_untrusted_match"
+    is_documented_incident = str(match.get("source") or "") == "documented_incident_registry"
     return _mk_source(
         "noytrix_scam_database",
         source_status,
         verdict=level,
         details=match,
         evidence=[{
-            "code": code,
+            "code": "documented_incident_exact_match" if is_documented_incident and source_status == "malicious" else code,
             "severity": risk_score if source_status == "malicious" else 0,
             "text": (
+                "Exact Solana mint match in Noytrix's reviewed documented-incident registry."
+                if is_documented_incident and source_status == "malicious"
+                else
                 "Exact trusted match in Noytrix Scam Database."
                 if source_status == "malicious"
                 else "Exact match in Noytrix Scam Database has no trusted confidence, so it is treated as context only."
@@ -4432,6 +4744,20 @@ def _apply_noytrix_database_verdict(score_info: dict, db_match: dict) -> dict:
 
 
 def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind: str, lang: str, db_match: dict) -> dict:
+    match_entity_type = str((db_match or {}).get("entity_type") or "").lower()
+    metadata = (db_match or {}).get("metadata") or {}
+    match_chain = str((metadata.get("chain") if isinstance(metadata, dict) else "") or "").lower()
+    # Base58 Solana identifiers are ambiguous until RPC resolution. A reviewed
+    # exact incident record carries typed metadata, so preserve it on the fast
+    # path rather than labelling a token mint as a wallet.
+    if match_entity_type in {"solana_mint", "token_mint", "token", "mint"}:
+        kind = "contract"
+        resolved_entity_type = "token"
+    elif match_entity_type in {"program", "smart_contract"}:
+        kind = "contract"
+        resolved_entity_type = "program"
+    else:
+        resolved_entity_type = None
     source = _source_from_noytrix_scam_database(db_match)
     status = str((db_match or {}).get("status") or "").lower()
     quality = _noytrix_database_match_quality(db_match)
@@ -4496,6 +4822,9 @@ def _quick_result_from_noytrix_database(target: str, normalized_input: str, kind
         "input": target,
         "normalized_input": normalized_input,
         "kind": kind,
+        "resolved_entity_type": resolved_entity_type,
+        "chain": "sol" if match_chain == "solana" else match_chain or None,
+        "chain_label": _localized_chain_label("sol" if match_chain == "solana" else match_chain, lang),
         "kind_localized": _localized_object_kind(kind, lang),
         "score": score,
         "internal_score": score,
@@ -4963,6 +5292,7 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
     sources: list[dict] = []
     det = _detect_input_kind(target)
     chain = det.get("chain")
+    entity_resolution = dict(det.get("entity_resolution") or {})
     heuristics: list[dict] = []
     page_content_evidence: list[dict] = []
     enrich: dict = {"page": None, "token": None, "ticker": None}
@@ -5906,9 +6236,11 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         and all(str((src or {}).get("status") or "") in {"no_data", "error", "timeout", "invalid_key", "quota"} for src in (sources or []))
     ):
         score_info["score"] = 0
-        score_info["level"] = "safe"
-        score_info["verdict_en"] = "Safe"
-        score_info["verdict_ru"] = "Р‘РµР·РѕРїР°СЃРЅРѕ"
+        score_info["level"] = "unknown"
+        score_info["normalized_level"] = "unknown"
+        score_info["assessment_status"] = "insufficient_data"
+        score_info["verdict_en"] = "Insufficient data"
+        score_info["verdict_ru"] = "Недостаточно данных"
 
     evidence_all = []
     evidence_all.extend([{"source": "heuristic", **x} for x in heuristics])
@@ -5960,6 +6292,16 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         "input": target,
         "normalized_input": url if input_kind == "url" else host,
         "kind": input_kind,
+        "resolved_entity_type": "website",
+        "entity_resolution": {
+            **(det.get("entity_resolution") or {}),
+            "resolved_type": "website",
+            "resolution_status": "resolved",
+        },
+        "canonical_entity": canonical_entity_id(
+            det.get("entity_resolution") or resolve_input_syntax(target),
+            resolved_type="website",
+        ),
         "kind_localized": _localized_object_kind(input_kind, lang),
         "host": host,
         "score": score_info["score"],
@@ -5980,6 +6322,9 @@ async def _scan_url_or_domain(target: str, lang: str, is_pro_user: bool, interna
         "scam_family": scam_family,
         "malicious_sources": score_info["malicious_sources"],
         "scoring": score_info["components"],
+        "assessment_status": score_info.get("assessment_status"),
+        "source_coverage": score_info.get("source_coverage") or {},
+        "canonical_evidence": score_info.get("canonical_evidence") or [],
         "sources": sources,
         "evidence": evidence_all_sorted,
         "community": community,
@@ -6045,7 +6390,14 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         }
 
     address = (target or "").strip()
-    cache_key = f"scan:evm:v4:{address.lower()}"
+    # The scanner supports more than EVM. Bump the key when the public address
+    # response contract changes so cached results cannot hide new Solana fields.
+    # The public result is localized.  Language belongs to the cache identity so
+    # a Ukrainian/Russian user can never receive wording cached for another
+    # locale by a previous request.
+    # The public report contract changed to cards-v1.  Do not let an old
+    # cached address response restore a legacy prose report in a new scan.
+    cache_key = f"scan:address:v6:{address.lower()}:{lang}"
 
     cached = cache_get(cache_key)
     if cached:
@@ -6118,6 +6470,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
     sources: list[dict] = []
     det = _detect_input_kind(target)
     chain = det.get("chain")
+    entity_resolution = dict(det.get("entity_resolution") or resolve_input_syntax(address))
     heuristics: list[dict] = []
     page_content_evidence: list[dict] = []
     noytrix_db_match = lookup_noytrix_scam_database(address)
@@ -6168,15 +6521,20 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         sources.append(dex_res)
 
     kind = "wallet"
+    resolved_entity_type = "wallet" if chain == "btc" else None
     token_data = None
+    token_chain_state = None
     verified_contract_any = False
+    verified_contract_state = None
     preferred_chain_id = None
 
     for s in sources:
         d = s.get("details") or {}
         if d.get("verified_contract"):
             verified_contract_any = True
+            verified_contract_state = d
             kind = "contract"
+            resolved_entity_type = "contract"
             if s.get("name") == "etherscan":
                 preferred_chain_id = "1"
             elif s.get("name") == "bscscan":
@@ -6185,6 +6543,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         if s.get("name") == "dexscreener" and s.get("status") == "clean":
             token_data = d
             kind = "contract"
+            resolved_entity_type = "token"
             chain_id = str(d.get("chainId") or "").strip().lower()
             if chain_id == "ethereum":
                 preferred_chain_id = "1"
@@ -6195,7 +6554,86 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             elif chain_id == "arbitrum":
                 preferred_chain_id = "42161"
 
-    if is_evm:
+        if s.get("name") == "solana_rpc" and s.get("status") == "observed":
+            token_chain_state = d
+            solana_type = str(d.get("entity_type") or "").lower()
+            if solana_type == "mint":
+                resolved_entity_type = "token"
+                kind = "contract"
+            elif solana_type == "program":
+                resolved_entity_type = "program"
+                kind = "contract"
+            elif solana_type == "transaction":
+                resolved_entity_type = "transaction"
+                kind = "transaction"
+            elif solana_type in {"account", "wallet"}:
+                resolved_entity_type = "wallet"
+
+    evm_contract_state = None
+    goplus_res = {
+        "name": "goplus", "status": "no_data", "verdict": "unknown",
+        "details": {"skipped": True, "reason": "not_an_evm_contract"}, "evidence": [],
+    }
+    wallet_security: dict[str, Any] = {"networks": {}, "estimated_exposure_usd": 0.0, "exposure_complete": False}
+    wallet_flow_graphs: dict[str, Any] = {}
+    if is_evm and kind == "wallet":
+        explorer_networks = [("1", "etherscan"), ("56", "bscscan")]
+        approval_results = await asyncio.gather(*[check_wallet_approvals(address, cid) for cid, _name in explorer_networks])
+        counterparties: list[tuple[str, list[str]]] = []
+        for cid, source_name in explorer_networks:
+            source = next((row for row in sources if row.get("name") == source_name), {})
+            history = ((source.get("details") or {}).get("history") or {})
+            counterparties.append((cid, history.get("counterparties") or []))
+        reputation_results = await asyncio.gather(*[check_counterparty_reputation(rows, cid) for cid, rows in counterparties])
+        database_results = [correlate_counterparties(rows, lookup_noytrix_scam_database) for _cid, rows in counterparties]
+        sources.extend(approval_results)
+        sources.extend(reputation_results)
+        sources.extend(database_results)
+        graph_jobs = []
+        graph_networks = []
+        for cid, source_name in explorer_networks:
+            source = next((row for row in sources if row.get("name") == source_name), {})
+            history = ((source.get("details") or {}).get("history") or {})
+            key = ETHERSCAN_API_KEY if cid == "1" else BSCSCAN_API_KEY
+            if key and history.get("history_found"):
+                graph_networks.append(cid)
+                graph_jobs.append(investigate_wallet_graph(address, cid, key, _explorer_v2_base(), history))
+        graph_results = await asyncio.gather(*graph_jobs, return_exceptions=True)
+        for cid, graph_result in zip(graph_networks, graph_results):
+            if isinstance(graph_result, Exception):
+                wallet_flow_graphs[cid] = {"available": False, "coverage": "unavailable", "error_type": type(graph_result).__name__}
+                sources.append({"name": "wallet_flow_graph", "status": "source_unavailable", "verdict": "unknown", "details": {"chain_id": cid, "error_type": type(graph_result).__name__}, "evidence": []})
+            else:
+                wallet_flow_graphs[cid] = {"available": True, **graph_result}
+                sources.append({"name": "wallet_flow_graph", "status": "observed", "verdict": "unknown", "details": graph_result, "evidence": []})
+        wallet_security = {
+            "networks": {
+                cid: {
+                    "approvals": approval.get("details") or {},
+                    "counterparties": reputation.get("details") or {},
+                    "noytrix_counterparties": database_result.get("details") or {},
+                }
+                for (cid, _name), approval, reputation, database_result in zip(explorer_networks, approval_results, reputation_results, database_results)
+            },
+            "estimated_exposure_usd": round(sum(float(((row.get("details") or {}).get("estimated_exposure_usd") or 0)) for row in approval_results), 2),
+            "exposure_complete": all(bool((row.get("details") or {}).get("exposure_complete")) for row in approval_results),
+            "calculation_rule": "For unlimited approval exposure equals current token balance. For limited approval exposure equals the smaller of balance and allowance. USD is included only when an exact-contract market price is available.",
+            "flow_graphs": wallet_flow_graphs,
+        }
+    if is_evm and preferred_chain_id and kind == "contract":
+        evm_rpc_res = await analyze_evm_contract(address, preferred_chain_id)
+        sources.append(evm_rpc_res)
+        if str(evm_rpc_res.get("status") or "") == "observed":
+            evm_contract_state = {
+                **(verified_contract_state or {}),
+                **(evm_rpc_res.get("details") or {}),
+            }
+
+    if is_evm and preferred_chain_id and kind == "contract":
+        goplus_res = await check_goplus_token(address, preferred_chain_id)
+        sources.append(goplus_res)
+
+    if is_evm and preferred_chain_id and kind == "contract":
         honeypot_res = await _check_honeypot_contract(address, preferred_chain_id)
         sources.append(honeypot_res)
     else:
@@ -6203,7 +6641,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             "name": "honeypot",
             "status": "no_data",
             "verdict": "unknown",
-            "details": {"skipped": True, "reason": "non_evm_address"},
+            "details": {"skipped": True, "reason": "network_or_contract_not_resolved"},
             "evidence": [],
         }
 
@@ -6269,6 +6707,15 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
     )
     score_info = _apply_noytrix_database_verdict(score_info, noytrix_db_match)
 
+    # A mint's authorities and Token-2022 extensions are product controls, not
+    # evidence of fraud by themselves. Keep the universal scam score evidence-led
+    # and expose a separate, explainable Solana control assessment instead.
+    solana_security = (
+        build_solana_risk_summary(token_chain_state, lang)
+        if chain == "sol"
+        else None
+    )
+
     if chain == "ton":
         ton_src = next((x for x in sources if str(x.get("name") or "") == "tonapi"), None)
         ton_ev = ton_src.get("evidence") if ton_src else []
@@ -6290,6 +6737,17 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         "input": target,
         "normalized_input": address,
         "kind": kind,
+        "resolved_entity_type": resolved_entity_type,
+        "entity_resolution": {
+            **entity_resolution,
+            "resolved_type": resolved_entity_type,
+            "resolution_status": "resolved" if resolved_entity_type else "ambiguous",
+        },
+        "canonical_entity": canonical_entity_id(
+            entity_resolution,
+            resolved_type=resolved_entity_type,
+            network=(preferred_chain_id or chain),
+        ),
         "chain": chain,
         "chain_label": _localized_chain_label(chain, lang),
         "kind_localized": _localized_object_kind(kind, lang),
@@ -6302,6 +6760,10 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         "confirmed_red_flag": score_info["confirmed_red_flag"],
         "malicious_sources": score_info["malicious_sources"],
         "scoring": score_info["components"],
+        "assessment_status": score_info.get("assessment_status"),
+        "source_coverage": score_info.get("source_coverage") or {},
+        "canonical_evidence": score_info.get("canonical_evidence") or [],
+        "solana_security": solana_security,
         "sources": sources,
         "evidence": sorted(evidence_all, key=lambda x: int(x.get("severity") or 0), reverse=True)[:30],
         "community": community,
@@ -6309,13 +6771,29 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
             "token": {
                 **(token_data or {}),
                 "honeypot": honeypot_res.get("details") or None,
+                "goplus": goplus_res.get("details") or None,
+                "security_snapshot": build_token_snapshot(
+                    token_data or {},
+                    honeypot_res.get("details") or {},
+                    token_chain_state or evm_contract_state or {},
+                    goplus_res.get("details") or {},
+                ),
             },
             "address": address,
             "kind_detected": kind,
+            "resolved_entity_type": resolved_entity_type,
+            "entity_resolution": {
+                **entity_resolution,
+                "resolved_type": resolved_entity_type,
+                "resolution_status": "resolved" if resolved_entity_type else "ambiguous",
+            },
             "chain": chain,
             "chain_label": _localized_chain_label(chain, lang),
             "is_evm": is_evm,
             "contract_identity": contract_identity,
+            "contract_state": evm_contract_state,
+            "solana_security": solana_security,
+            "wallet_security": wallet_security,
             "noytrix_scam_database": score_info.get("noytrix_scam_database") or {
                 "applied": False,
                 "match": noytrix_db_match,
@@ -6325,7 +6803,7 @@ async def _scan_wallet_or_contract(target: str, lang: str) -> dict:
         "permissions_summary": {
             "can_spend": None,
             "unlimited": None,
-            "tokens": [((token_data or {}).get("baseToken") or {}).get("symbol")] if ((token_data or {}).get("baseToken") or {}).get("symbol") else [],
+            "tokens": [((token_data or {}).get("token") or {}).get("symbol")] if ((token_data or {}).get("token") or {}).get("symbol") else [],
             "spend_limit": "unknown",
             "revoke_difficulty": "medium" if kind == "contract" else "unknown",
             "summary": (
@@ -6404,7 +6882,8 @@ async def _scan_ticker(target: str, lang: str) -> dict:
 
     skip_honeypot = bool(market_cap_rank and market_cap_rank <= 200)
 
-    honeypot_candidates: list[tuple[str, str]] = []
+    honeypot_candidates: list[dict[str, str]] = []
+    coin_platforms: dict[str, str] = {}
     primary_coin_id = str(picked.get("id") or "").strip()
 
     if primary_coin_id:
@@ -6424,36 +6903,55 @@ async def _scan_ticker(target: str, lang: str) -> dict:
                 if resp.status_code == 200:
                     full = resp.json()
                     platforms = full.get("platforms") or {}
+                    coin_platforms = {
+                        str(platform): str(addr or "").strip()
+                        for platform, addr in platforms.items()
+                        if str(addr or "").strip()
+                    }
                     links = full.get("links") or {}
                     homepages = [x for x in (links.get("homepage") or []) if x]
-                    for chain_name, addr in platforms.items():
-                        addr_s = str(addr or "").strip()
-
-                        if RE_EVM_ADDR.match(addr_s):
-                            honeypot_candidates.append((addr_s, "56"))
+                    domain = homepages[0] if homepages else None
+                    honeypot_candidates = evm_platform_candidates(
+                        platforms,
+                        lambda value: bool(RE_EVM_ADDR.match(value)),
+                    )
 
         except Exception as e:
             print("Coingecko error:", e)
 
     seen_hp = set()
     uniq_candidates = []
-    for addr, cid in honeypot_candidates:
+    for candidate in honeypot_candidates:
+        addr = candidate["address"]
+        cid = candidate["chain_id"]
         k = f"{addr.lower()}::{cid}"
         if k in seen_hp:
             continue
         seen_hp.add(k)
-        uniq_candidates.append((addr, cid))
+        uniq_candidates.append(candidate)
 
-    for addr, cid in uniq_candidates[:6]:
+    selected_candidate = None
+    for candidate in uniq_candidates[:6]:
+        addr = candidate["address"]
+        cid = candidate["chain_id"]
         hp = await _check_honeypot_contract(addr, cid)
-        if hp.get("status") in {"malicious", "clean", "no_data"}:
+        if hp.get("status") in {"malicious", "clean", "observed"}:
             honeypot_source = hp
             honeypot_details = hp.get("details") or {}
             contract = addr.lower()
+            selected_candidate = candidate
             sources.append(hp)
             break
 
     dominant_match = _is_dominant_top_ticker_match(symbol, picked, all_matches, market_data)
+    ticker_resolution = dict(det.get("entity_resolution") or resolve_input_syntax(symbol))
+    exact_token_identity = bool(contract and selected_candidate and (dominant_match or len(all_matches) == 1))
+    token_resolution = resolve_input_syntax(contract) if exact_token_identity else ticker_resolution
+    resolved_token_network = (
+        str((selected_candidate or {}).get("chain_id") or "").strip()
+        or str((picked or {}).get("asset_platform_id") or "").lower()
+        or None
+    )
 
     if honeypot_source is None and not market_data:
         heuristics.append(
@@ -6474,15 +6972,21 @@ async def _scan_ticker(target: str, lang: str) -> dict:
         )
 
     if honeypot_details:
-        raw_hp = honeypot_details.get("raw") or {}
-        token_obj = raw_hp.get("token") or {}
-        holders = token_obj.get("totalHolders") or token_obj.get("holders")
+        holders = honeypot_details.get("total_holders")
 
     community_key = contract or symbol
     community_kind = "contract" if contract else "ticker"
     community = _community_snapshot(community_key, community_kind)
 
     score_info = _score_scan(sources, heuristics, page_content_evidence, community)
+    if not exact_token_identity:
+        score_info["assessment_status"] = "partial"
+        score_info["source_coverage"] = {
+            **(score_info.get("source_coverage") or {}),
+            "partial": True,
+            "assessment_status": "partial",
+            "identity_ambiguous": True,
+        }
 
     evidence_all = []
     evidence_all.extend([{"source": "heuristic", **x} for x in heuristics])
@@ -6504,6 +7008,18 @@ async def _scan_ticker(target: str, lang: str) -> dict:
         "kind": "ticker",
         "kind_localized": _localized_object_kind("ticker", lang),
         "symbol": symbol,
+        "resolved_entity_type": "token" if exact_token_identity else None,
+        "entity_resolution": {
+            **token_resolution,
+            "resolved_type": "token" if exact_token_identity else None,
+            "resolution_status": "resolved" if exact_token_identity else "ambiguous",
+            "selected_contract_or_mint": contract if exact_token_identity else None,
+        },
+        "canonical_entity": canonical_entity_id(
+            token_resolution,
+            resolved_type="token" if exact_token_identity else None,
+            network=resolved_token_network,
+        ),
         "score": score_info["score"],
         "level": score_info["level"],
         "normalized_level": score_info.get("normalized_level", score_info["level"]),
@@ -6513,6 +7029,9 @@ async def _scan_ticker(target: str, lang: str) -> dict:
         "confirmed_red_flag": score_info["confirmed_red_flag"],
         "malicious_sources": score_info["malicious_sources"],
         "scoring": score_info["components"],
+        "assessment_status": score_info.get("assessment_status"),
+        "source_coverage": score_info.get("source_coverage") or {},
+        "canonical_evidence": score_info.get("canonical_evidence") or [],
         "sources": sources,
         "evidence": sorted(evidence_all, key=lambda x: int(x.get("severity") or 0), reverse=True)[:30],
         "community": community,
@@ -6524,9 +7043,12 @@ async def _scan_ticker(target: str, lang: str) -> dict:
                 "market_data": market_data,
                 "holders": holders,
                 "contract": contract,
+                "selected_platform": selected_candidate,
+                "platforms": coin_platforms,
                 "domain": domain,
                 "token_risk_flags": token_risk_flags,
                 "honeypot": honeypot_details,
+                "security_snapshot": build_token_snapshot({}, honeypot_details),
             },
         },
         "lang": lang,
@@ -6635,6 +7157,9 @@ async def _scan_text(target: str, lang: str) -> dict:
         "confirmed_red_flag": score_info["confirmed_red_flag"],
         "malicious_sources": score_info["malicious_sources"],
         "scoring": score_info["components"],
+        "assessment_status": score_info.get("assessment_status"),
+        "source_coverage": score_info.get("source_coverage") or {},
+        "canonical_evidence": score_info.get("canonical_evidence") or [],
         "sources": _localize_sources(sources, lang),
         "evidence": sorted(evidence_all, key=lambda x: int(x.get("severity") or 0), reverse=True)[:20],
         "community": community,
@@ -6684,6 +7209,7 @@ async def scan_core(target: str, lang: str, user_id: Optional[str], is_pro_user:
             "input": target,
             "normalized_input": target,
             "kind": "transaction",
+            "analysis_capabilities": ["transaction_decode", "permission_analysis"],
             "kind_localized": "РўСЂР°РЅР·Р°РєС†РёСЏ" if lang == "ru" else "Transaction",
             **approve_fields,
             "malicious_sources": [],
@@ -6717,7 +7243,7 @@ async def scan_core(target: str, lang: str, user_id: Optional[str], is_pro_user:
 
     if kind in {"url", "domain"}:
         return await _scan_url_or_domain(target, lang, is_pro_user, internal_only)
-    if kind == "wallet":
+    if kind in {"wallet", "address"}:
         return await _scan_wallet_or_contract(target, lang)
     if kind == "ticker":
         return await _scan_ticker(target, lang)
@@ -6898,9 +7424,9 @@ async def security_analyze_core(payload: dict) -> dict:
         pro_flag = payload.get("isPro")
     if pro_flag is None:
         pro_flag = payload.get("pro")
-    # Internal callers that do not send an entitlement flag keep the historical
-    # unlimited behavior; explicit False is honored for the public free flow.
-    is_pro_user = True if pro_flag is None else bool(pro_flag)
+    # Fail closed: every trusted internal caller must opt into PRO explicitly.
+    # A missing flag must never silently grant paid capabilities.
+    is_pro_user = bool(pro_flag) if pro_flag is not None else False
     external_check = bool(payload.get("external_check") or payload.get("externalCheck"))
     internal_only = bool(payload.get("internal_only") or payload.get("internalOnly") or (NOYTRIX_INTERNAL_MODE and not external_check))
 
@@ -6912,12 +7438,63 @@ async def security_analyze_core(payload: dict) -> dict:
     data = _attach_ux_risk_blocks(data, lang)
 
     score = int(data.get("score") or data.get("risk_score") or 0)
-    level = _canonical_level(data.get("level"), score)
+    normalized_sources = _localize_sources(data.get("sources") or [], lang)
+    coverage = scan_coverage(normalized_sources)
+    capability_report = capability_coverage(
+        normalized_sources,
+        data.get("resolved_entity_type") or data.get("kind"),
+        data.get("analysis_capabilities") or [],
+    )
+    base_status = coverage.get("assessment_status")
+    capability_status = capability_report.get("assessment_status")
+    assessment_status = (
+        capability_status
+        if capability_report.get("required_capabilities")
+        else base_status
+    )
+    coverage = {
+        **coverage,
+        "assessment_status": assessment_status,
+        "partial": assessment_status == "partial",
+        "capabilities": capability_report,
+    }
+    safety_coverage = safe_verdict_coverage(
+        capability_report,
+        data.get("resolved_entity_type") or data.get("kind"),
+    )
+    coverage["safe_verdict"] = safety_coverage
+    level = (
+        "unknown"
+        if assessment_status == "insufficient_data" and not data.get("confirmed_red_flag")
+        else _canonical_level(data.get("level"), score)
+    )
+    if level == "safe" and safety_coverage.get("required_capabilities") and not safety_coverage.get("eligible"):
+        level = "unknown"
+        data["level"] = "unknown"
+        data["normalized_level"] = "unknown"
+        data["verdict_en"] = "Insufficient data"
+        data["verdict_ru"] = "Недостаточно данных"
+        data["verdict_localized"] = "Недостаточно данных" if lang == "ru" else "Insufficient data"
+        assessment_status = "partial" if capability_report.get("available_capabilities") else "insufficient_data"
+        coverage["assessment_status"] = assessment_status
+        coverage["partial"] = assessment_status == "partial"
     confidence = int(data.get("confidence") or data.get("confidence_score") or 0)
     if confidence <= 0:
-        evidence_count = len(data.get("evidence") or [])
-        sources_count = len(data.get("sources") or [])
-        confidence = min(95, 35 + evidence_count * 10 + sources_count * 5)
+        hard_evidence = [item for item in (data.get("evidence") or []) if isinstance(item, dict) and item.get("hard_evidence") is True]
+        malicious_count = sum(1 for item in normalized_sources if item.get("status") == "malicious")
+        clean_count = sum(1 for item in normalized_sources if item.get("status") == "clean")
+        if hard_evidence:
+            confidence = 90
+        elif malicious_count:
+            confidence = min(90, 70 + malicious_count * 10)
+        elif clean_count >= 2:
+            confidence = min(80, 50 + clean_count * 10)
+        elif clean_count == 1:
+            confidence = 50
+        else:
+            confidence = 15
+    if assessment_status == "insufficient_data":
+        confidence = min(confidence, 25)
 
     data["confidence_score"] = confidence
     data["canonical_level"] = level
@@ -6936,6 +7513,10 @@ async def security_analyze_core(payload: dict) -> dict:
         "input": target,
         "normalized_input": data.get("normalized_input") or target,
         "kind": data.get("kind"),
+        "resolved_entity_type": data.get("resolved_entity_type"),
+        "entity_resolution": data.get("entity_resolution") or {},
+        "canonical_entity": data.get("canonical_entity"),
+        "analysis_capabilities": data.get("analysis_capabilities") or [],
         "score": score,
         "internal_score": data.get("internal_score"),
         "external_score": data.get("external_score"),
@@ -6947,6 +7528,8 @@ async def security_analyze_core(payload: dict) -> dict:
         "scoring": data.get("scoring") or {},
         "confidence": confidence,
         "confidence_score": confidence,
+        "assessment_status": assessment_status,
+        "source_coverage": coverage,
         "level": level,
         "verdict": level,
         "confirmed_red_flag": confirmed_red_flag,
@@ -6967,7 +7550,12 @@ async def security_analyze_core(payload: dict) -> dict:
         "multi_chain_intelligence": data.get("multi_chain_intelligence") or {},
         "ai_investigation": data.get("ai_investigation") or {},
         "evidence": data.get("evidence") or [],
-        "sources": data.get("sources") or [],
+        "canonical_evidence": [
+            {key: value for key, value in item.items() if key != "raw"}
+            for item in (data.get("canonical_evidence") or [])
+            if isinstance(item, dict)
+        ],
+        "sources": normalized_sources,
         "details": data.get("details") or {},
         "ai_explanation": data.get("ai_explanation") or data.get("explanation") or "",
 
@@ -7159,7 +7747,7 @@ async def scan(
             data["ai_explanation_result"] = await generate_ai_security_explanation(
                 data,
                 L,
-                "detailed" if pro else "short",
+                "detailed",
             )
             data["ai_explanation"] = (
                 (data.get("ai_explanation_result") or {}).get("text")
@@ -8285,6 +8873,7 @@ async def startup_event():
         asyncio.create_task(brain_scheduler_loop())
         asyncio.create_task(brain_telegram_actions_loop())
         asyncio.create_task(brain_delivery_monitor_loop())
+        asyncio.create_task(buyer_monitor_loop())
         if str(os.getenv("NOYTRIX_THREAT_COLLECTORS", "1")).strip().lower() not in {"0", "false", "no", "off"}:
             asyncio.create_task(autonomous_collector_loop())
         init_threat_memory()
@@ -8416,29 +9005,4 @@ async def _check_ton(address: str):
 
 
 async def _check_solana(address: str):
-    try:
-        import requests
-        headers = {"accept": "application/json", "user-agent": "Noytrix/1.0"}
-        r = requests.get(f"https://public-api.solscan.io/account/{address}", headers=headers, timeout=8)
-
-        if r.status_code == 429:
-            return _mk_source("solscan", "quota", details={"status_code": 429, "address": address})
-        if r.status_code >= 500:
-            return _mk_source("solscan", "error", details={"status_code": r.status_code, "address": address})
-        if r.status_code == 404:
-            return _mk_source("solscan", "no_data", details={"status_code": 404, "address": address})
-        if r.status_code != 200:
-            return _mk_source("solscan", "no_data", details={"status_code": r.status_code, "address": address})
-
-        data = r.json() if r.text else {}
-        if not data:
-            return _mk_source("solscan", "no_data", details={"address": address})
-
-        return _mk_source(
-            "solscan",
-            "clean",
-            details=data,
-            evidence=[{"code": "sol_account_found", "severity": 0, "text": "Solana account found on Solscan."}],
-        )
-    except Exception as e:
-        return _mk_source("solscan", "error", details={"error": str(e), "address": address})
+    return await analyze_solana_address(address)

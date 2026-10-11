@@ -1,11 +1,16 @@
 from typing import Dict, List
 from scamshield.core.levels import normalize_score, normalize_level, legacy_level, enforce_risk_floor
+from scamshield.core.sources import scan_coverage
+from scamshield.core.evidence import actionable_risk_evidence, evidence_from_sources
 
 
 EXTERNAL_SOURCE_NAMES = {
     "virustotal",
     "google_safe_browsing",
     "urlscan",
+    "goplus",
+    "goplus_approvals",
+    "goplus_counterparties",
 }
 
 INTERNAL_SOURCE_NAMES = {
@@ -77,6 +82,9 @@ def score_scan(
     community: Dict,
     internal_only: bool = False,
 ) -> dict:
+    coverage = scan_coverage(sources or [])
+    canonical_evidence = evidence_from_sources(sources or [])
+    actionable_evidence = actionable_risk_evidence(canonical_evidence)
     internal_confirmed_score = 0
     external_confirmed_score = 0
 
@@ -91,67 +99,71 @@ def score_scan(
     internal_clean_sources = 0
     external_clean_sources = 0
 
+    strong_codes = {
+        "credential_theft_ui",
+        "seed_phrase_request",
+        "private_key_request",
+        "recovery_phrase_request",
+        "connect_wallet_reward_flow",
+        "possible_js_drainer_flow",
+        "approval_or_drain_functions",
+        "brand_impersonation_plus_wallet_pressure",
+        "multi_source_public_scam_match",
+        "known_malicious_entity",
+        "wallet_drainer_runtime",
+        "obfuscated_wallet_drainer_javascript",
+        "runtime_wallet_calls_with_obfuscation",
+        "compromised_legitimate_site_wallet_flow",
+        "compromised_legitimate_redirect_to_lure",
+        "legitimate_domain_obfuscated_wallet_flow",
+        "hosted_platform_abuse_wallet_flow",
+        "gsb_match",
+        "vt_detection",
+        "virustotal_malicious",
+        "urlscan_malicious",
+        "phishtank_match",
+        "openphish_match",
+        "scamsniffer_match",
+        "cryptoscamdb_match",
+        "noytrix_scam_database_match",
+        "honeypot_detected",
+        "extreme_sell_tax",
+        "goplus_honeypot_confirmed",
+        "goplus_cannot_sell_all",
+        "goplus_extreme_sell_tax",
+        "active_approval_to_confirmed_malicious_spender",
+        "known_malicious_contract_identity",
+    }
+    strong_evidence = [
+        item
+        for item in actionable_evidence
+        if item.get("code") in strong_codes
+    ]
+
     for s in sources or []:
         name = _source_name(s)
         status = str((s or {}).get("status") or "").lower()
-
-        if status == "malicious":
-            evidence = (s or {}).get("evidence") or []
-            strong_codes = {
-                "credential_theft_ui",
-                "seed_phrase_request",
-                "private_key_request",
-                "recovery_phrase_request",
-                "connect_wallet_reward_flow",
-                "possible_js_drainer_flow",
-                "approval_or_drain_functions",
-                "brand_impersonation_plus_wallet_pressure",
-                "brand_plus_scam_keywords",
-                "multi_source_public_scam_match",
-                "known_malicious_entity",
-                "wallet_drainer_runtime",
-                "obfuscated_wallet_drainer_javascript",
-                "runtime_wallet_calls_with_obfuscation",
-                "compromised_legitimate_site_wallet_flow",
-                "compromised_legitimate_redirect_to_lure",
-                "legitimate_domain_obfuscated_wallet_flow",
-                "hosted_platform_abuse_wallet_flow",
-                "gsb_match",
-                "vt_detection",
-                "virustotal_malicious",
-                "urlscan_malicious",
-                "phishtank_match",
-                "openphish_match",
-                "scamsniffer_match",
-                "cryptoscamdb_match",
-                "noytrix_scam_database_match",
-            }
-            max_severity = max(
-                [int(e.get("severity") or 0) for e in evidence if isinstance(e, dict)] or [0]
-            )
-            has_strong_evidence = any(
-                str(e.get("code") or "") in strong_codes and int(e.get("severity") or 0) >= 40
-                for e in evidence
-                if isinstance(e, dict)
-            ) or max_severity >= 70
-
-            if not has_strong_evidence:
-                continue
-
-            if _is_external_source(s):
-                external_red_flag = True
-                external_malicious_sources.append(name)
-                external_confirmed_score += 55
-            else:
-                internal_red_flag = True
-                internal_malicious_sources.append(name)
-                internal_confirmed_score += 55
-
-        elif status == "clean":
+        if status in {"clean", "observed", "available"}:
             if _is_external_source(s):
                 external_clean_sources += 1
             else:
                 internal_clean_sources += 1
+
+    for item in strong_evidence:
+        corroborating = set(item.get("corroborating_sources") or [item.get("source")])
+        internal_sources = sorted(source for source in corroborating if source and source not in EXTERNAL_SOURCE_NAMES)
+        external_sources = sorted(source for source in corroborating if source in EXTERNAL_SOURCE_NAMES)
+        # Corroboration raises confidence, not the inherent severity of one fact.
+        # Mirrored feeds and copied databases must not amplify a single event.
+        evidence_weight = 55
+        if internal_sources:
+            internal_red_flag = True
+            internal_malicious_sources.extend(internal_sources)
+            internal_confirmed_score = max(internal_confirmed_score, evidence_weight)
+        if external_sources:
+            external_red_flag = True
+            external_malicious_sources.extend(external_sources)
+            external_confirmed_score = max(external_confirmed_score, evidence_weight)
 
     # Production verdict: Noytrix remains the final decision-maker, but trusted
     # external threat confirmations are real evidence and must affect the score.
@@ -170,22 +182,7 @@ def score_scan(
         "private_key_request",
         "recovery_phrase_request",
         "connect_wallet_reward_flow",
-        "brand_impersonation",
         "brand_impersonation_plus_wallet_pressure",
-        "brand_fragment_in_suspicious_domain",
-        "brand_spoofing",
-        "brand_plus_scam_keywords",
-        "domain_resolution_failed",
-        "dns_no_ip_records",
-        "suspicious_host_words",
-        "host_keyword_claim",
-        "host_keyword_airdrop",
-        "host_keyword_reward",
-        "host_keyword_wallet",
-        "hyphenated_suspicious_host",
-        "fake_airdrop_bonus_ui",
-        "wallet_connect_pressure",
-        "fake_support_ui",
         "drainer_pattern",
         "wallet_drainer",
         "known_malicious_contract_identity",
@@ -203,6 +200,12 @@ def score_scan(
         "compromised_legitimate_site_wallet_flow",
         "compromised_legitimate_redirect_to_lure",
         "hosted_platform_abuse_wallet_flow",
+        "honeypot_detected",
+        "extreme_sell_tax",
+        "goplus_honeypot_confirmed",
+        "goplus_cannot_sell_all",
+        "goplus_extreme_sell_tax",
+        "active_approval_to_confirmed_malicious_spender",
     }
 
     all_codes = set()
@@ -248,10 +251,8 @@ def score_scan(
 
     strong_scam_combo = any(
         str(x.get("code") or "") in {
-            "brand_spoofing",
-            "brand_impersonation",
-            "brand_plus_scam_keywords",
-            "domain_resolution_failed",
+            "brand_impersonation_plus_wallet_pressure",
+            "connect_wallet_reward_flow",
         }
         for x in (heuristics or [])
     )
@@ -288,6 +289,8 @@ def score_scan(
         and unknown_or_failed_internal_sources
         and (internal_only or external_confirmed_score == 0)
     ):
+        # No evidence is not evidence of safety. Keep the numeric risk at zero,
+        # but expose an unknown verdict and insufficient coverage below.
         level = "safe"
         final_score = 0
     elif level == "critical":
@@ -310,6 +313,38 @@ def score_scan(
     level = legacy_level(normalized_level)
     verdict_en, verdict_ru = _verdicts(level)
 
+    has_local_risk_evidence = bool(
+        internal_confirmed_score
+        or heuristics_score
+        or content_score
+        or community_score
+    )
+    if coverage["assessment_status"] == "insufficient_data" and has_local_risk_evidence:
+        coverage = {**coverage, "partial": True, "assessment_status": "partial"}
+    elif coverage["assessment_status"] == "insufficient_data" and not confirmed_red_flag:
+        final_score = 0
+        level = "unknown"
+        normalized_level = "unknown"
+        verdict_en = "Insufficient data"
+        verdict_ru = "Недостаточно данных"
+
+    unresolved_malicious_claim = any(
+        str((source or {}).get("status") or "").lower() == "malicious"
+        for source in (sources or [])
+    ) and not confirmed_red_flag
+    if (
+        unresolved_malicious_claim
+        and internal_clean_sources == 0
+        and external_clean_sources == 0
+        and not has_local_risk_evidence
+    ):
+        final_score = 0
+        level = "unknown"
+        normalized_level = "unknown"
+        verdict_en = "Insufficient verified evidence"
+        verdict_ru = "Недостаточно подтверждённых данных"
+        coverage = {**coverage, "partial": True, "assessment_status": "partial"}
+
     return {
         "level": level,
         "normalized_level": normalized_level,
@@ -327,6 +362,9 @@ def score_scan(
         "internal_level": internal_level,
         "external_level": external_level,
         "internal_only": bool(internal_only),
+        "assessment_status": coverage["assessment_status"],
+        "source_coverage": coverage,
+        "canonical_evidence": canonical_evidence,
         "components": {
             "internal_confirmed_signals": min(100, internal_confirmed_score),
             "external_confirmed_signals": min(100, external_confirmed_score),

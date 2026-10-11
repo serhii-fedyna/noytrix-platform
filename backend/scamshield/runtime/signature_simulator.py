@@ -134,36 +134,34 @@ def simulate_signature(payload: Dict[str, Any] | None) -> Dict[str, Any]:
     addresses = _all_addresses({"payload": payload, "typed": typed, "message": message})
 
     if family in {"permit", "permit2"}:
-        _add_signal(signals, f"{family}_signature_permission", 90 if family == "permit2" else 86, "Signature can grant token spending permission.")
+        _add_signal(signals, f"{family}_signature_permission", 40 if family == "permit2" else 35, "Signature can grant token spending permission; this is impact context, not proof of abuse.")
     elif family == "marketplace_order":
-        _add_signal(signals, "marketplace_order_signature", 72, "Signature appears to authorize a marketplace/order action.")
+        _add_signal(signals, "marketplace_order_signature", 25, "Signature appears to authorize a marketplace/order action.")
     elif family == "delegation":
-        _add_signal(signals, "delegated_wallet_permission", 82, "Signature appears to delegate account or session authority.")
+        _add_signal(signals, "delegated_wallet_permission", 35, "Signature appears to delegate account or session authority.")
     elif family == "raw_eth_sign":
-        _add_signal(signals, "raw_eth_sign_blind_signature", 78, "eth_sign is a raw signature method and can be dangerous if the message is opaque.")
+        _add_signal(signals, "raw_eth_sign_blind_signature", 45, "eth_sign is a raw signature method and deserves careful review when the message is opaque.")
     elif family == "personal_sign":
-        _add_signal(signals, "personal_sign_message", 35, "Wallet message signature detected.")
+        _add_signal(signals, "personal_sign_message", 10, "Wallet message signature detected.")
     elif family == "typed_data":
-        _add_signal(signals, "typed_data_signature", 45, "EIP-712 typed signature detected.")
+        _add_signal(signals, "typed_data_signature", 10, "EIP-712 typed signature detected.")
 
     if spender:
-        _add_signal(signals, "signature_spender_detected", 72, "Signature contains a spender/operator/delegate address.")
+        _add_signal(signals, "signature_spender_detected", 10, "Signature contains a spender/operator/delegate address.")
     if amount is not None:
-        _add_signal(signals, "signature_amount_limit_detected", 55, "Signature contains an amount or spending limit.")
+        _add_signal(signals, "signature_amount_limit_detected", 5, "Signature contains an amount or spending limit.")
     if _amount_is_unlimited(amount) or any(x in text for x in ["unlimited", "maxuint", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"]):
-        _add_signal(signals, "signature_unlimited_allowance", 94, "Signature appears to grant unlimited or max spending permission.")
+        _add_signal(signals, "signature_unlimited_allowance", 55, "Signature appears to grant unlimited or max spending permission; verify the spender before signing.")
     if deadline:
         _add_signal(signals, "signature_deadline_detected", 25, "Signature includes a deadline or expiration.")
     if any(x in text for x in ["approve", "setapprovalforall", "transferfrom"]):
-        _add_signal(signals, "signature_asset_transfer_terms", 85, "Signature text references approval or asset transfer behavior.")
+        _add_signal(signals, "signature_asset_transfer_terms", 35, "Signature text references approval or asset transfer behavior.")
     if any(x in text for x in ["seed phrase", "private key", "recovery phrase"]):
         _add_signal(signals, "signature_secret_phrase_request", 100, "Signature content asks for wallet secrets.")
 
     score = max([int(s["severity"]) for s in signals] or [0])
-    if family in {"permit", "permit2"} and spender:
-        score = max(score, 94)
     if family == "raw_eth_sign" and len(str(message)) > 200:
-        score = max(score, 84)
+        score = max(score, 55)
 
     level = "safe"
     if score >= 90:
@@ -175,7 +173,7 @@ def simulate_signature(payload: Dict[str, Any] | None) -> Dict[str, Any]:
     elif score > 0:
         level = "low"
 
-    can_spend = family in {"permit", "permit2"} or bool(spender and score >= 70)
+    can_spend = family in {"permit", "permit2"}
     unlimited = any(s["code"] == "signature_unlimited_allowance" for s in signals)
 
     simulation = {
@@ -229,5 +227,6 @@ def simulate_signature(payload: Dict[str, Any] | None) -> Dict[str, Any]:
                 if can_spend else
                 "This signature does not clearly grant token spending permission."
             ),
+            "threat_confirmed": any(s["code"] == "signature_secret_phrase_request" for s in signals),
         },
     }

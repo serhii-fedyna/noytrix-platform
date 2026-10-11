@@ -112,8 +112,13 @@ def build_url_intelligence(
 
     memory_score = _safe_int(threat_memory.get("score"))
     memory_level = str(threat_memory.get("level") or "").lower()
+    memory_confidence = _safe_int(threat_memory.get("confidence"))
 
-    if memory_score > 0 or memory_level in {"critical", "high", "danger", "suspicious"}:
+    if (
+        memory_score >= 70
+        and memory_confidence >= 70
+        and memory_level in {"critical", "high", "danger", "malicious", "scam"}
+    ):
         # Production rule:
         # Historical memory is context, not proof.
         # It must NOT create danger/critical by itself without fresh independent signals.
@@ -155,22 +160,7 @@ def build_url_intelligence(
     _strong_danger_codes = {
         "credential_theft_ui",
         "connect_wallet_reward_flow",
-        "brand_impersonation",
         "brand_impersonation_plus_wallet_pressure",
-        "brand_fragment_in_suspicious_domain",
-        "brand_spoofing",
-        "brand_plus_scam_keywords",
-        "domain_resolution_failed",
-        "dns_no_ip_records",
-        "suspicious_host_words",
-        "host_keyword_claim",
-        "host_keyword_airdrop",
-        "host_keyword_reward",
-        "host_keyword_wallet",
-        "hyphenated_suspicious_host",
-        "fake_airdrop_bonus_ui",
-        "wallet_connect_pressure",
-        "fake_support_ui",
         "seed_phrase_request",
         "private_key_request",
         "recovery_phrase_request",
@@ -189,6 +179,21 @@ def build_url_intelligence(
 
     _weak_noise_codes = {
         "historical_threat_memory",
+        "brand_impersonation",
+        "brand_fragment_in_suspicious_domain",
+        "brand_spoofing",
+        "brand_plus_scam_keywords",
+        "domain_resolution_failed",
+        "dns_no_ip_records",
+        "suspicious_host_words",
+        "host_keyword_claim",
+        "host_keyword_airdrop",
+        "host_keyword_reward",
+        "host_keyword_wallet",
+        "hyphenated_suspicious_host",
+        "fake_airdrop_bonus_ui",
+        "wallet_connect_pressure",
+        "fake_support_ui",
         "missing_ns_records",
         "infrastructure_score",
         "wallet_connect_request",

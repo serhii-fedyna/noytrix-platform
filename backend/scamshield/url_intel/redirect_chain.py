@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict, List
 from urllib.parse import urlparse
 
-import httpx
+from .safe_http import UnsafeTargetError, fetch_public_url
 
 
 def _host(url: str) -> str:
@@ -24,31 +24,39 @@ async def analyze_redirect_chain(url: str, timeout: float = 8.0) -> Dict[str, An
     hops: List[Dict[str, Any]] = []
 
     try:
-        async with httpx.AsyncClient(
+        result = await fetch_public_url(
+            url,
             timeout=timeout,
-            follow_redirects=True,
+            max_redirects=8,
+            max_bytes=0,
+            read_body=False,
             headers={"User-Agent": "NoytrixSecurityBot/1.0"},
-        ) as client:
-            r = await client.get(url)
-
-            history = list(r.history or []) + [r]
-
-            for idx, item in enumerate(history):
-                u = str(item.url)
-                hops.append({
-                    "index": idx,
-                    "url": u,
-                    "host": _host(u),
-                    "root_domain": _root(_host(u)),
-                    "status_code": item.status_code,
-                })
-
+        )
+        for item in result.get("hops") or []:
+            u = str(item.get("url") or "")
+            hops.append({
+                **item,
+                "host": _host(u),
+                "root_domain": _root(_host(u)),
+            })
+    except UnsafeTargetError as e:
+        return {
+            "available": False,
+            "reason": e.code,
+            "detail": str(e),
+            "score": 0,
+            "level": "unknown",
+            "assessment_status": "insufficient_data",
+            "hops": hops,
+            "signals": [],
+        }
     except Exception as e:
         return {
             "available": False,
             "reason": str(e)[:300],
             "score": 0,
             "level": "unknown",
+            "assessment_status": "insufficient_data",
             "hops": hops,
             "signals": [],
         }
@@ -103,6 +111,7 @@ async def analyze_redirect_chain(url: str, timeout: float = 8.0) -> Dict[str, An
 
     return {
         "available": True,
+        "assessment_status": "available",
         "score": score,
         "level": level,
         "hop_count": len(hops),

@@ -4,13 +4,13 @@ from typing import Any, Dict, List
 
 
 RISK_BY_SELECTOR = {
-    "095ea7b3": ("approve", "token_approval", 80),
-    "a22cb465": ("setApprovalForAll", "nft_collection_approval", 92),
-    "d505accf": ("permit", "signature_permission", 88),
-    "2b67b570": ("permit2", "signature_permission", 90),
-    "30f28b7a": ("permit2", "signature_permission", 90),
-    "23b872dd": ("transferFrom", "asset_transfer", 96),
-    "a9059cbb": ("transfer", "asset_transfer", 45),
+    "095ea7b3": ("approve", "token_approval", 35),
+    "a22cb465": ("setApprovalForAll", "nft_collection_approval", 55),
+    "d505accf": ("permit", "signature_permission", 40),
+    "2b67b570": ("permit2", "signature_permission", 45),
+    "30f28b7a": ("permit2", "signature_permission", 45),
+    "23b872dd": ("transferFrom", "asset_transfer", 60),
+    "a9059cbb": ("transfer", "asset_transfer", 20),
 }
 
 
@@ -80,7 +80,7 @@ def build_execution_graph(tx_decoded: Dict[str, Any] | None) -> Dict[str, Any]:
             "from": root_id,
             "to": node_id,
             "relation": "contains_call",
-            "confidence": 80,
+            "confidence": 35,
         })
 
         max_risk = max(max_risk, severity)
@@ -96,10 +96,10 @@ def build_execution_graph(tx_decoded: Dict[str, Any] | None) -> Dict[str, Any]:
     direct_type = str(tx.get("type") or "")
     if direct_type in {"erc20_approve", "nft_set_approval_for_all", "permit_or_permit2", "erc20_transfer_from"}:
         direct_risk = {
-            "erc20_approve": ("token_approval", 80),
-            "nft_set_approval_for_all": ("nft_collection_approval", 92),
-            "permit_or_permit2": ("signature_permission", 90),
-            "erc20_transfer_from": ("asset_transfer", 96),
+            "erc20_approve": ("token_approval", 35),
+            "nft_set_approval_for_all": ("nft_collection_approval", 55),
+            "permit_or_permit2": ("signature_permission", 45),
+            "erc20_transfer_from": ("asset_transfer", 60),
         }.get(direct_type, ("unknown", 30))
 
         nodes[0]["severity"] = direct_risk[1]
@@ -227,7 +227,7 @@ def build_recursive_execution_graph(raw: str, max_depth: int = 4) -> Dict[str, A
                 "from": parent_id,
                 "to": node_id,
                 "relation": "contains_nested_call",
-                "confidence": min(95, 70 + depth * 5),
+                "confidence": min(55, 30 + depth * 5),
             })
 
             max_risk = max(max_risk, severity)
@@ -350,4 +350,3 @@ def build_recursive_execution_graph(raw: str, max_depth: int = 4) -> Dict[str, A
             else "No critical nested execution path detected."
         ),
     }
-

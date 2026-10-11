@@ -102,6 +102,9 @@ def _backend_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+CURATED_INCIDENTS_PATH = _backend_root() / "data" / "curated_incidents" / "documented_solana_incidents.json"
+
+
 def candidate_entities(value: str) -> list[str]:
     raw = (value or "").strip()
     normalized = normalize_entity(raw)
@@ -413,6 +416,90 @@ def _lookup_local_public_feeds(value: str) -> Optional[dict]:
     return None
 
 
+@lru_cache(maxsize=1)
+def _load_documented_incident_index() -> dict[str, dict]:
+    """Load only reviewed, source-backed incident records.
+
+    This is a data-driven registry for historic on-chain incidents, not a
+    detector exception for a particular mint.  Each accepted record needs two
+    cited sources and an exact on-chain identifier before it can affect a
+    verdict.
+    """
+    try:
+        payload = json.loads(CURATED_INCIDENTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+    index: dict[str, dict] = {}
+    for record in payload.get("incidents") or []:
+        if not isinstance(record, dict):
+            continue
+        if str(record.get("review_status") or "").lower() != "accepted":
+            continue
+        if len([row for row in (record.get("sources") or []) if isinstance(row, dict) and row.get("url")]) < 2:
+            continue
+        status = str(record.get("status") or "").lower()
+        if status not in MALICIOUS_STATUSES:
+            continue
+        for identifier in record.get("identifiers") or []:
+            normalized = normalize_entity(str(identifier))
+            if normalized:
+                index[normalized] = record
+    return index
+
+
+def _lookup_documented_incident_registry(value: str) -> Optional[dict]:
+    index = _load_documented_incident_index()
+    for candidate in candidate_entities(value):
+        record = index.get(candidate)
+        if not record:
+            continue
+        sources = [row for row in (record.get("sources") or []) if isinstance(row, dict) and row.get("url")]
+        confidence = int(record.get("confidence") or 0)
+        score = int(record.get("risk_score") or 0)
+        status = str(record.get("status") or "critical").lower()
+        return {
+            "available": True,
+            "matched": True,
+            "database": DATABASE_NAME,
+            "source": "documented_incident_registry",
+            "entity": candidate,
+            "matched_value": candidate,
+            "normalized_entity": candidate,
+            "entity_type": "solana_mint" if str(record.get("chain") or "").lower() == "solana" else guess_entity_type(candidate),
+            "status": status,
+            "level": _status_to_level(status, score),
+            "risk_score": score,
+            "confidence": confidence,
+            "force_verdict": True,
+            "source_reputation": build_reputation_context(
+                status=status,
+                base_confidence=confidence,
+                observations=[
+                    {
+                        "source_name": str(row.get("name") or "documented_incident_source"),
+                        "status": status,
+                        "risk_score": score,
+                        "confidence": confidence,
+                        "trust_score": 88 if row.get("type") == "security_investigation" else 82,
+                        "last_seen_at": record.get("observed_at"),
+                    }
+                    for row in sources
+                ],
+            ),
+            "metadata": {
+                "incident_id": record.get("incident_id"),
+                "classification": record.get("classification"),
+                "chain": record.get("chain"),
+                "title": record.get("title"),
+                "summary": record.get("summary"),
+                "observed_at": record.get("observed_at"),
+                "sources": sources,
+            },
+        }
+    return None
+
+
 def _lookup_verified_official_domains(value: str) -> Optional[dict]:
     for candidate in candidate_entities(value):
         host = candidate.split("/", 1)[0].lower()
@@ -454,6 +541,12 @@ def lookup_noytrix_scam_database(value: str) -> dict:
     pg_error = pg_match if pg_match and not pg_match.get("available", True) else None
     if pg_match and pg_match.get("matched"):
         return pg_match
+
+    incident_match = _lookup_documented_incident_registry(value)
+    if incident_match:
+        if pg_error:
+            incident_match["postgres_lookup"] = pg_error
+        return incident_match
 
     verified_match = _lookup_verified_official_domains(value)
     if verified_match:
