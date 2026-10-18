@@ -1,0 +1,17 @@
+[Unit]
+Description=Create and restore-verify a Qantova trader state snapshot
+After=noytrix-trader-api.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/trader-bot
+EnvironmentFile=-/root/trader-bot/ops.env
+ExecStart=/root/trader-bot/venv/bin/python3 /root/trader-bot/recovery_snapshot.py create
+User=root
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+PrivateTmp=true
+

@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Qantova trader state snapshot and restore verification
+
+[Timer]
+OnCalendar=*-*-* 03:20:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+Unit=qantova-trader-backup.service
+
+[Install]
+WantedBy=timers.target

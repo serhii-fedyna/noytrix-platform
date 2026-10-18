@@ -1,0 +1,15 @@
+[Unit]
+Description=Qantova trader health monitor and operational alerts
+After=network-online.target noytrix-trader-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/trader-bot
+EnvironmentFile=-/root/trader-bot/ops.env
+ExecStart=/root/trader-bot/venv/bin/python3 /root/trader-bot/ops_monitor.py
+SuccessExitStatus=1
+User=root
+NoNewPrivileges=true
+PrivateTmp=true
+

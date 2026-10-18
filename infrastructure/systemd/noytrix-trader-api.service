@@ -8,6 +8,9 @@ WorkingDirectory=/root/trader-bot
 ExecStart=/root/trader-bot/venv/bin/uvicorn bot_api:app --host 127.0.0.1 --port 8010
 Restart=always
 RestartSec=5
+# Workers are independently reconciled by PID plus BOT_STATE_FILE identity.
+# Restarting the API must not terminate an already protected live worker.
+KillMode=process
 User=root
 Environment=PYTHONUNBUFFERED=1
 
