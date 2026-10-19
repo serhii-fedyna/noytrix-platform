@@ -1,0 +1,16 @@
+[Unit]
+Description=Evaluate Qantova shadow radar outcomes with costs
+After=network-online.target noytrix-trader-api.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/trader-bot
+ExecStart=/root/trader-bot/venv/bin/python /root/trader-bot/evaluate_shadow_radar.py --decisions /root/trader-bot/users/1-test/decisions_log.json --output /root/trader-bot/users/1-test/shadow_radar_evaluation.json --horizon-minutes 60
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly cost-aware Qantova shadow radar evaluation
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+RandomizedDelaySec=3min
+Persistent=true
+Unit=qantova-shadow-radar-evaluator.service
+
+[Install]
+WantedBy=timers.target
